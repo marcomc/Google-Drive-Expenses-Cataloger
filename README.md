@@ -12,6 +12,7 @@ only to classify spending in the configured reporting taxonomy.
 - [Setup](#setup)
 - [Testing](#testing)
 - [Documentation](#documentation)
+- [Deployment](#deployment)
 - [License](#license)
 
 ## Architecture
@@ -64,6 +65,11 @@ No source folder is deleted.
 See [installation](docs/INSTALLATION.md), [configuration](docs/CONFIGURATION.md),
 and [operations](docs/OPERATIONS.md). The planned work is in [TODO.md](TODO.md)
 and the delivered changes are in [CHANGELOG.md](CHANGELOG.md).
+
+## Deployment
+
+Production source deployment happens only after an approved pull request is
+merged into `main`; see the [deployment guide](docs/DEPLOYMENT.md).
 
 ## License
 
