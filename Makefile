@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 INSTALLER := ./scripts/install.sh
 MARKDOWNLINT ?= markdownlint
-MARKDOWNLINT_CONFIG ?= /Users/mmassari/.markdownlint.json
+MARKDOWNLINT_CONFIG ?= .markdownlint.json
 SHELLCHECK ?= shellcheck
 
 .DEFAULT_GOAL := help
