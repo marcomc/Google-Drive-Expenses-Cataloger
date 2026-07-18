@@ -119,15 +119,6 @@ collect_settings() {
 
 push_script_with_configured_time_zone() (
   local time_zone manifest_backup manifest_tmp
-  # shellcheck disable=SC2329 # Invoked by the EXIT trap below.
-  restore_manifest() {
-    local command_status="$?"
-    rm -f "${manifest_tmp}"
-    if [[ -f "${manifest_backup}" ]]; then
-      mv "${manifest_backup}" "${PROJECT_ROOT}/appsscript.json" || return 1
-    fi
-    return "${command_status}"
-  }
   time_zone="$(state_get '.timeZone')"
   manifest_backup="$(mktemp "${PROJECT_ROOT}/appsscript.backup.XXXXXX")"
   manifest_tmp="$(mktemp "${PROJECT_ROOT}/appsscript.XXXXXX")"
@@ -135,7 +126,15 @@ push_script_with_configured_time_zone() (
     rm -f "${manifest_backup}" "${manifest_tmp}"
     return 1
   fi
-  trap restore_manifest EXIT
+  # shellcheck disable=SC2154 # command_status is assigned when the EXIT trap executes.
+  trap '
+    command_status=$?
+    rm -f "${manifest_tmp}"
+    if [[ -f "${manifest_backup}" ]]; then
+      mv "${manifest_backup}" "${PROJECT_ROOT}/appsscript.json" || exit 1
+    fi
+    exit "${command_status}"
+  ' EXIT
   jq --arg time_zone "${time_zone}" '.timeZone = $time_zone' \
     "${PROJECT_ROOT}/appsscript.json" >"${manifest_tmp}"
   mv "${manifest_tmp}" "${PROJECT_ROOT}/appsscript.json"
