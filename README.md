@@ -12,6 +12,7 @@ only to classify spending in the configured reporting taxonomy.
 - [Setup](#setup)
 - [Testing](#testing)
 - [Documentation](#documentation)
+- [License](#license)
 
 ## Architecture
 
@@ -61,4 +62,9 @@ No source folder is deleted.
 ## Documentation
 
 See [installation](docs/INSTALLATION.md), [configuration](docs/CONFIGURATION.md),
-and [operations](docs/OPERATIONS.md).
+and [operations](docs/OPERATIONS.md). The planned work is in [TODO.md](TODO.md)
+and the delivered changes are in [CHANGELOG.md](CHANGELOG.md).
+
+## License
+
+Licensed under the [MIT License](LICENSE).
