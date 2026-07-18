@@ -58,7 +58,7 @@ case "${command_name}" in
     printf '[{"deploymentId":"%s","versionNumber":4}]\n' "${TEST_LISTED_DEPLOYMENT_ID}"
     ;;
   pull)
-    printf '%s\n' '{"timeZone":"Europe/Rome","executionApi":{"access":"MYSELF"}}' >appsscript.json
+    printf '%s\n' '{"timeZone":"Europe/Rome"}' >appsscript.json
     ;;
   push)
     jq -e '.timeZone == "Europe/Rome" and .executionApi.access == "MYSELF"' appsscript.json >/dev/null

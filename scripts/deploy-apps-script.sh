@@ -56,16 +56,21 @@ jq -e --arg id "${APPS_SCRIPT_DEPLOYMENT_ID}" --arg script_id "${script_id}" '
   )
 ' <<<"${deployment}" >/dev/null
 entry_points="$(jq -ce '.entryPoints' <<<"${deployment}")"
+execution_api="$(jq -ce '
+  [.entryPoints[] |
+    select(.entryPointType == "EXECUTION_API") |
+    .executionApi.entryPointConfig
+  ] | first
+' <<<"${deployment}")"
 
 snapshot_dir="${RUNNER_TEMP}/apps-script-snapshot"
 mkdir -m 700 "${snapshot_dir}"
 cp .clasp.json "${snapshot_dir}/.clasp.json"
 (cd "${snapshot_dir}" && clasp -A "${auth_file}" pull)
 time_zone="$(jq -er '.timeZone | select(type == "string" and length > 0)' "${snapshot_dir}/appsscript.json")"
-execution_api="$(jq -c '.executionApi // null' "${snapshot_dir}/appsscript.json")"
 jq --arg time_zone "${time_zone}" --argjson execution_api "${execution_api}" '
   .timeZone = $time_zone |
-  if $execution_api == null then del(.executionApi) else .executionApi = $execution_api end
+  .executionApi = $execution_api
 ' appsscript.json >"${RUNNER_TEMP}/appsscript.json"
 mv "${RUNNER_TEMP}/appsscript.json" appsscript.json
 
