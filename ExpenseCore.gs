@@ -48,7 +48,8 @@ function isValidJsonRebuildState_(state) {
 function isValidJsonRebuildSource_(source) {
   const archiveType = String(source && source.archiveType || '');
   return Boolean(source && String(source.fileId || '') && String(source.folderId || '') &&
-    String(source.name || '') && (archiveType === 'file' || archiveType === 'folder') &&
+    String(source.name || '') && String(source.contentHash || '') &&
+    (archiveType === 'file' || archiveType === 'folder') &&
     String(source.archiveContainerId || '') && Number.isInteger(source.archiveDepth) &&
     source.archiveDepth >= 0);
 }
@@ -66,6 +67,14 @@ function advanceJsonRebuildState_(state) {
 
 function isJsonRebuildReadyToCommit_(state) {
   return isValidJsonRebuildState_(state) && state.nextIndex === state.sources.length;
+}
+
+function isValidJsonRebuildStage_(staged, source) {
+  const sourceFile = staged && staged.sourceFile;
+  return Boolean(sourceFile && Array.isArray(staged.records) &&
+    String(sourceFile.id || '') === String(source.fileId || '') &&
+    String(sourceFile.name || '') === String(source.name || '') &&
+    String(sourceFile.contentHash || '') === String(source.contentHash || ''));
 }
 
 /**

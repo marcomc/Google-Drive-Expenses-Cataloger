@@ -67,7 +67,7 @@ Before adding the environment secrets, copy each value into Bitwarden without
 printing it to a terminal:
 
 ```sh
-pbcopy < "${HOME}/.clasprc.json"
+pbcopy < .installer/clasp-owner-auth.json
 pbcopy < .clasp.json
 jq -r '.deploymentId' .installer/state.json | pbcopy
 ```

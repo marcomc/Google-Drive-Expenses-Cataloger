@@ -26,12 +26,27 @@ folder is left in place. The year uses the earliest transaction date in the
 import. Cross-year exports therefore remain intact as one source while the
 ledger itself partitions values by their actual dates.
 
+Immediately before archival, the runtime rechecks eligible JSON file identities
+and content hashes. If the source changes or gains another eligible JSON, the
+ledger decisions remain traceable but the source stays in intake for a safe
+retry. Root JSON attachment lookup is limited to direct-root sibling files.
+
+Before Gemini classification, the runtime saves the source inventory and
+content hashes, validates that snapshot, and stages each completed normalized
+JSON result in Drive. A retry reuses completed stages instead of spending AI
+quota again. Stage digests use separate bounded Script Properties, so one large
+export cannot overflow the main source-state value. Successful archival removes
+the source state. Transient stages and digests are removed immediately before
+the source move, after ledger and audit verification, so cleanup failure leaves
+the source discoverable for retry.
+
 ## Review email
 
 The runtime imports a best-supported classification when a confidence is below
 the threshold or it conflicts with historical treatment. The email identifies
-the date range, source folder and JSON links, entry coordinates and IDs, all transaction
-facts, proposed classification, confidence, rationale, and related conflict.
+the date range, source folder and JSON links, entry coordinates and IDs, all
+transaction facts, proposed classification, confidence, rationale, and related
+conflict.
 
 ## Duplicate behavior
 
@@ -43,9 +58,9 @@ every imported record.
 
 ## Source reconciliation
 
-Every processed JSON document receives a durable reconciliation row. It records its
-Drive file ID, content SHA-256, source-row count, totals per currency, and the
-decision for each source row: `imported`, `duplicate`, or `opening_balance`.
+Every processed JSON document receives a durable reconciliation row. It records
+its Drive file ID, content SHA-256, source-row count, totals per currency, and
+the decision for each source row: `imported`, `duplicate`, or `opening_balance`.
 The import can archive only when the source count and monetary totals are fully
 accounted for. A duplicate remains part of the reconciliation even though no
 second ledger row is created.
@@ -71,6 +86,11 @@ it returns `REBUILT`. The ledger, audit, and reconciliation rows change only in
 that final Gemini-free commit, then the same source-unit archive rules apply.
 `resetTricountJsonRebuild` abandons a failed staging run without changing the
 canonical ledger.
+
+The rebuild records the discovered JSON inventory and content hashes before
+the first AI call. If a staged source changes or a source unit gains another
+eligible JSON, the final commit stops before replacing the ledger; reset and
+restart the rebuild from the current Drive contents.
 
 ## Archive name migration
 
@@ -127,7 +147,7 @@ remain ignored while new imports use `Importazioni/YYYY`.
 ## Recovery
 
 If a run fails before archiving, correct the configuration or source data and
-run the controlled folder function again. If it fails after a ledger write,
-consult `Importazioni` and the source links before retrying. Do not delete rows
-or source folders blindly: the audit exists to make an intentional correction
-safe.
+run the controlled import again. If it fails after a ledger write, consult the
+configured archive (`Imported` or `Importazioni`) and the source links before
+retrying. Do not delete rows or source folders blindly: the audit exists to
+make an intentional correction safe.

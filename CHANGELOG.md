@@ -19,6 +19,10 @@ and the project uses [Semantic Versioning](https://semver.org/).
   archival behavior.
 - Controlled-import CLI documentation using the installation-specific owner
   authorization required by Apps Script execution.
+- A manual full-intake entrypoint for controlled root-file and nested-source
+  tests without enabling scheduled processing.
+- Resumable normal-intake staging that reuses completed Gemini classification
+  batches after a timeout or later processing failure.
 
 ### Changed
 
@@ -32,6 +36,23 @@ and the project uses [Semantic Versioning](https://semver.org/).
   archive data.
 - The installed Drive `AGENTS.md` policy template now documents the JSON intake
   and source-unit archival contract.
+
+### Fixed
+
+- Revalidate the discovered JSON inventory and content hashes before rebuild
+  commit and source archival, preventing changed or newly added JSON files from
+  being moved without durable import decisions.
+- Validate normal-intake snapshots before the first Gemini call and before
+  ledger or archive mutation, then remove transient processing state after a
+  successful archive.
+- Authenticate Drive staging batches with independently bounded digest
+  properties, rejecting modified or duplicate stage files, and cleaning them
+  while the verified source remains discoverable for retry.
+- Restrict root-file attachment evidence lookup to direct-root siblings instead
+  of recursively searching unrelated intake, fixture, receipt, and archive
+  folders.
+- Align installation, deployment, recovery, configuration, and release backlog
+  documentation with the implemented authorization and intake contracts.
 
 ## [0.1.1] - 2026-07-18
 

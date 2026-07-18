@@ -31,14 +31,10 @@ release. Completed work belongs in [CHANGELOG.md](CHANGELOG.md).
 
 - [ ] **Evaluate event-driven Drive intake**
   - Assess Google Workspace Events API for direct-child Drive changes using the
-    existing billing-enabled `drive-expenses-cataloger` Cloud project.
+    configured billing-enabled cataloger Cloud project.
   - Prototype a secure Pub/Sub receiver and compare Cloud Run versus an Apps
     Script-compatible endpoint for event delivery.
   - Retain durable, idempotent intake state and the daily polling fallback so
     missed or duplicate events cannot cause missed or repeated imports.
   - Compare the operating complexity and free-tier cost with the current
     15-minute root polling before replacing it.
-
-- [ ] **Publish the first release after review**
-  - Review the full diff and repository-publication privacy boundary.
-  - Commit, tag, and publish only after explicit approval.

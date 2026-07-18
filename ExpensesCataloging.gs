@@ -20,6 +20,13 @@ function disableExpenseCataloging() {
   return { status: 'DISABLED' };
 }
 
+/** Run one complete intake scan without enabling scheduled processing. */
+function processExpenseIntake() {
+  return withExpenseLock_('manual-scan', function () {
+    return runExpenseCataloging_('manual');
+  });
+}
+
 /**
  * Resumable one-source-at-a-time migration from complete Tricount JSON exports.
  * Normalized source snapshots are durable Drive staging files. The canonical
@@ -64,10 +71,12 @@ function getOrCreateJsonRebuildState_(root, config) {
     throw new Error('JSON rebuild state is invalid. Run resetTricountJsonRebuild first.');
   }
   const sources = listHistoricalTricountJsonSources_(root, config).map(function (source) {
+    const content = source.file.getBlob().getDataAsString('UTF-8');
     return {
       fileId: source.file.getId(),
       folderId: source.folder.getId(),
       name: source.file.getName(),
+      contentHash: sha256_(content),
       archiveType: source.archiveType,
       archiveContainerId: source.archiveContainerId,
       archiveDepth: source.archiveDepth
@@ -102,17 +111,26 @@ function stageJsonRebuildSource_(state, source, policy, config) {
   const file = DriveApp.getFileById(source.fileId);
   const folder = DriveApp.getFolderById(source.folderId);
   const content = file.getBlob().getDataAsString('UTF-8');
+  assertRebuildSourceFileSnapshot_(source, file, content);
   let document;
   try { document = JSON.parse(content); } catch (error) {
     throw new Error('Invalid Tricount JSON source ' + file.getName() + ': ' + error.message);
   }
   const sourceFile = { id: file.getId(), name: file.getName(), url: file.getUrl(), contentHash: sha256_(content) };
   const factualRecords = parseTricountJsonExport_(document, sourceFile, { id: folder.getId(), name: folder.getName() });
-  const records = normalizeExpenseJsonWithAi_(factualRecords, file, folder, policy, config);
+  const records = normalizeExpenseJsonWithAi_(factualRecords, file, folder, policy, config,
+    source.archiveType !== 'file');
   stagingFolder.createFile(stageName, JSON.stringify({ sourceFile: sourceFile, records: records }), MimeType.JSON);
 }
 
 function commitJsonRebuild_(root, state) {
+    const config = getAutomationConfig_();
+    assertJsonRebuildDiscoveryUnchanged_(root, config, state.sources, state.commitStarted === true);
+    if (state.commitStarted !== true) {
+      state.commitStarted = true;
+      saveJsonRebuildState_(state);
+    }
+    assertJsonRebuildSourcesUnchanged_(config, state.sources);
     const stagingFolder = DriveApp.getFolderById(state.stagingFolderId);
     const sourceResults = [];
     const records = [];
@@ -120,6 +138,9 @@ function commitJsonRebuild_(root, state) {
       const matches = stagingFolder.getFilesByName(getJsonRebuildStageFileName_(state, source));
       if (!matches.hasNext()) { throw new Error('Missing staged source ' + source.name + '.'); }
       const staged = JSON.parse(matches.next().getBlob().getDataAsString('UTF-8'));
+      if (!isValidJsonRebuildStage_(staged, source)) {
+        throw new Error('Staged JSON rebuild data does not match source ' + source.name + '. Reset and restart.');
+      }
       (staged.records || []).forEach(function (record) { records.push(record); });
       sourceResults.push({ file: { getName: function () { return staged.sourceFile.name; } },
         source: source, sourceFile: staged.sourceFile, status: 'READY', records: staged.records || [] });
@@ -152,7 +173,8 @@ function commitJsonRebuild_(root, state) {
     writeSourceReconciliations_(layout.sourceReconciliations,
       { name: 'Tricount JSON rebuild', url: root.getUrl() }, reconciliations);
     verifySourceReconciliations_(reconciliations);
-    archiveRebuiltSources_(root, sourceResults);
+    assertJsonRebuildDiscoveryUnchanged_(root, config, state.sources, true);
+    archiveRebuiltSources_(root, sourceResults, config);
     saveSourceFolderState_({});
     refreshBalanceViews_(spreadsheet);
     const localization = getLocalization_();
@@ -175,6 +197,9 @@ function processExpenseFolder(folderId) {
       throw new Error('The requested folder is not a direct child of the intake root.');
     }
     const config = getAutomationConfig_();
+    if (isExcludedRootFolderName_(folder.getName(), config)) {
+      throw new Error('The requested folder is excluded from expense intake.');
+    }
     const files = listDirectJsonFiles_(folder).filter(function (file) {
       return isEligibleTricountJsonFileName_(file.getName(), config);
     });
@@ -240,25 +265,59 @@ function processExpenseSource_(source, root, policy, triggerSource) {
   const sourceState = loadSourceFolderState_();
   const sourceSignature = buildSourceFolderSignature_(jsonFiles);
   const knownSource = sourceState[source.stateKey];
-  if (knownSource && knownSource.signature === sourceSignature) {
+  if (knownSource && knownSource.signature === sourceSignature && knownSource.status !== 'processing') {
+    const unchangedSnapshots = jsonFiles.map(getDriveJsonFileSnapshot_);
+    assertIntakeSourceUnchanged_(source, root, config, unchangedSnapshots);
+    cleanupIntakeStages_(root, source, knownSource);
+    assertIntakeSourceUnchanged_(source, root, config, unchangedSnapshots);
     archiveIntakeSource_(source, root, [{ date: knownSource.archiveYear + '-01-01' }]);
+    delete sourceState[source.stateKey];
+    saveSourceFolderState_(sourceState);
     return buildIntakeSourceResult_(source, 'UNCHANGED', [], [], []);
   }
+  const discoveredJsonFiles = jsonFiles.map(function (file) {
+    const content = file.getBlob().getDataAsString('UTF-8');
+    return {
+      file: file,
+      content: content,
+      sourceFile: {
+        id: file.getId(), name: file.getName(), url: file.getUrl(), contentHash: sha256_(content)
+      }
+    };
+  });
+  const sourceFiles = discoveredJsonFiles.map(function (entry) {
+      return {
+        id: entry.sourceFile.id, name: entry.sourceFile.name,
+        contentHash: entry.sourceFile.contentHash
+      };
+    });
+  const resumesExistingStage = knownSource && knownSource.status === 'processing' &&
+    knownSource.signature === sourceSignature &&
+    JSON.stringify(knownSource.sourceFiles || []) === JSON.stringify(sourceFiles);
+  if (knownSource && knownSource.status === 'processing' && !resumesExistingStage) {
+    cleanupIntakeStages_(root, source, knownSource);
+  }
+  sourceState[source.stateKey] = {
+    status: 'processing', signature: sourceSignature, sourceFiles: sourceFiles,
+    startedAt: resumesExistingStage ? knownSource.startedAt : new Date().toISOString()
+  };
+  saveSourceFolderState_(sourceState);
+  const sourceSnapshots = discoveredJsonFiles.map(function (entry) { return entry.sourceFile; });
+  assertIntakeSourceUnchanged_(source, root, config, sourceSnapshots);
   const spreadsheet = SpreadsheetApp.openById(getSpreadsheetId_());
   const layout = getExpenseSheetLayout_(spreadsheet);
   const records = [];
   const jsonResults = [];
-  jsonFiles.forEach(function (file) {
-    const content = file.getBlob().getDataAsString('UTF-8');
+  discoveredJsonFiles.forEach(function (discovered) {
+    const file = discovered.file;
+    const content = discovered.content;
     let parsed;
     try {
       parsed = JSON.parse(content);
     } catch (error) {
       throw new Error('Invalid Tricount JSON source ' + file.getName() + ': ' + error.message);
     }
-    const sourceFile = {
-      id: file.getId(), name: file.getName(), url: file.getUrl(), contentHash: sha256_(content)
-    };
+    const sourceFile = discovered.sourceFile;
     const factualRecords = parseTricountJsonExport_(parsed, sourceFile, {
       id: folder.getId(), name: folder.getName()
     });
@@ -266,7 +325,10 @@ function processExpenseSource_(source, root, policy, triggerSource) {
       jsonResults.push({ file: file, sourceFile: sourceFile, status: 'EMPTY', records: [] });
       return;
     }
-    const normalized = normalizeExpenseJsonWithAi_(factualRecords, file, folder, policy, config);
+    const stageController = createIntakeStageController_(root, source, sourceState[source.stateKey],
+      discovered.sourceFile);
+    const normalized = normalizeExpenseJsonWithAi_(factualRecords, file, folder, policy, config,
+      source.archiveType !== 'file', stageController);
     normalized.forEach(function (record) {
       records.push(record);
     });
@@ -288,6 +350,7 @@ function processExpenseSource_(source, root, policy, triggerSource) {
     openingBalanceMarkers.push(record);
     return check;
   });
+  assertIntakeSourceUnchanged_(source, root, config, sourceSnapshots);
   const imported = writeLedgerRows_(layout, importable, triggerSource);
   verifyLedgerWrite_(layout.transactions, imported);
   sortLedgerTransactions_(layout);
@@ -303,17 +366,127 @@ function processExpenseSource_(source, root, policy, triggerSource) {
   });
   const result = buildIntakeSourceResult_(source, 'IMPORTED', imported, partition.duplicates, reviews, records,
     openingBalances);
+  assertIntakeSourceUnchanged_(source, root, config, sourceSnapshots);
+  const processingState = sourceState[source.stateKey];
   sourceState[source.stateKey] = {
+    status: 'processed',
     signature: sourceSignature,
+    sourceFiles: processingState.sourceFiles,
     archiveYear: deriveArchiveYear_(records),
     processedAt: new Date().toISOString()
   };
   saveSourceFolderState_(sourceState);
   if (jsonResults.every(function (entry) { return entry.status === 'READY' || entry.status === 'EMPTY'; })) {
+    cleanupIntakeStages_(root, source, processingState);
+    assertIntakeSourceUnchanged_(source, root, config, sourceSnapshots);
     archiveIntakeSource_(source, root, records);
     result.archived = true;
+    delete sourceState[source.stateKey];
+    saveSourceFolderState_(sourceState);
   }
   return result;
+}
+
+function getOrCreateIntakeStagingFolder_(root) {
+  const name = '.Cataloger-intake-staging';
+  const matches = root.getFoldersByName(name);
+  return matches.hasNext() ? matches.next() : root.createFolder(name);
+}
+
+function getIntakeStageFileName_(source, state, sourceFile, batchIndex) {
+  return getIntakeStagePrefix_(source, state) + sourceFile.id +
+    '-batch-' + batchIndex + '.json';
+}
+
+function getIntakeStagePrefix_(source, state) {
+  return sha256_(source.stateKey + ':' + state.signature) + '-';
+}
+
+function getIntakeStageDigestPropertyKey_(stageName) {
+  return 'EXPENSE_INTAKE_STAGE_DIGEST_' + stageName;
+}
+
+function createIntakeStageController_(root, source, state, sourceFile) {
+  const stagingFolder = getOrCreateIntakeStagingFolder_(root);
+  return {
+    load: function (batchIndex, sourceRecords) {
+      const stageName = getIntakeStageFileName_(source, state, sourceFile, batchIndex);
+      const digestKey = getIntakeStageDigestPropertyKey_(stageName);
+      const expectedDigest = getScriptProperty_(digestKey);
+      if (!expectedDigest) {
+        return null;
+      }
+      const matches = stagingFolder.getFilesByName(stageName);
+      if (!matches.hasNext()) {
+        PropertiesService.getScriptProperties().deleteProperty(digestKey);
+        return null;
+      }
+      const stageFile = matches.next();
+      if (matches.hasNext()) {
+        throw new Error('Multiple staged intake files exist for source ' + sourceFile.name + '.');
+      }
+      const stageText = stageFile.getBlob().getDataAsString('UTF-8');
+      if (sha256_(stageText) !== expectedDigest) {
+        throw new Error('Staged intake data was modified for source ' + sourceFile.name + '.');
+      }
+      const staged = JSON.parse(stageText);
+      if (!isValidIntakeBatchStage_(staged, sourceFile, batchIndex, sourceRecords)) {
+        throw new Error('Staged intake data does not match source ' + sourceFile.name + '.');
+      }
+      return staged.records;
+    },
+    save: function (batchIndex, sourceRecords, records) {
+      const stageName = getIntakeStageFileName_(source, state, sourceFile, batchIndex);
+      const payload = JSON.stringify({
+        sourceFile: sourceFile,
+        batchIndex: batchIndex,
+        sourceTransactionIds: sourceRecords.map(function (record) { return record.sourceTransactionId; }),
+        records: records
+      });
+      const stale = stagingFolder.getFilesByName(stageName);
+      while (stale.hasNext()) {
+        stale.next().setTrashed(true);
+      }
+      stagingFolder.createFile(stageName, payload, MimeType.JSON);
+      PropertiesService.getScriptProperties().setProperty(
+        getIntakeStageDigestPropertyKey_(stageName), sha256_(payload));
+    }
+  };
+}
+
+function isValidIntakeBatchStage_(staged, sourceFile, batchIndex, sourceRecords) {
+  return Boolean(staged && Array.isArray(staged.records) && staged.sourceFile &&
+    staged.records.length === sourceRecords.length && Number(staged.batchIndex) === Number(batchIndex) &&
+    String(staged.sourceFile.id || '') === String(sourceFile.id || '') &&
+    String(staged.sourceFile.name || '') === String(sourceFile.name || '') &&
+    String(staged.sourceFile.contentHash || '') === String(sourceFile.contentHash || '') &&
+    JSON.stringify(staged.sourceTransactionIds || []) === JSON.stringify(sourceRecords.map(function (record) {
+      return record.sourceTransactionId;
+    })));
+}
+
+function cleanupIntakeStages_(root, source, state) {
+  if (!state || !state.signature) {
+    return;
+  }
+  const stagingFolders = root.getFoldersByName('.Cataloger-intake-staging');
+  const prefix = getIntakeStagePrefix_(source, state);
+  const properties = PropertiesService.getScriptProperties();
+  if (stagingFolders.hasNext()) {
+    const files = stagingFolders.next().getFiles();
+    while (files.hasNext()) {
+      const stage = files.next();
+      if (stage.getName().indexOf(prefix) === 0) {
+        stage.setTrashed(true);
+      }
+    }
+  }
+  const propertyPrefix = getIntakeStageDigestPropertyKey_(prefix);
+  Object.keys(properties.getProperties()).forEach(function (key) {
+    if (key.indexOf(propertyPrefix) === 0) {
+      properties.deleteProperty(key);
+    }
+  });
 }
 
 function listDirectJsonFiles_(folder) {
@@ -402,8 +575,9 @@ function listHistoricalTricountJsonSources_(root, config) {
   });
 }
 
-function archiveRebuiltSources_(root, sourceResults) {
+function archiveRebuiltSources_(root, sourceResults, config) {
   const grouped = {};
+  const expectedFileIds = {};
   sourceResults.forEach(function (result) {
     const source = result.source || {};
     const archiveType = source.archiveType;
@@ -418,9 +592,14 @@ function archiveRebuiltSources_(root, sourceResults) {
         archiveType: archiveType,
         containerId: containerId,
         archiveDepth: source.archiveDepth,
+        files: [],
         records: []
       };
     }
+    grouped[key].files.push({
+      id: source.fileId, name: source.name, contentHash: source.contentHash
+    });
+    expectedFileIds[String(source.fileId)] = true;
     grouped[key].records.push.apply(grouped[key].records, result.records || []);
   });
   Object.keys(grouped).map(function (key) {
@@ -429,12 +608,227 @@ function archiveRebuiltSources_(root, sourceResults) {
     return right.archiveDepth - left.archiveDepth ||
       left.archiveType.localeCompare(right.archiveType) || left.containerId.localeCompare(right.containerId);
   }).forEach(function (source) {
+    assertRebuildArchiveUnitUnchanged_(source, config, expectedFileIds);
     if (source.archiveType === 'file') {
       archiveSourceFile_(DriveApp.getFileById(source.containerId), root, source.records);
       return;
     }
     archiveSourceFolder_(DriveApp.getFolderById(source.containerId), root, source.records);
   });
+}
+
+function assertRebuildSourceFileSnapshot_(source, file, content) {
+  if (String(file.getName()) !== String(source.name) ||
+    sha256_(content) !== String(source.contentHash)) {
+    throw new Error('JSON rebuild source changed after discovery: ' + source.name + '. Reset and restart.');
+  }
+}
+
+function getDriveJsonFileSnapshot_(file) {
+  const content = file.getBlob().getDataAsString('UTF-8');
+  return { id: file.getId(), name: file.getName(), contentHash: sha256_(content) };
+}
+
+function normalizeJsonFileSnapshots_(snapshots) {
+  return (snapshots || []).map(function (snapshot) {
+    return [String(snapshot.id), String(snapshot.name), String(snapshot.contentHash)].join('|');
+  }).sort();
+}
+
+function assertSameJsonFileSnapshots_(actual, expected, message) {
+  if (JSON.stringify(normalizeJsonFileSnapshots_(actual)) !==
+    JSON.stringify(normalizeJsonFileSnapshots_(expected))) {
+    throw new Error(message);
+  }
+}
+
+function listEligibleDirectJsonSnapshots_(folder, config) {
+  return listDirectJsonFiles_(folder).filter(function (file) {
+    return isEligibleTricountJsonFileName_(file.getName(), config);
+  }).map(getDriveJsonFileSnapshot_);
+}
+
+function listEligibleJsonFilesRecursively_(folder, config) {
+  const files = listDirectJsonFiles_(folder).filter(function (file) {
+    return isEligibleTricountJsonFileName_(file.getName(), config);
+  });
+  const children = folder.getFolders();
+  while (children.hasNext()) {
+    files.push.apply(files, listEligibleJsonFilesRecursively_(children.next(), config));
+  }
+  return files;
+}
+
+function assertNoUnknownEligibleDescendants_(folder, config, expectedFileIds, message) {
+  const unknown = listEligibleJsonFilesRecursively_(folder, config).filter(function (file) {
+    return !expectedFileIds[String(file.getId())];
+  });
+  if (unknown.length > 0) {
+    throw new Error(message + ': ' + unknown.map(function (file) { return file.getName(); }).join(', '));
+  }
+}
+
+function assertIntakeSourceUnchanged_(source, root, config, expectedFiles) {
+  const expectedFileIds = {};
+  expectedFiles.forEach(function (file) { expectedFileIds[String(file.id)] = true; });
+  if (source.archiveType === 'file') {
+    const current = listDirectJsonFiles_(root).filter(function (file) {
+      return String(file.getId()) === String(source.files[0].getId());
+    }).map(getDriveJsonFileSnapshot_);
+    assertSameJsonFileSnapshots_(current, expectedFiles,
+      'The root JSON changed during import; it was not archived.');
+    return;
+  }
+  if (!isFolderWithinRoot_(source.container, root)) {
+    throw new Error('The source folder moved outside the intake root during import; it was not archived.');
+  }
+  assertSameJsonFileSnapshots_(listEligibleDirectJsonSnapshots_(source.container, config), expectedFiles,
+    'The source folder changed during import; it was not archived.');
+  assertNoUnknownEligibleDescendants_(source.container, config, expectedFileIds,
+    'The source folder gained an unprocessed nested JSON and was not archived');
+}
+
+function isFolderWithinRoot_(folder, root) {
+  const pending = [folder];
+  const visited = {};
+  while (pending.length > 0) {
+    const current = pending.shift();
+    const currentId = String(current.getId());
+    if (currentId === String(root.getId())) {
+      return true;
+    }
+    if (visited[currentId]) {
+      continue;
+    }
+    visited[currentId] = true;
+    const parents = current.getParents();
+    while (parents.hasNext()) {
+      pending.push(parents.next());
+    }
+  }
+  return false;
+}
+
+function buildCurrentRebuildSourceSnapshots_(sources) {
+  return (sources || []).map(function (source) {
+    const file = DriveApp.getFileById(source.fileId);
+    const snapshot = getDriveJsonFileSnapshot_(file);
+    if (snapshot.name !== String(source.name) || snapshot.contentHash !== String(source.contentHash)) {
+      throw new Error('JSON rebuild source changed after staging: ' + source.name + '. Reset and restart.');
+    }
+    return snapshot;
+  });
+}
+
+function getJsonRebuildSourceDiscoveryKey_(source) {
+  return [source.fileId, source.folderId, source.name, source.contentHash,
+    source.archiveType, source.archiveContainerId, source.archiveDepth].map(String).join('|');
+}
+
+function getCurrentJsonRebuildSourceDescriptor_(source) {
+  const snapshot = getDriveJsonFileSnapshot_(source.file);
+  return {
+    fileId: snapshot.id, folderId: source.folder.getId(), name: snapshot.name,
+    contentHash: snapshot.contentHash, archiveType: source.archiveType,
+    archiveContainerId: source.archiveContainerId, archiveDepth: source.archiveDepth
+  };
+}
+
+function getExistingArchiveFolder_(root, config) {
+  const folders = root.getFoldersByName(getArchiveFolderName_(config));
+  return folders.hasNext() ? folders.next() : null;
+}
+
+function isDriveItemWithinFolder_(item, ancestor) {
+  const pending = [item];
+  const visited = {};
+  while (pending.length > 0) {
+    const current = pending.shift();
+    const currentId = String(current.getId());
+    if (currentId === String(ancestor.getId())) {
+      return true;
+    }
+    if (visited[currentId]) {
+      continue;
+    }
+    visited[currentId] = true;
+    const parents = current.getParents();
+    while (parents.hasNext()) {
+      pending.push(parents.next());
+    }
+  }
+  return false;
+}
+
+function assertJsonRebuildDiscoveryUnchanged_(root, config, expectedSources, allowArchived) {
+  const expectedByFileId = {};
+  expectedSources.forEach(function (source) {
+    expectedByFileId[String(source.fileId)] = source;
+  });
+  const currentFileIds = {};
+  listHistoricalTricountJsonSources_(root, config).forEach(function (source) {
+    const current = getCurrentJsonRebuildSourceDescriptor_(source);
+    const expected = expectedByFileId[String(current.fileId)];
+    if (!expected || getJsonRebuildSourceDiscoveryKey_(current) !==
+      getJsonRebuildSourceDiscoveryKey_(expected)) {
+      throw new Error('Eligible JSON sources changed during rebuild staging. Reset and restart before commit.');
+    }
+    currentFileIds[String(current.fileId)] = true;
+  });
+  const missing = expectedSources.filter(function (source) {
+    return !currentFileIds[String(source.fileId)];
+  });
+  if (missing.length === 0) {
+    return;
+  }
+  const archive = allowArchived ? getExistingArchiveFolder_(root, config) : null;
+  const invalid = missing.filter(function (source) {
+    if (!archive) {
+      return true;
+    }
+    const item = source.archiveType === 'file' ? DriveApp.getFileById(source.fileId) :
+      DriveApp.getFolderById(source.archiveContainerId);
+    return !isDriveItemWithinFolder_(item, archive);
+  });
+  if (invalid.length > 0) {
+    throw new Error('JSON rebuild sources moved outside intake or archive. Reset and restart before commit.');
+  }
+}
+
+function assertJsonRebuildSourcesUnchanged_(config, sources) {
+  buildCurrentRebuildSourceSnapshots_(sources);
+  const grouped = {};
+  const expectedFileIds = {};
+  sources.forEach(function (source) {
+    expectedFileIds[String(source.fileId)] = true;
+    if (source.archiveType !== 'folder') {
+      return;
+    }
+    const key = String(source.archiveContainerId);
+    grouped[key] = grouped[key] || [];
+    grouped[key].push({ id: source.fileId, name: source.name, contentHash: source.contentHash });
+  });
+  Object.keys(grouped).forEach(function (folderId) {
+    const folder = DriveApp.getFolderById(folderId);
+    assertSameJsonFileSnapshots_(listEligibleDirectJsonSnapshots_(folder, config), grouped[folderId],
+      'A JSON rebuild source folder changed after staging. Reset and restart.');
+    assertNoUnknownEligibleDescendants_(folder, config, expectedFileIds,
+      'A JSON rebuild source folder gained an unprocessed nested JSON');
+  });
+}
+
+function assertRebuildArchiveUnitUnchanged_(source, config, expectedFileIds) {
+  if (source.archiveType === 'file') {
+    const file = DriveApp.getFileById(source.containerId);
+    assertSameJsonFileSnapshots_([getDriveJsonFileSnapshot_(file)], source.files,
+      'A root JSON changed before rebuild archival.');
+    return;
+  }
+  const folder = DriveApp.getFolderById(source.containerId);
+  assertSameJsonFileSnapshots_(listEligibleDirectJsonSnapshots_(folder, config), source.files,
+    'A JSON rebuild source folder changed before archival.');
+  assertNoUnknownEligibleDescendants_(folder, config, expectedFileIds,
+    'A JSON rebuild source folder gained an unprocessed nested JSON before archival');
 }
 
 function buildSourceFolderSignature_(files) {
@@ -460,7 +854,8 @@ function loadDriveAgentsPolicy_(root) {
   return text;
 }
 
-function normalizeExpenseJsonWithAi_(records, file, folder, policy, config) {
+function normalizeExpenseJsonWithAi_(records, file, folder, policy, config, recursiveAttachmentSearch,
+  stageController) {
   const factualTransfers = records.filter(function (record) {
     return record.transactionType !== 'expense';
   }).map(function (record) {
@@ -477,16 +872,29 @@ function normalizeExpenseJsonWithAi_(records, file, folder, policy, config) {
   const batchSize = CONFIG.TRICOUNT_JSON_NORMALIZATION_BATCH_SIZE;
   for (let start = 0; start < factualExpenses.length; start += batchSize) {
     const batch = factualExpenses.slice(start, start + batchSize);
+    const batchIndex = Math.floor(start / batchSize);
+    const staged = stageController ? stageController.load(batchIndex, batch) : null;
+    if (staged) {
+      staged.forEach(function (record) { normalized.push(record); });
+      continue;
+    }
     const response = callGeminiJson_(buildExpenseJsonNormalizationPrompt_(batch, file, folder, policy, config));
     if (!response || !Array.isArray(response.records) || response.records.length !== batch.length) {
       throw new Error('Gemini did not classify every JSON entry in batch ' +
-        (Math.floor(start / batchSize) + 1) + '.');
+        (batchIndex + 1) + '.');
     }
+    const normalizedBatch = [];
     response.records.forEach(function (classification, index) {
-      normalized.push(applyJsonExpenseClassification_(classification, batch[index], config));
+      normalizedBatch.push(applyJsonExpenseClassification_(classification, batch[index], config));
     });
+    const enrichedBatch = enrichAmbiguousRecordsWithAttachment_(normalizedBatch, folder, policy, config,
+      recursiveAttachmentSearch !== false);
+    if (stageController) {
+      stageController.save(batchIndex, batch, enrichedBatch);
+    }
+    enrichedBatch.forEach(function (record) { normalized.push(record); });
   }
-  return enrichAmbiguousRecordsWithAttachment_(factualTransfers.concat(normalized), folder, policy, config);
+  return factualTransfers.concat(normalized);
 }
 
 function buildExpenseJsonNormalizationPrompt_(records, file, folder, policy, config) {
@@ -636,12 +1044,12 @@ function isGeminiDailyQuotaExhausted_(body) {
   return /per.?day|daily/i.test(String(body || ''));
 }
 
-function enrichAmbiguousRecordsWithAttachment_(records, folder, policy, config) {
+function enrichAmbiguousRecordsWithAttachment_(records, folder, policy, config, recursiveAttachmentSearch) {
   return records.map(function (record) {
     if (Number(record.confidence) >= 0.8 && !record.conflict) {
       return record;
     }
-    const evidence = getAttachmentEvidence_(record, folder);
+    const evidence = getAttachmentEvidence_(record, folder, recursiveAttachmentSearch, config);
     if (!evidence) {
       return record;
     }
@@ -665,11 +1073,12 @@ function enrichAmbiguousRecordsWithAttachment_(records, folder, policy, config) 
   });
 }
 
-function getAttachmentEvidence_(sourceRow, folder) {
+function getAttachmentEvidence_(sourceRow, folder, recursiveAttachmentSearch, config) {
   const names = (sourceRow.attachmentFileNames || []).map(function (name) {
     return String(name).trim();
   }).filter(Boolean);
-  const localFile = findNamedFileRecursively_(folder, names);
+  const localFile = recursiveAttachmentSearch === false ? findNamedFile_(folder, names, false) :
+    findNamedFileWithinSourceUnit_(folder, names, config);
   if (localFile) {
     return blobAsImageEvidence_(localFile.getBlob());
   }
@@ -684,7 +1093,29 @@ function getAttachmentEvidence_(sourceRow, folder) {
   return blobAsImageEvidence_(response.getBlob());
 }
 
-function findNamedFileRecursively_(folder, names) {
+function findNamedFileWithinSourceUnit_(folder, names, config) {
+  const direct = findNamedFile_(folder, names, false);
+  if (direct) {
+    return direct;
+  }
+  const children = folder.getFolders();
+  while (children.hasNext()) {
+    const child = children.next();
+    const definesNestedSource = listDirectJsonFiles_(child).some(function (file) {
+      return isEligibleTricountJsonFileName_(file.getName(), config);
+    });
+    if (definesNestedSource) {
+      continue;
+    }
+    const found = findNamedFileWithinSourceUnit_(child, names, config);
+    if (found) {
+      return found;
+    }
+  }
+  return null;
+}
+
+function findNamedFile_(folder, names, recursive) {
   if (names.length === 0) {
     return null;
   }
@@ -695,11 +1126,13 @@ function findNamedFileRecursively_(folder, names) {
       return file;
     }
   }
-  const folders = folder.getFolders();
-  while (folders.hasNext()) {
-    const found = findNamedFileRecursively_(folders.next(), names);
-    if (found) {
-      return found;
+  if (recursive) {
+    const folders = folder.getFolders();
+    while (folders.hasNext()) {
+      const found = findNamedFile_(folders.next(), names, true);
+      if (found) {
+        return found;
+      }
     }
   }
   return null;
