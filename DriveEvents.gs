@@ -36,7 +36,7 @@ function removeAutomationTriggers() {
 
 function withAutomationTriggerLock_(callback) {
   const lock = LockService.getScriptLock();
-  if (!lock.tryLock(CONFIG.AUTOMATION_TRIGGER_LOCK_WAIT_MS)) {
+  if (!lock.tryLock(CONFIG.MAX_RUNTIME_MS)) {
     throw new Error('Could not acquire the automation trigger lock before the execution deadline.');
   }
   try {

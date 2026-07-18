@@ -155,7 +155,7 @@ assert.deepEqual(activeTriggers.map((trigger) => trigger.getHandlerFunction()).s
 ]);
 assert.equal(triggerLockAcquisitions, 1);
 assert.equal(triggerLockReleases, 1);
-assert.deepEqual(triggerLockTimeouts, [270000]);
+assert.deepEqual(triggerLockTimeouts, [280000]);
 
 triggerLockAvailable = false;
 assert.throws(() => context.installAutomationTriggers(), /Could not acquire the automation trigger lock/);
