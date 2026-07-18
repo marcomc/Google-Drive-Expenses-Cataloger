@@ -12,8 +12,21 @@ cat >"${FAKE_BIN}/git" <<'FAKE_GIT'
 #!/usr/bin/env bash
 set -euo pipefail
 case "$1" in
-  fetch) ;;
-  rev-parse) printf '%s\n' "${TEST_CURRENT_MAIN_SHA}" ;;
+  fetch)
+    test "$#" -eq 4
+    test "$2" = '--no-tags'
+    test "$3" = 'origin'
+    test "$4" = 'main'
+    ;;
+  rev-parse)
+    test "$#" -eq 2
+    test "$2" = 'FETCH_HEAD'
+    call_count="$(cat "${TEST_GIT_CALL_COUNT_FILE}")"
+    IFS=',' read -r -a main_shas <<<"${TEST_MAIN_SHA_SEQUENCE}"
+    last_index="$((${#main_shas[@]} - 1))"
+    printf '%s\n' "${main_shas[${call_count}]:-${main_shas[${last_index}]}}"
+    printf '%s\n' "$((call_count + 1))" >"${TEST_GIT_CALL_COUNT_FILE}"
+    ;;
   *) exit 2 ;;
 esac
 FAKE_GIT
@@ -125,6 +138,7 @@ run_fixture() {
   local listed_deployment_id="$5"
   local has_api_entry_point="$6"
   local mutate_update="${7:-false}"
+  local main_sha_sequence="${8:-${current_sha},${current_sha},${current_sha}}"
 
   mkdir -p "${fixture_dir}/runner/clasp-auth"
   printf '%s\n' \
@@ -133,6 +147,7 @@ run_fixture() {
   printf '%s\n' '{"scriptId":"test-script","rootDir":"."}' >"${fixture_dir}/.clasp.json"
   printf '%s\n' '{"timeZone":"Etc/UTC"}' >"${fixture_dir}/appsscript.json"
   : >"${fixture_dir}/commands.log"
+  printf '%s\n' 0 >"${fixture_dir}/git-call-count"
   (
     cd "${fixture_dir}"
     PATH="${FAKE_BIN}:${PATH}" \
@@ -140,7 +155,8 @@ run_fixture() {
       RUNNER_TEMP="${fixture_dir}/runner" \
       APPS_SCRIPT_DEPLOYMENT_ID="${configured_deployment_id}" \
       DEPLOY_COMMIT_SHA="${deploy_sha}" \
-      TEST_CURRENT_MAIN_SHA="${current_sha}" \
+      TEST_GIT_CALL_COUNT_FILE="${fixture_dir}/git-call-count" \
+      TEST_MAIN_SHA_SEQUENCE="${main_sha_sequence}" \
       TEST_LISTED_DEPLOYMENT_ID="${listed_deployment_id}" \
       TEST_HAS_API_ENTRY_POINT="${has_api_entry_point}" \
       TEST_MUTATE_UPDATE="${mutate_update}" \
@@ -166,6 +182,19 @@ mkdir -p "${stale_dir}"
 run_fixture "${stale_dir}" "${STALE_SHA}" "${CURRENT_SHA}" \
   'deployment-1' 'deployment-1' true
 test ! -s "${stale_dir}/commands.log"
+
+stale_before_push_dir="${TEST_ROOT}/stale-before-push"
+mkdir -p "${stale_before_push_dir}"
+run_fixture "${stale_before_push_dir}" "${CURRENT_SHA}" "${CURRENT_SHA}" \
+  'deployment-1' 'deployment-1' true false "${CURRENT_SHA},${STALE_SHA}"
+test ! -s "${stale_before_push_dir}/commands.log"
+
+stale_before_update_dir="${TEST_ROOT}/stale-before-update"
+mkdir -p "${stale_before_update_dir}"
+run_fixture "${stale_before_update_dir}" "${CURRENT_SHA}" "${CURRENT_SHA}" \
+  'deployment-1' 'deployment-1' true false "${CURRENT_SHA},${CURRENT_SHA},${STALE_SHA}"
+actual_commands="$(tr '\n' ' ' <"${stale_before_update_dir}/commands.log")"
+test "${actual_commands}" = 'push version '
 
 missing_entry_point_dir="${TEST_ROOT}/missing-entry-point"
 mkdir -p "${missing_entry_point_dir}"

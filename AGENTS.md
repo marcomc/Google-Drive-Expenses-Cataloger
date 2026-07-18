@@ -29,3 +29,11 @@
 - Test new, exact re-import, and partially overlapping JSON inputs with copies.
 - Do not delete originals or move a candidate folder to `_Imported` before the
   ledger and audit write are verified.
+
+## CI delivery
+
+- Make targets invoked by GitHub Actions must use repository-tracked
+  configuration or an explicit runner-safe override; never depend on a local
+  home-directory path.
+- Recheck the deployed revision immediately before every operation that can
+  move the stable Apps Script deployment, not only before the source upload.

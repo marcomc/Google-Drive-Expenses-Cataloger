@@ -26,12 +26,17 @@ refresh_access_token() {
     jq -er '.access_token | select(type == "string" and length > 0)'
 }
 
-git fetch --no-tags origin main
-current_main_sha="$(git rev-parse FETCH_HEAD)"
-if [[ "${DEPLOY_COMMIT_SHA}" != "${current_main_sha}" ]]; then
-  printf '%s\n' 'A newer main revision exists; skipping stale deployment.'
-  exit 0
-fi
+ensure_current_main() {
+  local current_main_sha
+  git fetch --no-tags origin main
+  current_main_sha="$(git rev-parse FETCH_HEAD)"
+  if [[ "${DEPLOY_COMMIT_SHA}" != "${current_main_sha}" ]]; then
+    printf '%s\n' 'A newer main revision exists; skipping stale deployment.'
+    exit 0
+  fi
+}
+
+ensure_current_main
 
 deployments="$(clasp -A "${auth_file}" --json deployments)"
 jq -e --arg id "${APPS_SCRIPT_DEPLOYMENT_ID}" 'any(.[]; .deploymentId == $id and (.versionNumber | type == "number"))' \
@@ -61,6 +66,7 @@ jq --arg time_zone "${time_zone}" '.timeZone = $time_zone' appsscript.json >"${R
 mv "${RUNNER_TEMP}/appsscript.json" appsscript.json
 
 label="main-${DEPLOY_COMMIT_SHA::12}"
+ensure_current_main
 clasp -A "${auth_file}" push --force
 version="$(clasp -A "${auth_file}" --json version "${label}" | jq -er '.versionNumber | select(type == "number")')"
 deployment_config="$(jq -ce --argjson version "${version}" --arg description "${label}" '
@@ -69,6 +75,7 @@ deployment_config="$(jq -ce --argjson version "${version}" --arg description "${
   .description = $description
 ' <<<"${deployment}")"
 update_payload="$(jq -cn --argjson config "${deployment_config}" '{deploymentConfig: $config}')"
+ensure_current_main
 updated_deployment="$("${CURL_BIN}" --silent --show-error --fail --request PUT \
   --header "Authorization: Bearer ${access_token}" \
   --header 'Content-Type: application/json' \
