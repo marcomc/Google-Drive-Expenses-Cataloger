@@ -24,6 +24,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - Wait for an in-flight import's shared lock before trigger reconciliation, so
   deployment does not leave the prior trigger version in place during normal
   processing.
+- Invoke trigger reconciliation through the configured API-executable
+  deployment ID, rather than relying on an unspecified executable deployment.
 
 ## [0.2.0] - 2026-07-18
 

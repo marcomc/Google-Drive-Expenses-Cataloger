@@ -54,13 +54,13 @@ Create the GitHub environment `production`, restricted to `main`, and add:
 The stable deployment ID and its owner-only API-executable entry point are
 verified before source upload. The workflow uses the Apps Script Deployments API
 to update only the immutable version and description, retaining the entry-point
-access configuration. It then recreates only the two managed time triggers from
-that promoted deployment in non-development mode. Replacement triggers are
-created before old ones are removed, and the job fails if their handler counts
-are not exactly one each. If `main` advances after the stable update, the
-running job still completes this trigger repair; the newer revision's deploy
-will supersede it. Script Properties, Drive sources, spreadsheet data, and
-Gemini credentials are not changed by deployment.
+access configuration. It then calls the Apps Script Execution API against that
+exact deployment ID in non-development mode to recreate only the two managed
+time triggers. Replacement triggers are created before old ones are removed,
+and the job fails if their handler counts are not exactly one each. If `main`
+advances after the stable update, the running job still completes this trigger
+repair; the newer revision's deploy will supersede it. Script Properties, Drive
+sources, spreadsheet data, and Gemini credentials are not changed by deployment.
 
 Create or renew `CLASP_AUTH_JSON` with the owner account using
 `clasp login --use-project-scopes --include-clasp-scopes`. This retains the

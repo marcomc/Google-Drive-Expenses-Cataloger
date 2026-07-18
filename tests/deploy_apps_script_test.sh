@@ -45,7 +45,7 @@ for argument in "$@"; do
   fi
   case "${argument}" in
     -A) expect_auth_file=1 ;;
-    deployments | pull | push | version | run)
+    deployments | pull | push | version)
       command_name="${argument}"
       break
       ;;
@@ -67,11 +67,6 @@ case "${command_name}" in
   version)
     printf '%s\n' version >>"${TEST_COMMAND_LOG}"
     printf '%s\n' '{"versionNumber":5}'
-    ;;
-  run)
-    [[ "$*" == *' run --nondev installAutomationTriggers' ]]
-    printf '%s\n' triggers >>"${TEST_COMMAND_LOG}"
-    printf '%s\n' '{"response":{"triggerCounts":{"processDriveEventQueue":1,"runDailyExpenseCataloging":1},"missingTriggerHandlers":[],"duplicateTriggerHandlers":[]}}'
     ;;
   *) exit 2 ;;
 esac
@@ -107,7 +102,17 @@ if [[ "${url}" == 'https://oauth2.googleapis.com/token' ]]; then
   printf '%s\n' '{"access_token":"test-token"}'
   exit 0
 fi
-test "${url}" = "https://script.googleapis.com/v1/projects/test-script/deployments/${TEST_LISTED_DEPLOYMENT_ID}"
+deployment_url="https://script.googleapis.com/v1/projects/test-script/deployments/${APPS_SCRIPT_DEPLOYMENT_ID}"
+execution_url="https://script.googleapis.com/v1/scripts/${APPS_SCRIPT_DEPLOYMENT_ID}:run"
+if [[ "${url}" == "${execution_url}" ]]; then
+  test "${method}" = 'POST'
+  jq -e '.function == "installAutomationTriggers" and .parameters == [] and .devMode == false' \
+    <<<"${payload}" >/dev/null
+  printf '%s\n' triggers >>"${TEST_COMMAND_LOG}"
+  printf '%s\n' '{"done":true,"response":{"result":{"triggerCounts":{"processDriveEventQueue":1,"runDailyExpenseCataloging":1},"missingTriggerHandlers":[],"duplicateTriggerHandlers":[]}}}'
+  exit 0
+fi
+test "${url}" = "${deployment_url}"
 entry_points='[{"entryPointType":"EXECUTION_API","executionApi":{"entryPointConfig":{"access":"MYSELF"}}}]'
 if [[ "${TEST_HAS_API_ENTRY_POINT}" != 'true' ]]; then
   entry_points='[]'
