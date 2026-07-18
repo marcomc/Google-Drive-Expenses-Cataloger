@@ -23,7 +23,12 @@ after explicitly supplying a billing account for the cataloger Cloud project.
 
 Use the `Spese` folder as the intake root and grant the owner Editor access to
 its children and to the existing `HoStello - Spese` spreadsheet. The installer
-creates an `AGENTS.md` policy in the root only if one does not already exist.
+creates an `AGENTS.md` policy in the root. For an existing policy, it replaces
+only the current template between the managed-policy markers, preserving
+Drive-only instructions outside those markers, then writes and rereads the
+same file to verify the expected policy. The installer migrates recognized
+pre-marker template blocks once; keep local instructions outside the markers
+so later upgrades retain them.
 
 Create or select the cataloger Cloud project. Keep the Gemini key project
 separate and billing-disabled. A billing account is unnecessary unless you opt
@@ -65,9 +70,60 @@ reporting the installed spreadsheet URL.
 
 ## First controlled run
 
-Do not leave historical candidate folders in the root for the first run. Move
-them to `_Test-fixtures`; that folder is ignored by the runtime. Return one
-original folder to `Spese`, wait for the 15-minute trigger or run
-`processExpenseFolder(folderId)` manually, and validate the result before the
-next case. When the fixtures are isolated, run `enableExpenseCataloging()` once
-to enable scheduled intake.
+Do not leave historical candidate files or folders in the root for the first
+run. Move them to `_Test-fixtures`; that folder is ignored by the runtime.
+Return one original folder to `Spese` and copy its folder ID from the Drive URL.
+
+Use the installation-specific owner authorization for every `clasp run`. The
+default public clasp OAuth client does not carry the sensitive project scopes
+and Google may block its consent request. Inspect the configured properties:
+
+```sh
+npx --yes @google/clasp@3.3.0 \
+  -A .installer/clasp-owner-auth.json \
+  --json run getSetupStatus
+```
+
+Then validate the Drive policy, spreadsheet schema, and installed trigger:
+
+```sh
+npx --yes @google/clasp@3.3.0 \
+  -A .installer/clasp-owner-auth.json \
+  --json run validateCatalogerInstallation
+```
+
+Import the selected folder manually:
+
+```sh
+npx --yes @google/clasp@3.3.0 \
+  -A .installer/clasp-owner-auth.json \
+  --json run processExpenseFolder \
+  --params '["DRIVE_FOLDER_ID"]'
+```
+
+After validating the ledger, import audit, reconciliation, and archived source
+folder, repeat with the next fixture. `processExpenseFolder` accepts only a
+direct child of `Spese` with an eligible direct JSON file.
+
+To test a JSON placed directly in `Spese` or in a nested source folder, keep all
+other candidates in `_Test-fixtures`, place only the intended test source in
+intake, and run one complete manual scan without enabling scheduled processing:
+
+```sh
+npx --yes @google/clasp@3.3.0 \
+  -A .installer/clasp-owner-auth.json \
+  --json run processExpenseIntake
+```
+
+After the controlled cases pass and the remaining fixtures are isolated,
+enable scheduled intake once:
+
+```sh
+npx --yes @google/clasp@3.3.0 \
+  -A .installer/clasp-owner-auth.json \
+  --json run enableExpenseCataloging
+```
+
+The 15-minute trigger will then process future eligible source units. Do not
+run `clasp login` again for these commands; the dedicated authorization already
+contains the required Apps Script, Drive, Sheets, and mail scopes.

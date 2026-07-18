@@ -69,7 +69,29 @@ function getAutomationConfig_() {
     throw new Error('AUTOMATION_CONFIG_JSON is invalid JSON: ' + error.message);
   }
   validateAutomationConfig_(config);
-  return config;
+  return normalizeAutomationConfig_(config);
+}
+
+function normalizeAutomationConfig_(config) {
+  const normalized = JSON.parse(JSON.stringify(config));
+  normalized.archive_folder_name = getArchiveFolderName_(normalized);
+  const excluded = Array.isArray(normalized.excluded_root_folder_names) ?
+    normalized.excluded_root_folder_names.map(String) : [];
+  [normalized.archive_folder_name, '_Imported', 'Imported', 'Importazioni'].forEach(function (name) {
+    if (excluded.indexOf(name) < 0) {
+      excluded.push(name);
+    }
+  });
+  normalized.excluded_root_folder_names = excluded;
+  return normalized;
+}
+
+function getArchiveFolderName_(config) {
+  const configured = String(config.archive_folder_name || '').trim();
+  if (['_Imported', 'Imported', 'Importazioni'].indexOf(configured) >= 0) {
+    return config.locale === 'it' ? 'Importazioni' : 'Imported';
+  }
+  return configured;
 }
 
 function validateAutomationConfig_(config) {

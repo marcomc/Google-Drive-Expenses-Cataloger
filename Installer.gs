@@ -80,6 +80,7 @@ function validateInstallerOptions_(options) {
     throw new Error('geminiBackend must be gemini_api or vertex_ai.');
   }
   validateAutomationConfig_(options.automationConfig);
+  const automationConfig = normalizeAutomationConfig_(options.automationConfig);
   return {
     projectId: String(options.projectId).trim(), rootFolderId: String(options.rootFolderId).trim(),
     spreadsheetId: String(options.spreadsheetId || '').trim(),
@@ -88,7 +89,7 @@ function validateInstallerOptions_(options) {
     geminiBackend: options.geminiBackend, geminiModel: String(options.geminiModel).trim(),
     autoVertexFallback: options.autoVertexFallback === true,
     vertexLocation: String(options.vertexLocation).trim(),
-    automationConfig: options.automationConfig, agentsPolicy: String(options.agentsPolicy),
+    automationConfig: automationConfig, agentsPolicy: String(options.agentsPolicy),
     geminiSecretVersion: String(options.geminiSecretVersion || '').trim(), geminiApiKey: '',
     reuseExistingGeminiApiKey: options.reuseExistingGeminiApiKey === true,
     preserveAutomaticProcessing: options.preserveAutomaticProcessing === true,
@@ -143,10 +144,233 @@ function ensureInstallerPolicyFile_(root, text) {
   if (matches.length > 1) {
     throw new Error('The intake root contains multiple AGENTS.md files.');
   }
-  if (matches.length === 1) {
-    return matches[0];
+  const policy = matches.length === 1 ? matches[0] :
+    root.createFile(CONFIG.DRIVE_AGENTS_FILE_NAME, text, MimeType.PLAIN_TEXT);
+  const existing = matches.length === 1 ? readInstallerPolicyFile_(policy) : '';
+  const merged = mergeInstallerPolicyText_(existing, text);
+  policy.setContent(merged);
+  verifyInstallerPolicyFile_(policy, merged);
+  return policy;
+}
+
+function readInstallerPolicyFile_(file) {
+  return file.getBlob().getDataAsString('UTF-8');
+}
+
+function mergeInstallerPolicyText_(existing, template) {
+  const managedTemplate = getInstallerManagedPolicyText_(template);
+  const existingText = String(existing || '').trim();
+  if (!existingText) {
+    return managedTemplate;
   }
-  return root.createFile(CONFIG.DRIVE_AGENTS_FILE_NAME, text, MimeType.PLAIN_TEXT);
+  const existingMarkers = getInstallerPolicyMarkers_(existingText);
+  if (existingMarkers.hasMarkers) {
+    return renderInstallerPolicyParts_([
+      existingMarkers.before,
+      managedTemplate,
+      existingMarkers.after
+    ]);
+  }
+  const customText = extractInstallerLegacyCustomPolicyText_(existingText,
+    getInstallerManagedPolicyContent_(managedTemplate));
+  return renderInstallerPolicyParts_([managedTemplate, customText]);
+}
+
+const INSTALLER_POLICY_MANAGED_BEGIN =
+  '<!-- BEGIN Google Drive Expenses Cataloger managed policy -->';
+const INSTALLER_POLICY_MANAGED_END =
+  '<!-- END Google Drive Expenses Cataloger managed policy -->';
+
+function getInstallerManagedPolicyText_(template) {
+  const templateText = String(template || '').trim();
+  const markers = getInstallerPolicyMarkers_(templateText);
+  const content = markers.hasMarkers ? markers.managed : templateText;
+  return renderInstallerPolicyParts_([
+    INSTALLER_POLICY_MANAGED_BEGIN,
+    content,
+    INSTALLER_POLICY_MANAGED_END
+  ]);
+}
+
+function getInstallerManagedPolicyContent_(text) {
+  const markers = getInstallerPolicyMarkers_(text);
+  return markers.hasMarkers ? markers.managed : String(text || '').trim();
+}
+
+function getInstallerPolicyMarkers_(text) {
+  const policyText = String(text || '');
+  const begin = policyText.indexOf(INSTALLER_POLICY_MANAGED_BEGIN);
+  const end = policyText.indexOf(INSTALLER_POLICY_MANAGED_END);
+  const duplicateBegin = begin >= 0 && policyText.indexOf(INSTALLER_POLICY_MANAGED_BEGIN,
+    begin + INSTALLER_POLICY_MANAGED_BEGIN.length) >= 0;
+  const duplicateEnd = end >= 0 && policyText.indexOf(INSTALLER_POLICY_MANAGED_END,
+    end + INSTALLER_POLICY_MANAGED_END.length) >= 0;
+  if (begin < 0 && end < 0) {
+    return { hasMarkers: false };
+  }
+  if (begin < 0 || end < 0 || end < begin || duplicateBegin || duplicateEnd) {
+    throw new Error('AGENTS.md has incomplete or ambiguous managed policy markers.');
+  }
+  return {
+    hasMarkers: true,
+    before: policyText.slice(0, begin).trim(),
+    managed: policyText.slice(begin + INSTALLER_POLICY_MANAGED_BEGIN.length, end).trim(),
+    after: policyText.slice(end + INSTALLER_POLICY_MANAGED_END.length).trim()
+  };
+}
+
+function extractInstallerLegacyCustomPolicyText_(existing, template) {
+  const knownBlocks = getInstallerKnownManagedPolicyBlocks_(template);
+  const customSections = splitInstallerPolicySections_(existing).map(function (section) {
+    const managedBlocks = knownBlocks[section.heading] || [];
+    return {
+      heading: section.heading,
+      blocks: section.blocks.filter(function (block) {
+        return managedBlocks.indexOf(normalizeInstallerPolicyBlock_(block)) < 0;
+      })
+    };
+  }).filter(function (section) {
+    return section.blocks.length > 0;
+  });
+  return renderInstallerPolicySections_(customSections);
+}
+
+function getInstallerKnownManagedPolicyBlocks_(template) {
+  const knownBlocks = {};
+  const addBlock = function (heading, block) {
+    if (!knownBlocks[heading]) {
+      knownBlocks[heading] = [];
+    }
+    const normalized = normalizeInstallerPolicyBlock_({ text: block });
+    if (knownBlocks[heading].indexOf(normalized) < 0) {
+      knownBlocks[heading].push(normalized);
+    }
+  };
+  splitInstallerPolicySections_(template).forEach(function (section) {
+    section.blocks.forEach(function (block) {
+      addBlock(section.heading, block.text);
+    });
+  });
+  getInstallerLegacyManagedPolicyBlocks_().forEach(function (block) {
+    addBlock(block.heading, block.text);
+  });
+  return knownBlocks;
+}
+
+function getInstallerLegacyManagedPolicyBlocks_() {
+  return [
+    {
+      heading: '',
+      text: 'Copy this file to the root of the configured Drive folder as `AGENTS.md`.\n' +
+        'The runtime reads that Drive copy for each import. Do not include credentials.'
+    },
+    {
+      heading: '',
+      text: 'Use this file as the initial `AGENTS.md` policy in the configured Drive root.\n' +
+        'For an existing installation, merge new template instructions into the Drive\n' +
+        'file without removing Drive-only instructions or user customizations. The\n' +
+        'runtime reads that Drive copy for each import. Do not include credentials.'
+    },
+    {
+      heading: '## Scope',
+      text: '- Process only direct child folders of the configured root folder.'
+    },
+    {
+      heading: '## Scope',
+      text: '- A candidate folder is eligible only when its name, or the name of at least\n' +
+        'one direct `transactions-*.json` file it contains, includes the configured\n' +
+        'household keyword.'
+    },
+    {
+      heading: '## Scope',
+      text: '- Read complete Tricount JSON exports recursively inside an eligible candidate\n' +
+        'folder. Treat images,\nPDFs, and other attachments only as evidence for an otherwise ambiguous\n' +
+        'classification.'
+    },
+    {
+      heading: '## Scope',
+      text: '- Persist and validate the source snapshot before the first AI call. Reuse\n' +
+        'completed normalized stages on retry, and remove transient stages only after\n' +
+        'successful archival.'
+    },
+    {
+      heading: '## Review and archive',
+      text: '- Archive a successfully processed source folder only after ledger and audit\n' +
+        'verification. Never delete the source folder or its attachments.'
+    }
+  ];
+}
+
+function renderInstallerPolicyParts_(parts) {
+  return parts.map(function (part) {
+    return String(part || '').trim();
+  }).filter(Boolean).join('\n\n');
+}
+
+function splitInstallerPolicySections_(text) {
+  const sections = [];
+  let heading = '';
+  let lines = [];
+  const addSection = function () {
+    const blocks = splitInstallerPolicyBlocks_(lines);
+    if (heading || blocks.length > 0) {
+      sections.push({ heading: heading, blocks: blocks });
+    }
+  };
+  String(text || '').trim().split(/\r?\n/).forEach(function (line) {
+    if (/^##\s+/.test(line)) {
+      addSection();
+      heading = line.trim();
+      lines = [];
+      return;
+    }
+    lines.push(line);
+  });
+  addSection();
+  return sections;
+}
+
+function splitInstallerPolicyBlocks_(lines) {
+  const blocks = [];
+  let block = [];
+  const addBlock = function () {
+    if (block.length > 0) {
+      blocks.push({ text: block.join('\n') });
+      block = [];
+    }
+  };
+  lines.forEach(function (line) {
+    if (!line.trim()) {
+      addBlock();
+      return;
+    }
+    if (/^[-*+]\s+/.test(line) || /^#{1,6}\s+/.test(line)) {
+      addBlock();
+    }
+    block.push(line.trim());
+  });
+  addBlock();
+  return blocks;
+}
+
+function normalizeInstallerPolicyBlock_(block) {
+  return block.text.replace(/\s+/g, ' ').trim();
+}
+
+function renderInstallerPolicySections_(sections) {
+  return sections.map(function (section) {
+    const content = section.blocks.map(function (block) { return block.text; }).join('\n\n');
+    return [section.heading, content].filter(Boolean).join('\n\n');
+  }).join('\n\n').trim();
+}
+
+function verifyInstallerPolicyFile_(file, expected) {
+  const actual = readInstallerPolicyFile_(file).replace(/\r\n/g, '\n').trim();
+  const expectedText = String(expected || '').replace(/\r\n/g, '\n').trim();
+  if (actual !== expectedText) {
+    throw new Error('AGENTS.md verification failed: policy content does not match ' +
+      'the expected merged policy.');
+  }
 }
 
 function ensureInstallerSpreadsheet_(root, spreadsheetId, title, config, timeZone) {

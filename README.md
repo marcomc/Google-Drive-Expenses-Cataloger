@@ -19,7 +19,7 @@ only to classify spending in the configured reporting taxonomy.
 
 ```mermaid
 flowchart LR
-  folder["Drive: Spese"] --> event["Drive event / daily fallback"]
+  folder["Drive: Spese"] --> event["15-minute polling / daily fallback"]
   event --> policy["AGENTS.md + config"]
   policy --> json["Eligible HoStello JSON exports"]
   json --> ai["Gemini classification"]
@@ -27,7 +27,7 @@ flowchart LR
   dedupe --> ledger["Sheets: Transazioni"]
   ledger --> dashboard["Dashboard and comparisons"]
   dedupe --> audit["Importazioni audit"]
-  audit --> archive["_Imported/YYYY"]
+  audit --> archive["Imported or Importazioni / YYYY"]
 ```
 
 ## Data model
@@ -54,8 +54,9 @@ the Google resources and prints a one-time browser handoff when required.
 
 ## Testing
 
-Before the first live import, move candidate source folders to `_Test-fixtures`.
-Return one or a few untouched folders to the root for each controlled test.
+Before the first live import, move candidate source files and folders to
+`_Test-fixtures`. Return one or a few untouched source units to the root for
+each controlled test.
 Tests cover a new import, an exact re-import, a partially overlapping JSON
 source, exact custom allocations, and opening-balance classification.
 No source folder is deleted.

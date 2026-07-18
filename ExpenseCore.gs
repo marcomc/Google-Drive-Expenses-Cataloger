@@ -7,21 +7,15 @@ function isEligibleCandidateFolder_(candidate, config) {
   if (isExcludedRootFolderName_(name, config)) {
     return false;
   }
-  const keyword = String(config.intake_keyword || '').toLowerCase();
-  if (!keyword) {
-    return false;
-  }
-  if (name.toLowerCase().indexOf(keyword) >= 0) {
-    return true;
-  }
   return (candidate.jsonNames || []).some(function (jsonName) {
-    return String(jsonName).toLowerCase().indexOf(keyword) >= 0;
+    return isEligibleTricountJsonFileName_(jsonName, config);
   });
 }
 
 function isExcludedRootFolderName_(name, config) {
   const normalized = String(name || '').toLowerCase();
-  return (config.excluded_root_folder_names || []).some(function (entry) {
+  const protectedNames = ['_Imported', 'Imported', 'Importazioni', config.archive_folder_name];
+  return (config.excluded_root_folder_names || []).concat(protectedNames).some(function (entry) {
     return String(entry).toLowerCase() === normalized;
   });
 }
@@ -31,17 +25,33 @@ function isTricountJsonFileName_(name) {
   return /^transactions-.*\.json$/i.test(String(name || ''));
 }
 
+function isEligibleTricountJsonFileName_(name, config) {
+  const keyword = String(config.intake_keyword || '').toLowerCase();
+  return Boolean(keyword) && isTricountJsonFileName_(name) &&
+    String(name || '').toLowerCase().indexOf(keyword) >= 0;
+}
+
 /** Pure state-machine helpers for the durable historical rebuild. */
 function createJsonRebuildState_(runId, stagingFolderId, sources, startedAt) {
-  return { version: 1, runId: String(runId), stagingFolderId: String(stagingFolderId),
+  return { version: 2, runId: String(runId), stagingFolderId: String(stagingFolderId),
     sources: (sources || []).map(function (source) { return Object.assign({}, source); }),
     nextIndex: 0, startedAt: String(startedAt) };
 }
 
 function isValidJsonRebuildState_(state) {
-  return Boolean(state && state.version === 1 && String(state.runId || '') &&
+  return Boolean(state && state.version === 2 && String(state.runId || '') &&
     String(state.stagingFolderId || '') && Array.isArray(state.sources) &&
-    Number.isInteger(state.nextIndex) && state.nextIndex >= 0 && state.nextIndex <= state.sources.length);
+    state.sources.every(isValidJsonRebuildSource_) && Number.isInteger(state.nextIndex) &&
+    state.nextIndex >= 0 && state.nextIndex <= state.sources.length);
+}
+
+function isValidJsonRebuildSource_(source) {
+  const archiveType = String(source && source.archiveType || '');
+  return Boolean(source && String(source.fileId || '') && String(source.folderId || '') &&
+    String(source.name || '') && String(source.contentHash || '') &&
+    (archiveType === 'file' || archiveType === 'folder') &&
+    String(source.archiveContainerId || '') && Number.isInteger(source.archiveDepth) &&
+    source.archiveDepth >= 0);
 }
 
 function getJsonRebuildStageFileName_(state, source) {
@@ -57,6 +67,14 @@ function advanceJsonRebuildState_(state) {
 
 function isJsonRebuildReadyToCommit_(state) {
   return isValidJsonRebuildState_(state) && state.nextIndex === state.sources.length;
+}
+
+function isValidJsonRebuildStage_(staged, source) {
+  const sourceFile = staged && staged.sourceFile;
+  return Boolean(sourceFile && Array.isArray(staged.records) &&
+    String(sourceFile.id || '') === String(source.fileId || '') &&
+    String(sourceFile.name || '') === String(source.name || '') &&
+    String(sourceFile.contentHash || '') === String(source.contentHash || ''));
 }
 
 /**

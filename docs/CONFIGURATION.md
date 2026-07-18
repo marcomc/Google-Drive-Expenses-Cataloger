@@ -17,9 +17,9 @@ bootstrap.
 | --- | --- |
 | `locale` | `en` by default, or `it` for this installation. |
 | `time_zone` | IANA timezone used by Apps Script and the spreadsheet; defaults to `Europe/Rome`. |
-| `intake_keyword` | Required marker in an eligible folder or JSON filename. |
+| `intake_keyword` | Required marker in every eligible `transactions-*.json` filename; folder names do not qualify a source. |
 | `excluded_root_folder_names` | Direct-root folders that the scanner ignores. |
-| `archive_folder_name` | Archive root, normally `_Imported`. |
+| `archive_folder_name` | Archive root: `Imported` for English or `Importazioni` for Italian; legacy `_Imported` is always ignored. |
 | `test_fixture_folder_name` | Isolated test root, normally `_Test-fixtures`. |
 | `categories` | Allowed category and one-level subcategory taxonomy. |
 
