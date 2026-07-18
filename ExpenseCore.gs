@@ -31,6 +31,34 @@ function isTricountJsonFileName_(name) {
   return /^transactions-.*\.json$/i.test(String(name || ''));
 }
 
+/** Pure state-machine helpers for the durable historical rebuild. */
+function createJsonRebuildState_(runId, stagingFolderId, sources, startedAt) {
+  return { version: 1, runId: String(runId), stagingFolderId: String(stagingFolderId),
+    sources: (sources || []).map(function (source) { return Object.assign({}, source); }),
+    nextIndex: 0, startedAt: String(startedAt) };
+}
+
+function isValidJsonRebuildState_(state) {
+  return Boolean(state && state.version === 1 && String(state.runId || '') &&
+    String(state.stagingFolderId || '') && Array.isArray(state.sources) &&
+    Number.isInteger(state.nextIndex) && state.nextIndex >= 0 && state.nextIndex <= state.sources.length);
+}
+
+function getJsonRebuildStageFileName_(state, source) {
+  return String(state.runId) + '-' + String(source.fileId) + '.json';
+}
+
+function advanceJsonRebuildState_(state) {
+  if (!isValidJsonRebuildState_(state) || state.nextIndex >= state.sources.length) {
+    throw new Error('Cannot advance an invalid or completed JSON rebuild state.');
+  }
+  return Object.assign({}, state, { nextIndex: state.nextIndex + 1 });
+}
+
+function isJsonRebuildReadyToCommit_(state) {
+  return isValidJsonRebuildState_(state) && state.nextIndex === state.sources.length;
+}
+
 /**
  * Converts a complete Tricount JSON export into factual, source-traceable
  * records. Classification is deliberately not performed here: the source

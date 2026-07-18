@@ -35,10 +35,13 @@ function rebuildTransactionsFromTricountJson() {
     if (state.nextIndex < state.sources.length) {
       const source = state.sources[state.nextIndex];
       stageJsonRebuildSource_(state, source, policy, config);
-      state.nextIndex += 1;
-      saveJsonRebuildState_(state);
-      return { status: 'STAGING', processedSources: state.nextIndex, totalSources: state.sources.length,
-        nextSource: state.sources[state.nextIndex] ? state.sources[state.nextIndex].name : '' };
+      const advancedState = advanceJsonRebuildState_(state);
+      saveJsonRebuildState_(advancedState);
+      return { status: 'STAGING', processedSources: advancedState.nextIndex, totalSources: advancedState.sources.length,
+        nextSource: advancedState.sources[advancedState.nextIndex] ? advancedState.sources[advancedState.nextIndex].name : '' };
+    }
+    if (!isJsonRebuildReadyToCommit_(state)) {
+      throw new Error('JSON rebuild state is not ready for commit.');
     }
     return commitJsonRebuild_(root, state);
   });
@@ -55,7 +58,7 @@ function getOrCreateJsonRebuildState_(root, config) {
   const raw = properties.getProperty(CONFIG.PROPERTY_KEYS.JSON_REBUILD_STATE);
   if (raw) {
     const state = JSON.parse(raw);
-    if (state && state.version === 1 && Array.isArray(state.sources) && state.stagingFolderId) {
+    if (isValidJsonRebuildState_(state)) {
       return state;
     }
     throw new Error('JSON rebuild state is invalid. Run resetTricountJsonRebuild first.');
@@ -66,8 +69,8 @@ function getOrCreateJsonRebuildState_(root, config) {
   if (sources.length === 0) {
     throw new Error('No eligible Tricount JSON exports were found outside excluded folders.');
   }
-  const state = { version: 1, runId: Utilities.getUuid(), stagingFolderId: getOrCreateJsonRebuildStagingFolder_(root).getId(),
-    sources: sources, nextIndex: 0, startedAt: new Date().toISOString() };
+  const state = createJsonRebuildState_(Utilities.getUuid(), getOrCreateJsonRebuildStagingFolder_(root).getId(),
+    sources, new Date().toISOString());
   saveJsonRebuildState_(state);
   return state;
 }
@@ -84,7 +87,7 @@ function saveJsonRebuildState_(state) {
 
 function stageJsonRebuildSource_(state, source, policy, config) {
   const stagingFolder = DriveApp.getFolderById(state.stagingFolderId);
-  const stageName = state.runId + '-' + source.fileId + '.json';
+  const stageName = getJsonRebuildStageFileName_(state, source);
   const existing = stagingFolder.getFilesByName(stageName);
   if (existing.hasNext()) {
     return;
@@ -107,7 +110,7 @@ function commitJsonRebuild_(root, state) {
     const sourceResults = [];
     const records = [];
     state.sources.forEach(function (source) {
-      const matches = stagingFolder.getFilesByName(state.runId + '-' + source.fileId + '.json');
+      const matches = stagingFolder.getFilesByName(getJsonRebuildStageFileName_(state, source));
       if (!matches.hasNext()) { throw new Error('Missing staged source ' + source.name + '.'); }
       const staged = JSON.parse(matches.next().getBlob().getDataAsString('UTF-8'));
       (staged.records || []).forEach(function (record) { records.push(record); });

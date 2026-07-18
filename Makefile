@@ -32,6 +32,7 @@ install-reset: ## Remove private installer state only
 
 test: ## Run the verified core import seams
 	@node tests/expense_core_test.js
+	@node tests/rebuild_state_test.js
 	@bash tests/install_test.sh
 	@node scripts/validate-apps-script.js
 
@@ -39,7 +40,7 @@ lint-shell: ## Lint shell scripts
 	@$(SHELLCHECK) --enable=all --external-sources --source-path=scripts --source-path=. scripts/*.sh scripts/lib/*.sh tests/*.sh
 
 lint-md: ## Lint Markdown files
-	@$(MARKDOWNLINT) --config $(MARKDOWNLINT_CONFIG) README.md AGENTS.example.md docs/*.md
+	@$(MARKDOWNLINT) --config $(MARKDOWNLINT_CONFIG) README.md AGENTS.example.md TODO.md CHANGELOG.md docs/*.md
 
 lint: lint-shell lint-md ## Run all linters
 
