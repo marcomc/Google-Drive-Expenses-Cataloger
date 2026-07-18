@@ -45,7 +45,7 @@ for argument in "$@"; do
   fi
   case "${argument}" in
     -A) expect_auth_file=1 ;;
-    deployments | pull | push | version)
+    deployments | pull | push | version | run)
       command_name="${argument}"
       break
       ;;
@@ -67,6 +67,11 @@ case "${command_name}" in
   version)
     printf '%s\n' version >>"${TEST_COMMAND_LOG}"
     printf '%s\n' '{"versionNumber":5}'
+    ;;
+  run)
+    [[ "$*" == *' run installAutomationTriggers' ]]
+    printf '%s\n' triggers >>"${TEST_COMMAND_LOG}"
+    printf '%s\n' '{"response":{"triggerCounts":{"processDriveEventQueue":1,"runDailyExpenseCataloging":1},"missingTriggerHandlers":[],"duplicateTriggerHandlers":[]}}'
     ;;
   *) exit 2 ;;
 esac
@@ -178,7 +183,7 @@ test "${actual_time_zone}" = 'Europe/Rome'
 actual_execution_api_access="$(jq -r '.executionApi.access' "${success_dir}/appsscript.json")"
 test "${actual_execution_api_access}" = 'MYSELF'
 actual_commands="$(tr '\n' ' ' <"${success_dir}/commands.log")"
-test "${actual_commands}" = 'push version update '
+test "${actual_commands}" = 'push version update triggers '
 
 stale_dir="${TEST_ROOT}/stale"
 mkdir -p "${stale_dir}"

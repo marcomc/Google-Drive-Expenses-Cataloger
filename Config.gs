@@ -35,7 +35,8 @@ function getSetupStatus() {
     rootFolderConfigured: Boolean(properties.getProperty(property.ROOT_FOLDER_ID)),
     spreadsheetConfigured: Boolean(properties.getProperty(property.SPREADSHEET_ID)),
     automationConfigConfigured: Boolean(properties.getProperty(property.AUTOMATION_CONFIG_JSON)),
-    cloudProjectConfigured: Boolean(properties.getProperty(property.GOOGLE_CLOUD_PROJECT_ID))
+    cloudProjectConfigured: Boolean(properties.getProperty(property.GOOGLE_CLOUD_PROJECT_ID)),
+    automaticProcessingEnabled: isAutomaticProcessingEnabled_()
   };
 }
 

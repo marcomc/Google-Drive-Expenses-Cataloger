@@ -52,14 +52,15 @@ function validateCatalogerInstallation() {
   loadDriveAgentsPolicy_(root);
   const spreadsheet = SpreadsheetApp.openById(getSpreadsheetId_());
   const layout = getExpenseSheetLayout_(spreadsheet);
-  const handlers = ScriptApp.getProjectTriggers().map(function (trigger) {
-    return trigger.getHandlerFunction();
-  });
+  const triggerStatus = getAutomationTriggerStatus_();
   return {
     installed: Boolean(layout.transactions && layout.imports &&
-      handlers.indexOf('runDailyExpenseCataloging') >= 0),
-    missingTriggerHandlers: handlers.indexOf('runDailyExpenseCataloging') >= 0 ? [] :
-      ['runDailyExpenseCataloging'],
+      triggerStatus.missingTriggerHandlers.length === 0 &&
+      triggerStatus.duplicateTriggerHandlers.length === 0),
+    automaticProcessingEnabled: isAutomaticProcessingEnabled_(),
+    missingTriggerHandlers: triggerStatus.missingTriggerHandlers,
+    duplicateTriggerHandlers: triggerStatus.duplicateTriggerHandlers,
+    triggerCounts: triggerStatus.triggerCounts,
     spreadsheetUrl: spreadsheet.getUrl()
   };
 }

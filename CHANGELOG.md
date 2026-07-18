@@ -5,6 +5,19 @@ All notable changes to this project are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [Semantic Versioning](https://semver.org/).
 
+## [0.2.1] - 2026-07-18
+
+### Fixed
+
+- Reconcile the managed Apps Script time triggers immediately after promoting a
+  new stable API-executable version, preventing scheduled imports from staying
+  bound to an older release.
+- Create replacement triggers before removing existing ones, so a failed
+  replacement leaves the prior automation available.
+- Report the automatic-processing flag, missing handlers, duplicate handlers,
+  and per-handler trigger counts through the read-only setup and installation
+  status functions.
+
 ## [0.2.0] - 2026-07-18
 
 ### Added

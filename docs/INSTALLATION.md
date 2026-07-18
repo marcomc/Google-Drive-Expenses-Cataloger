@@ -92,6 +92,12 @@ npx --yes @google/clasp@3.3.0 \
   --json run validateCatalogerInstallation
 ```
 
+`getSetupStatus` and `validateCatalogerInstallation` report whether automatic
+processing is enabled, plus missing, duplicate, and counted managed trigger
+handlers. They never return credentials. The Apps Script **Triggers** page is
+the authoritative place to inspect the actual 15-minute interval and the
+version associated with each trigger.
+
 Import the selected folder manually:
 
 ```sh
