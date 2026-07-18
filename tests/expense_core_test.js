@@ -27,6 +27,10 @@ assert.equal(context.isEligibleCandidateFolder_({
   jsonNames: ['transactions-hostello-202606.json']
 }, config), true);
 assert.equal(context.isEligibleCandidateFolder_({
+  name: 'HoStello---202606',
+  jsonNames: ['transactions-london-202606.json']
+}, config), false);
+assert.equal(context.isEligibleCandidateFolder_({
   name: 'London',
   jsonNames: ['transactions-london.json']
 }, config), false);
@@ -43,6 +47,9 @@ assert.equal(context.isExcludedRootFolderName_('HoStello---202606', config), fal
 assert.equal(context.isTricountJsonFileName_('transactions-hostello-202603.json'), true);
 assert.equal(context.isTricountJsonFileName_('tricount-info.json'), false);
 assert.equal(context.isTricountJsonFileName_('transactions-hostello-202603.txt'), false);
+assert.equal(context.isEligibleTricountJsonFileName_('transactions-hostello-202603.json', config), true);
+assert.equal(context.isEligibleTricountJsonFileName_('transactions-london-202603.json', config), false);
+assert.equal(context.isExcludedRootFolderName_('Importazioni', config), true);
 
 const tricountJson = {
   Response: [{ Registry: { all_registry_entry: [

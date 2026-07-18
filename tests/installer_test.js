@@ -52,7 +52,16 @@ const reconfigureOptions = context.validateInstallerOptions_({
   reuseExistingGeminiApiKey: true
 });
 assert.equal(reconfigureOptions.reuseExistingGeminiApiKey, true);
+assert.equal(reconfigureOptions.automationConfig.archive_folder_name, 'Imported');
 assert.doesNotThrow(() => context.validateInstallerGeminiAccess_(reconfigureOptions));
+
+const italianOptions = context.validateInstallerOptions_({
+  ...options,
+  automationConfig: { ...options.automationConfig, locale: 'it' }
+});
+assert.equal(italianOptions.automationConfig.archive_folder_name, 'Importazioni');
+assert.ok(italianOptions.automationConfig.excluded_root_folder_names.includes('_Imported'));
+assert.ok(italianOptions.automationConfig.excluded_root_folder_names.includes('Importazioni'));
 
 properties.clear();
 assert.throws(

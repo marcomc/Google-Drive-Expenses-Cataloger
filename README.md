@@ -27,7 +27,7 @@ flowchart LR
   dedupe --> ledger["Sheets: Transazioni"]
   ledger --> dashboard["Dashboard and comparisons"]
   dedupe --> audit["Importazioni audit"]
-  audit --> archive["_Imported/YYYY"]
+  audit --> archive["Imported or Importazioni / YYYY"]
 ```
 
 ## Data model

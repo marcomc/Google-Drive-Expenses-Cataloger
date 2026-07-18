@@ -64,7 +64,14 @@ function getOrCreateJsonRebuildState_(root, config) {
     throw new Error('JSON rebuild state is invalid. Run resetTricountJsonRebuild first.');
   }
   const sources = listHistoricalTricountJsonSources_(root, config).map(function (source) {
-    return { fileId: source.file.getId(), folderId: source.folder.getId(), name: source.file.getName() };
+    return {
+      fileId: source.file.getId(),
+      folderId: source.folder.getId(),
+      name: source.file.getName(),
+      archiveType: source.archiveType,
+      archiveContainerId: source.archiveContainerId,
+      archiveDepth: source.archiveDepth
+    };
   });
   if (sources.length === 0) {
     throw new Error('No eligible Tricount JSON exports were found outside excluded folders.');
@@ -115,7 +122,7 @@ function commitJsonRebuild_(root, state) {
       const staged = JSON.parse(matches.next().getBlob().getDataAsString('UTF-8'));
       (staged.records || []).forEach(function (record) { records.push(record); });
       sourceResults.push({ file: { getName: function () { return staged.sourceFile.name; } },
-        sourceFile: staged.sourceFile, status: 'READY', records: staged.records || [] });
+        source: source, sourceFile: staged.sourceFile, status: 'READY', records: staged.records || [] });
     });
     const spreadsheet = SpreadsheetApp.openById(getSpreadsheetId_());
     const layout = getExpenseSheetLayout_(spreadsheet);
@@ -145,6 +152,7 @@ function commitJsonRebuild_(root, state) {
     writeSourceReconciliations_(layout.sourceReconciliations,
       { name: 'Tricount JSON rebuild', url: root.getUrl() }, reconciliations);
     verifySourceReconciliations_(reconciliations);
+    archiveRebuiltSources_(root, sourceResults);
     saveSourceFolderState_({});
     refreshBalanceViews_(spreadsheet);
     const localization = getLocalization_();
@@ -166,7 +174,15 @@ function processExpenseFolder(folderId) {
     if (!isFolderDirectChild_(folder, root)) {
       throw new Error('The requested folder is not a direct child of the intake root.');
     }
-    return processExpenseFolder_(folder, root, loadDriveAgentsPolicy_(root), 'manual');
+    const config = getAutomationConfig_();
+    const files = listDirectJsonFiles_(folder).filter(function (file) {
+      return isEligibleTricountJsonFileName_(file.getName(), config);
+    });
+    if (files.length === 0) {
+      throw new Error('The requested folder has no eligible direct Tricount JSON export.');
+    }
+    return processExpenseSource_(createFolderIntakeSource_(folder, files), root,
+      loadDriveAgentsPolicy_(root), 'manual');
   });
 }
 
@@ -197,23 +213,10 @@ function runExpenseCataloging_(triggerSource) {
   assertCatalogConfiguration_();
   const root = DriveApp.getFolderById(getRootFolderId_());
   const policy = loadDriveAgentsPolicy_(root);
-  const results = [];
-  const folders = root.getFolders();
-  while (folders.hasNext()) {
-    const folder = folders.next();
-    const config = getAutomationConfig_();
-    if (isExcludedRootFolderName_(folder.getName(), config)) {
-      continue;
-    }
-    const files = listDirectJsonFiles_(folder);
-    if (!isEligibleCandidateFolder_({
-      name: folder.getName(),
-      jsonNames: files.map(function (file) { return file.getName(); })
-    }, config)) {
-      continue;
-    }
-    results.push(processExpenseFolder_(folder, root, policy, triggerSource));
-  }
+  const config = getAutomationConfig_();
+  const results = listEligibleIntakeSources_(root, config).map(function (source) {
+    return processExpenseSource_(source, root, policy, triggerSource);
+  });
   sendExpenseReviewEmail_(results);
   return results;
 }
@@ -230,15 +233,16 @@ function withExpenseLock_(source, callback) {
   }
 }
 
-function processExpenseFolder_(folder, root, policy, triggerSource) {
-  const jsonFiles = listJsonFilesRecursively_(folder);
+function processExpenseSource_(source, root, policy, triggerSource) {
+  const folder = source.container;
+  const jsonFiles = source.files;
   const config = getAutomationConfig_();
   const sourceState = loadSourceFolderState_();
   const sourceSignature = buildSourceFolderSignature_(jsonFiles);
-  const knownSource = sourceState[folder.getId()];
+  const knownSource = sourceState[source.stateKey];
   if (knownSource && knownSource.signature === sourceSignature) {
-    archiveSourceFolder_(folder, root, [{ date: knownSource.archiveYear + '-01-01' }]);
-    return buildFolderResult_(folder, 'UNCHANGED', [], [], []);
+    archiveIntakeSource_(source, root, [{ date: knownSource.archiveYear + '-01-01' }]);
+    return buildIntakeSourceResult_(source, 'UNCHANGED', [], [], []);
   }
   const spreadsheet = SpreadsheetApp.openById(getSpreadsheetId_());
   const layout = getExpenseSheetLayout_(spreadsheet);
@@ -297,16 +301,16 @@ function processExpenseFolder_(folder, root, policy, triggerSource) {
   const reviews = importable.filter(function (record) {
     return Number(record.confidence || 0) < 0.8 || Boolean(record.conflict);
   });
-  const result = buildFolderResult_(folder, 'IMPORTED', imported, partition.duplicates, reviews, records,
+  const result = buildIntakeSourceResult_(source, 'IMPORTED', imported, partition.duplicates, reviews, records,
     openingBalances);
-  sourceState[folder.getId()] = {
+  sourceState[source.stateKey] = {
     signature: sourceSignature,
     archiveYear: deriveArchiveYear_(records),
     processedAt: new Date().toISOString()
   };
   saveSourceFolderState_(sourceState);
   if (jsonResults.every(function (entry) { return entry.status === 'READY' || entry.status === 'EMPTY'; })) {
-    archiveSourceFolder_(folder, root, records);
+    archiveIntakeSource_(source, root, records);
     result.archived = true;
   }
   return result;
@@ -333,26 +337,103 @@ function listJsonFilesRecursively_(folder) {
   return files;
 }
 
-function listHistoricalTricountJsonSources_(root, config) {
-  const sources = [];
-  function visit(folder, isRoot) {
-    if (!isRoot && isExcludedRootFolderName_(folder.getName(), config)) {
+function listEligibleIntakeSources_(root, config) {
+  const sources = listDirectJsonFiles_(root).filter(function (file) {
+    return isEligibleTricountJsonFileName_(file.getName(), config);
+  }).map(function (file) {
+    return createRootFileIntakeSource_(root, file);
+  });
+  function visit(folder, isDirectRootChild, depth) {
+    if (isDirectRootChild && isExcludedRootFolderName_(folder.getName(), config)) {
       return;
     }
-    listDirectJsonFiles_(folder).forEach(function (file) {
-      if (String(file.getName()).toLowerCase().indexOf(String(config.intake_keyword).toLowerCase()) >= 0) {
-        sources.push({ folder: folder, file: file });
-      }
+    const files = listDirectJsonFiles_(folder).filter(function (file) {
+      return isEligibleTricountJsonFileName_(file.getName(), config);
     });
-    const folders = folder.getFolders();
-    while (folders.hasNext()) {
-      visit(folders.next(), false);
+    if (files.length > 0) {
+      sources.push(createFolderIntakeSource_(folder, files, depth));
+    }
+    const children = folder.getFolders();
+    while (children.hasNext()) {
+      visit(children.next(), false, depth + 1);
     }
   }
-  visit(root, true);
+  const folders = root.getFolders();
+  while (folders.hasNext()) {
+    visit(folders.next(), true, 1);
+  }
   return sources.sort(function (left, right) {
-    return left.file.getName().localeCompare(right.file.getName()) ||
+    return right.archiveDepth - left.archiveDepth ||
+      left.displayName.localeCompare(right.displayName) || left.stateKey.localeCompare(right.stateKey);
+  });
+}
+
+function createFolderIntakeSource_(folder, files, archiveDepth) {
+  return {
+    archiveType: 'folder', container: folder, displayName: folder.getName(), displayUrl: folder.getUrl(),
+    files: files, stateKey: 'folder:' + folder.getId(), archiveDepth: Number(archiveDepth || 0)
+  };
+}
+
+function createRootFileIntakeSource_(root, file) {
+  return {
+    archiveType: 'file', container: root, displayName: file.getName(), displayUrl: file.getUrl(),
+    files: [file], stateKey: 'file:' + file.getId(), archiveDepth: 0
+  };
+}
+
+function listHistoricalTricountJsonSources_(root, config) {
+  const sources = [];
+  listEligibleIntakeSources_(root, config).forEach(function (intakeSource) {
+    intakeSource.files.forEach(function (file) {
+      sources.push({
+        folder: intakeSource.container,
+        file: file,
+        archiveType: intakeSource.archiveType,
+        archiveContainerId: intakeSource.archiveType === 'folder' ? intakeSource.container.getId() : file.getId(),
+        archiveDepth: intakeSource.archiveDepth
+      });
+    });
+  });
+  return sources.sort(function (left, right) {
+    return right.archiveDepth - left.archiveDepth ||
+      left.file.getName().localeCompare(right.file.getName()) ||
       left.file.getId().localeCompare(right.file.getId());
+  });
+}
+
+function archiveRebuiltSources_(root, sourceResults) {
+  const grouped = {};
+  sourceResults.forEach(function (result) {
+    const source = result.source || {};
+    const archiveType = source.archiveType;
+    const containerId = source.archiveContainerId;
+    if ((archiveType !== 'file' && archiveType !== 'folder') || !containerId ||
+      !Number.isInteger(source.archiveDepth)) {
+      throw new Error('JSON rebuild source is missing archive metadata. Run resetTricountJsonRebuild first.');
+    }
+    const key = archiveType + ':' + containerId;
+    if (!grouped[key]) {
+      grouped[key] = {
+        archiveType: archiveType,
+        containerId: containerId,
+        archiveDepth: source.archiveDepth,
+        records: []
+      };
+    }
+    grouped[key].records.push.apply(grouped[key].records, result.records || []);
+  });
+  Object.keys(grouped).map(function (key) {
+    return grouped[key];
+  }).sort(function (left, right) {
+    return right.archiveDepth - left.archiveDepth ||
+      left.archiveType.localeCompare(right.archiveType) || left.containerId.localeCompare(right.containerId);
+  }).forEach(function (source) {
+    if (source.archiveType === 'file') {
+      archiveSourceFile_(DriveApp.getFileById(source.containerId), root, source.records);
+      return;
+    }
+    archiveSourceFolder_(DriveApp.getFolderById(source.containerId), root, source.records);
   });
 }
 
@@ -920,9 +1001,24 @@ function verifyLedgerWrite_(sheet, imported) {
 
 function archiveSourceFolder_(folder, root, sourceRecords) {
   const config = getAutomationConfig_();
-  const archive = getOrCreateChildFolder_(root, config.archive_folder_name);
+  const archive = getOrCreateChildFolder_(root, getArchiveFolderName_(config));
   const year = deriveArchiveYear_(sourceRecords);
   folder.moveTo(getOrCreateChildFolder_(archive, year));
+}
+
+function archiveSourceFile_(file, root, sourceRecords) {
+  const config = getAutomationConfig_();
+  const archive = getOrCreateChildFolder_(root, getArchiveFolderName_(config));
+  const year = deriveArchiveYear_(sourceRecords);
+  file.moveTo(getOrCreateChildFolder_(archive, year));
+}
+
+function archiveIntakeSource_(source, root, sourceRecords) {
+  if (source.archiveType === 'file') {
+    archiveSourceFile_(source.files[0], root, sourceRecords);
+    return;
+  }
+  archiveSourceFolder_(source.container, root, sourceRecords);
 }
 
 function getOrCreateChildFolder_(parent, name) {
@@ -957,6 +1053,15 @@ function buildFolderResult_(folder, status, imported, duplicates, reviews, sourc
     dateEnd: dates[dates.length - 1] || '',
     archived: false
   };
+}
+
+function buildIntakeSourceResult_(source, status, imported, duplicates, reviews, sourceRecords, openingBalances) {
+  const result = buildFolderResult_(source.container, status, imported, duplicates, reviews, sourceRecords,
+    openingBalances);
+  result.folderName = source.displayName;
+  result.folderUrl = source.displayUrl;
+  result.sourceType = source.archiveType;
+  return result;
 }
 
 function sendExpenseReviewEmail_(results) {

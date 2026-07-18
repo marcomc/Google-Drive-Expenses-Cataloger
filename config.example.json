@@ -5,9 +5,11 @@
   "excluded_root_folder_names": [
     "Ricevute",
     "_Test-fixtures",
-    "_Imported"
+    "_Imported",
+    "Imported",
+    "Importazioni"
   ],
-  "archive_folder_name": "_Imported",
+  "archive_folder_name": "Imported",
   "test_fixture_folder_name": "_Test-fixtures",
   "notification_recipient": "REPLACE_WITH_EMAIL",
   "categories": {

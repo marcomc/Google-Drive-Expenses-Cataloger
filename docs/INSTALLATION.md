@@ -67,7 +67,37 @@ reporting the installed spreadsheet URL.
 
 Do not leave historical candidate folders in the root for the first run. Move
 them to `_Test-fixtures`; that folder is ignored by the runtime. Return one
-original folder to `Spese`, wait for the 15-minute trigger or run
-`processExpenseFolder(folderId)` manually, and validate the result before the
-next case. When the fixtures are isolated, run `enableExpenseCataloging()` once
-to enable scheduled intake.
+original folder to `Spese` and copy its folder ID from the Drive URL.
+
+Use the installation-specific owner authorization for every `clasp run`. The
+default public clasp OAuth client does not carry the sensitive project scopes
+and Google may block its consent request. Verify the installation first:
+
+```sh
+npx --yes @google/clasp@3.3.0 \
+  -A .installer/clasp-owner-auth.json \
+  --json run getSetupStatus
+```
+
+Import the selected folder manually:
+
+```sh
+npx --yes @google/clasp@3.3.0 \
+  -A .installer/clasp-owner-auth.json \
+  --json run processExpenseFolder \
+  --params '["DRIVE_FOLDER_ID"]'
+```
+
+After validating the ledger, import audit, reconciliation, and archived source
+folder, repeat with the next fixture. When the fixtures are isolated, enable
+scheduled intake once:
+
+```sh
+npx --yes @google/clasp@3.3.0 \
+  -A .installer/clasp-owner-auth.json \
+  --json run enableExpenseCataloging
+```
+
+The 15-minute trigger will then process future eligible source folders. Do not
+run `clasp login` again for these commands; the dedicated authorization already
+contains the required Apps Script, Drive, Sheets, and mail scopes.

@@ -80,6 +80,7 @@ function validateInstallerOptions_(options) {
     throw new Error('geminiBackend must be gemini_api or vertex_ai.');
   }
   validateAutomationConfig_(options.automationConfig);
+  const automationConfig = normalizeAutomationConfig_(options.automationConfig);
   return {
     projectId: String(options.projectId).trim(), rootFolderId: String(options.rootFolderId).trim(),
     spreadsheetId: String(options.spreadsheetId || '').trim(),
@@ -88,7 +89,7 @@ function validateInstallerOptions_(options) {
     geminiBackend: options.geminiBackend, geminiModel: String(options.geminiModel).trim(),
     autoVertexFallback: options.autoVertexFallback === true,
     vertexLocation: String(options.vertexLocation).trim(),
-    automationConfig: options.automationConfig, agentsPolicy: String(options.agentsPolicy),
+    automationConfig: automationConfig, agentsPolicy: String(options.agentsPolicy),
     geminiSecretVersion: String(options.geminiSecretVersion || '').trim(), geminiApiKey: '',
     reuseExistingGeminiApiKey: options.reuseExistingGeminiApiKey === true,
     preserveAutomaticProcessing: options.preserveAutomaticProcessing === true,

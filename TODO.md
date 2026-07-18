@@ -21,6 +21,24 @@ release. Completed work belongs in [CHANGELOG.md](CHANGELOG.md).
     Properties, Drive policy, and spreadsheet schema without mutation.
   - Keep repair actions explicit and separately authorized.
 
+- [ ] **Improve bootstrap workflow and documentation**
+  - Define and document one canonical path for first installation,
+    reconfiguration, credential setup, deployment, and initial import.
+  - Make bootstrap steps idempotent where practical and provide actionable
+    diagnostics for partial setup, authorization, and rerun failures.
+  - Add verification checkpoints and concise flowcharts covering local setup,
+    Google Cloud resources, Apps Script deployment, and production readiness.
+
+- [ ] **Evaluate event-driven Drive intake**
+  - Assess Google Workspace Events API for direct-child Drive changes using the
+    existing billing-enabled `drive-expenses-cataloger` Cloud project.
+  - Prototype a secure Pub/Sub receiver and compare Cloud Run versus an Apps
+    Script-compatible endpoint for event delivery.
+  - Retain durable, idempotent intake state and the daily polling fallback so
+    missed or duplicate events cannot cause missed or repeated imports.
+  - Compare the operating complexity and free-tier cost with the current
+    15-minute root polling before replacing it.
+
 - [ ] **Publish the first release after review**
   - Review the full diff and repository-publication privacy boundary.
   - Commit, tag, and publish only after explicit approval.

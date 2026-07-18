@@ -15,6 +15,31 @@ the target API executable, preserves the live Apps Script time zone, pushes
 project HEAD, creates a numbered version, and updates the stable API
 executable.
 
+The production path for `0.2.0` and later releases is:
+
+```mermaid
+flowchart LR
+  accTitle: Production release promotion
+  accDescr: Shows how a release branch becomes the stable Apps Script deployment.
+  branch["Create release branch"] --> commit["Commit and push"]
+  commit --> pr["Open PR to main"]
+  pr --> validation["Validation passes"]
+  validation --> approval["Approve and merge"]
+  approval --> deploy["Deploy Apps Script workflow"]
+  deploy --> gate["Run make check"]
+  gate --> stable["Update stable deployment"]
+```
+
+Use a branch such as `release/0.2.0`; do not prepare the release directly in a
+dirty `main` worktree. The pull request validation does not deploy. Merging the
+approved PR pushes the exact merge revision to `main`, which triggers
+`.github/workflows/deploy-apps-script.yml`. The workflow runs the repository
+gate again before moving the stable Apps Script deployment.
+
+A GitHub tag or release does not trigger production deployment. Publish it only
+after the merge and successful Apps Script workflow, using the same concrete
+version documented in `CHANGELOG.md`.
+
 ## Required secrets
 
 Create the GitHub environment `production`, restricted to `main`, and add:
