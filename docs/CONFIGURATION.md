@@ -23,6 +23,10 @@ bootstrap.
 | `test_fixture_folder_name` | Isolated test root, normally `_Test-fixtures`. |
 | `categories` | Allowed category and one-level subcategory taxonomy. |
 
+Change the timezone of an installed instance explicitly with
+`./scripts/install.sh --reconfigure-time-zone`. Set `time_zone` in
+`config.local.json`, or temporarily override it with `GDEC_TIME_ZONE`.
+
 ## Script Properties
 
 | Property | Purpose |

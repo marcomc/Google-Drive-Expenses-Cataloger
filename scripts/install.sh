@@ -117,14 +117,33 @@ collect_settings() {
   state_set billingAccountId "${GDEC_BILLING_ACCOUNT_ID#billingAccounts/}"
 }
 
-configure_manifest_time_zone() {
-  local time_zone manifest_tmp
+push_script_with_configured_time_zone() (
+  local time_zone manifest_backup manifest_tmp
+  # shellcheck disable=SC2329 # Invoked by the EXIT trap below.
+  restore_manifest() {
+    local command_status="$?"
+    rm -f "${manifest_tmp}"
+    if [[ -f "${manifest_backup}" ]]; then
+      mv "${manifest_backup}" "${PROJECT_ROOT}/appsscript.json" || return 1
+    fi
+    return "${command_status}"
+  }
   time_zone="$(state_get '.timeZone')"
+  manifest_backup="$(mktemp "${PROJECT_ROOT}/appsscript.backup.XXXXXX")"
   manifest_tmp="$(mktemp "${PROJECT_ROOT}/appsscript.XXXXXX")"
+  if ! cp "${PROJECT_ROOT}/appsscript.json" "${manifest_backup}"; then
+    rm -f "${manifest_backup}" "${manifest_tmp}"
+    return 1
+  fi
+  trap restore_manifest EXIT
   jq --arg time_zone "${time_zone}" '.timeZone = $time_zone' \
     "${PROJECT_ROOT}/appsscript.json" >"${manifest_tmp}"
   mv "${manifest_tmp}" "${PROJECT_ROOT}/appsscript.json"
-}
+  (
+    cd "${PROJECT_ROOT}"
+    "${CLASP[@]}" push --force
+  )
+)
 
 ensure_cloud_project() {
   local project_id
@@ -181,11 +200,7 @@ create_and_push_script() {
       "${CLASP[@]}" create --type standalone --title="${project_name}"
     )
   fi
-  configure_manifest_time_zone
-  (
-    cd "${PROJECT_ROOT}"
-    "${CLASP[@]}" push --force
-  )
+  push_script_with_configured_time_zone
 }
 
 ensure_api_executable_deployment() {
@@ -241,7 +256,7 @@ run_bootstrap() {
   spreadsheet_id="$(state_get '.spreadsheetId')"
   notification_recipient="$(state_get '.notificationRecipient')"
   time_zone="$(state_get '.timeZone')"
-  config_json="$(<"${CONFIG_FILE}")"
+  config_json="$(jq --arg time_zone "${time_zone}" '.time_zone = $time_zone' "${CONFIG_FILE}")"
   gemini_backend='gemini_api'
   auto_vertex_fallback='false'
   if [[ "${mode}" == 'vertex_ai' ]]; then
@@ -265,10 +280,7 @@ run_bootstrap() {
     --argjson autoVertexFallback "${auto_vertex_fallback}" \
     '{projectId:$projectId,rootFolderId:$rootFolderId,spreadsheetId:$spreadsheetId,spreadsheetTitle:$spreadsheetTitle,notificationRecipient:$notificationRecipient,geminiBackend:$geminiBackend,geminiModel:$geminiModel,vertexLocation:$vertexLocation,geminiSecretVersion:$geminiSecretVersion,agentsPolicy:$agentsPolicy,timeZone:$timeZone,automationConfig:$automationConfig,autoVertexFallback:$autoVertexFallback}')"
   parameters="$(jq -cn --argjson options "${options}" '[ $options ]')"
-  (
-    cd "${PROJECT_ROOT}"
-    "${CLASP[@]}" push --force
-  )
+  push_script_with_configured_time_zone
   ensure_api_executable_deployment
   set +e
   bootstrap_output="$(
@@ -282,6 +294,19 @@ run_bootstrap() {
     printf '%s\n' "${bootstrap_output}" >&2
     die 'Apps Script bootstrap failed; the temporary Gemini secret was retained for retry.'
   fi
+}
+
+reconfigure_time_zone() {
+  local configured_time_zone
+  [[ -f "${STATE_FILE}" ]] || die 'No completed installer state exists.'
+  ensure_local_config
+  configured_time_zone="$(jq -r '.time_zone // empty' "${CONFIG_FILE}")"
+  : "${GDEC_TIME_ZONE:=${configured_time_zone:-Europe/Rome}}"
+  # shellcheck disable=SC2310 # Predicate functions intentionally signal invalid input with nonzero status.
+  is_valid_time_zone "${GDEC_TIME_ZONE}" || die 'Invalid GDEC_TIME_ZONE.'
+  state_set timeZone "${GDEC_TIME_ZONE}"
+  run_bootstrap
+  info "Timezone reconfigured: ${GDEC_TIME_ZONE}"
 }
 
 remove_transfer_secret() {
@@ -313,6 +338,11 @@ main() {
       info 'Installation complete. The Gemini API key remains only in Bitwarden and Script Properties.'
       return
       ;;
+    reconfigure-time-zone)
+      install_check
+      reconfigure_time_zone
+      return
+      ;;
     *) die 'Unsupported mode.' ;;
   esac
   install_check
@@ -328,6 +358,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --check) MODE='check' ;;
     --resume) MODE='resume' ;;
+    --reconfigure-time-zone) MODE='reconfigure-time-zone' ;;
     --reset) MODE='reset' ;;
     --debug) ;;
     *) die "Unknown option: $1" ;;
