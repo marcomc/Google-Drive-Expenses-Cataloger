@@ -96,3 +96,21 @@ jq -e --arg id "${APPS_SCRIPT_DEPLOYMENT_ID}" --argjson version "${version}" \
     .deploymentConfig.versionNumber == $version and
     .entryPoints == $entry_points
   ' <<<"${updated_deployment}" >/dev/null
+
+# Time-driven triggers are bound to the deployment that creates them. Recreate
+# them through the exact stable API executable after it is updated. Do not
+# stale-skip this recovery after a successful update: leaving old triggers
+# would recreate the precise version mismatch this step repairs.
+trigger_status="$("${CURL_BIN}" --silent --show-error --fail --request POST \
+  --header "Authorization: Bearer ${access_token}" \
+  --header 'Content-Type: application/json' \
+  --data '{"function":"installAutomationTriggers","parameters":[],"devMode":false}' \
+  "https://script.googleapis.com/v1/scripts/${APPS_SCRIPT_DEPLOYMENT_ID}:run")"
+jq -e '
+  .done == true and
+  .error == null and
+  .response.result.triggerCounts.processDriveEventQueue == 1 and
+  .response.result.triggerCounts.runDailyExpenseCataloging == 1 and
+  .response.result.missingTriggerHandlers == [] and
+  .response.result.duplicateTriggerHandlers == []
+' <<<"${trigger_status}" >/dev/null

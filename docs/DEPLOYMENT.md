@@ -28,6 +28,7 @@ flowchart LR
   approval --> deploy["Deploy Apps Script workflow"]
   deploy --> gate["Run make check"]
   gate --> stable["Update stable deployment"]
+  stable --> triggers["Reconcile managed time triggers"]
 ```
 
 Use a branch such as `release/0.2.0`; do not prepare the release directly in a
@@ -46,19 +47,26 @@ Create the GitHub environment `production`, restricted to `main`, and add:
 
 | Secret | Purpose |
 | --- | --- |
-| `CLASP_AUTH_JSON` | Owner-only clasp authorization JSON, authorized for the Apps Script Deployments API. |
+| `CLASP_AUTH_JSON` | Owner-only clasp authorization JSON, authorized for the Apps Script Deployments and Execution APIs. |
 | `CLASP_PROJECT_JSON` | Private `.clasp.json` for the target script. |
 | `APPS_SCRIPT_DEPLOYMENT_ID` | Stable owner-only API executable deployment ID. |
 
 The stable deployment ID and its owner-only API-executable entry point are
 verified before source upload. The workflow uses the Apps Script Deployments API
 to update only the immutable version and description, retaining the entry-point
-access configuration. Script Properties, Drive sources, spreadsheet data,
-triggers, and Gemini credentials are not changed by deployment.
+access configuration. It then calls the Apps Script Execution API against that
+exact deployment ID in non-development mode to recreate only the two managed
+time triggers. Replacement triggers are created before old ones are removed,
+and the job fails if their handler counts are not exactly one each. If `main`
+advances after the stable update, the running job still completes this trigger
+repair; the newer revision's deploy will supersede it. Script Properties, Drive
+sources, spreadsheet data, and Gemini credentials are not changed by deployment.
 
-`CLASP_AUTH_JSON` must carry the
-`https://www.googleapis.com/auth/script.deployments` OAuth scope. Re-authorize
-clasp with the owner account before adding or replacing that secret if the
+Create or renew `CLASP_AUTH_JSON` with the owner account using
+`clasp login --use-project-scopes --include-clasp-scopes`. This retains the
+manifest's runtime scopes and clasp's `script.deployments` and
+`script.projects` scopes needed by the deployment update and non-development
+trigger reconciliation. Re-authorize before replacing the secret if the
 workflow reports an insufficient-permission error.
 
 ## Secret handoff

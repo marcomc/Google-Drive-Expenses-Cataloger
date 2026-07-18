@@ -102,7 +102,17 @@ if [[ "${url}" == 'https://oauth2.googleapis.com/token' ]]; then
   printf '%s\n' '{"access_token":"test-token"}'
   exit 0
 fi
-test "${url}" = "https://script.googleapis.com/v1/projects/test-script/deployments/${TEST_LISTED_DEPLOYMENT_ID}"
+deployment_url="https://script.googleapis.com/v1/projects/test-script/deployments/${APPS_SCRIPT_DEPLOYMENT_ID}"
+execution_url="https://script.googleapis.com/v1/scripts/${APPS_SCRIPT_DEPLOYMENT_ID}:run"
+if [[ "${url}" == "${execution_url}" ]]; then
+  test "${method}" = 'POST'
+  jq -e '.function == "installAutomationTriggers" and .parameters == [] and .devMode == false' \
+    <<<"${payload}" >/dev/null
+  printf '%s\n' triggers >>"${TEST_COMMAND_LOG}"
+  printf '%s\n' '{"done":true,"response":{"result":{"triggerCounts":{"processDriveEventQueue":1,"runDailyExpenseCataloging":1},"missingTriggerHandlers":[],"duplicateTriggerHandlers":[]}}}'
+  exit 0
+fi
+test "${url}" = "${deployment_url}"
 entry_points='[{"entryPointType":"EXECUTION_API","executionApi":{"entryPointConfig":{"access":"MYSELF"}}}]'
 if [[ "${TEST_HAS_API_ENTRY_POINT}" != 'true' ]]; then
   entry_points='[]'
@@ -178,7 +188,7 @@ test "${actual_time_zone}" = 'Europe/Rome'
 actual_execution_api_access="$(jq -r '.executionApi.access' "${success_dir}/appsscript.json")"
 test "${actual_execution_api_access}" = 'MYSELF'
 actual_commands="$(tr '\n' ' ' <"${success_dir}/commands.log")"
-test "${actual_commands}" = 'push version update '
+test "${actual_commands}" = 'push version update triggers '
 
 stale_dir="${TEST_ROOT}/stale"
 mkdir -p "${stale_dir}"
@@ -198,6 +208,13 @@ run_fixture "${stale_before_update_dir}" "${CURRENT_SHA}" "${CURRENT_SHA}" \
   'deployment-1' 'deployment-1' true false "${CURRENT_SHA},${CURRENT_SHA},${STALE_SHA}"
 actual_commands="$(tr '\n' ' ' <"${stale_before_update_dir}/commands.log")"
 test "${actual_commands}" = 'push version '
+
+stale_after_update_dir="${TEST_ROOT}/stale-after-update"
+mkdir -p "${stale_after_update_dir}"
+run_fixture "${stale_after_update_dir}" "${CURRENT_SHA}" "${CURRENT_SHA}" \
+  'deployment-1' 'deployment-1' true false "${CURRENT_SHA},${CURRENT_SHA},${CURRENT_SHA},${STALE_SHA}"
+actual_commands="$(tr '\n' ' ' <"${stale_after_update_dir}/commands.log")"
+test "${actual_commands}" = 'push version update triggers '
 
 missing_entry_point_dir="${TEST_ROOT}/missing-entry-point"
 mkdir -p "${missing_entry_point_dir}"

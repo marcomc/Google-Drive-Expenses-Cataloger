@@ -5,6 +5,28 @@ All notable changes to this project are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [Semantic Versioning](https://semver.org/).
 
+## [0.2.1] - 2026-07-18
+
+### Fixed
+
+- Reconcile the managed Apps Script time triggers immediately after promoting a
+  new stable API-executable version, preventing scheduled imports from staying
+  bound to an older release.
+- Create replacement triggers before removing existing ones, so a failed
+  replacement leaves the prior automation available.
+- Report the automatic-processing flag, missing handlers, duplicate handlers,
+  and per-handler trigger counts through the read-only setup and installation
+  status functions.
+- Serialize trigger installation and removal, and refuse to enable automatic
+  processing unless exactly one managed trigger exists for each handler.
+- Rebind triggers through the promoted non-development executable even if
+  `main` advances immediately after deployment promotion.
+- Wait for an in-flight import's shared lock before trigger reconciliation, so
+  deployment does not leave the prior trigger version in place during normal
+  processing.
+- Invoke trigger reconciliation through the configured API-executable
+  deployment ID, rather than relying on an unspecified executable deployment.
+
 ## [0.2.0] - 2026-07-18
 
 ### Added
