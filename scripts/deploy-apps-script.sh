@@ -62,7 +62,11 @@ mkdir -m 700 "${snapshot_dir}"
 cp .clasp.json "${snapshot_dir}/.clasp.json"
 (cd "${snapshot_dir}" && clasp -A "${auth_file}" pull)
 time_zone="$(jq -er '.timeZone | select(type == "string" and length > 0)' "${snapshot_dir}/appsscript.json")"
-jq --arg time_zone "${time_zone}" '.timeZone = $time_zone' appsscript.json >"${RUNNER_TEMP}/appsscript.json"
+execution_api="$(jq -c '.executionApi // null' "${snapshot_dir}/appsscript.json")"
+jq --arg time_zone "${time_zone}" --argjson execution_api "${execution_api}" '
+  .timeZone = $time_zone |
+  if $execution_api == null then del(.executionApi) else .executionApi = $execution_api end
+' appsscript.json >"${RUNNER_TEMP}/appsscript.json"
 mv "${RUNNER_TEMP}/appsscript.json" appsscript.json
 
 label="main-${DEPLOY_COMMIT_SHA::12}"

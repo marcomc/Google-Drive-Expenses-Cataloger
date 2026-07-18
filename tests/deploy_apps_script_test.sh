@@ -58,9 +58,10 @@ case "${command_name}" in
     printf '[{"deploymentId":"%s","versionNumber":4}]\n' "${TEST_LISTED_DEPLOYMENT_ID}"
     ;;
   pull)
-    printf '%s\n' '{"timeZone":"Europe/Rome"}' >appsscript.json
+    printf '%s\n' '{"timeZone":"Europe/Rome","executionApi":{"access":"MYSELF"}}' >appsscript.json
     ;;
   push)
+    jq -e '.timeZone == "Europe/Rome" and .executionApi.access == "MYSELF"' appsscript.json >/dev/null
     printf '%s\n' push >>"${TEST_COMMAND_LOG}"
     ;;
   version)
@@ -174,6 +175,8 @@ run_fixture "${success_dir}" "${CURRENT_SHA}" "${CURRENT_SHA}" \
   'deployment-1' 'deployment-1' true
 actual_time_zone="$(jq -r '.timeZone' "${success_dir}/appsscript.json")"
 test "${actual_time_zone}" = 'Europe/Rome'
+actual_execution_api_access="$(jq -r '.executionApi.access' "${success_dir}/appsscript.json")"
+test "${actual_execution_api_access}" = 'MYSELF'
 actual_commands="$(tr '\n' ' ' <"${success_dir}/commands.log")"
 test "${actual_commands}" = 'push version update '
 
