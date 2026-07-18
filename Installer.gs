@@ -88,6 +88,7 @@ function validateInstallerOptions_(options) {
     vertexLocation: String(options.vertexLocation).trim(),
     automationConfig: options.automationConfig, agentsPolicy: String(options.agentsPolicy),
     geminiSecretVersion: String(options.geminiSecretVersion || '').trim(), geminiApiKey: '',
+    reuseExistingGeminiApiKey: options.reuseExistingGeminiApiKey === true,
     timeZone: String(options.timeZone).trim()
   };
 }
@@ -116,10 +117,14 @@ function readInstallerGeminiApiKey_(options) {
 
 function validateInstallerGeminiAccess_(options) {
   if (options.geminiBackend === 'gemini_api') {
-    if (!options.geminiSecretVersion) {
-      throw new Error('geminiSecretVersion is required for Gemini Developer API.');
+    if (options.geminiSecretVersion) {
+      return;
     }
-    return;
+    if (options.reuseExistingGeminiApiKey &&
+      PropertiesService.getScriptProperties().getProperty(CONFIG.PROPERTY_KEYS.GEMINI_API_KEY)) {
+      return;
+    }
+    throw new Error('geminiSecretVersion is required for Gemini Developer API.');
   }
   if (!options.projectId) {
     throw new Error('projectId is required for Vertex AI.');

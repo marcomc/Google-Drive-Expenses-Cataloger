@@ -16,7 +16,8 @@ make_fixture() {
     rootFolderId: "test-folder",
     spreadsheetId: "",
     projectName: "Test cataloger",
-    geminiMode: "vertex_ai",
+    geminiMode: "gemini_api_with_vertex_fallback",
+    geminiSecretVersion: "projects/test-project/secrets/deleted-transfer-secret/versions/latest",
     timeZone: "Europe/Rome",
     notificationRecipient: "test@example.com",
     billingAccountId: "test-billing",
@@ -42,6 +43,9 @@ case " $* " in
     ;;
   *' --json deploy '*) printf '%s\n' '{"deploymentId":"test-deployment"}' ;;
   *' --json run bootstrapCatalogerInstallation '*)
+    jq -e '.[0].geminiSecretVersion == "" and
+      .[0].reuseExistingGeminiApiKey == true and
+      .[0].timeZone == "Pacific/Auckland"' <<<"${!#}" >/dev/null
     printf '%s\n' '{"response":{"installed":true}}'
     ;;
   *)
