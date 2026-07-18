@@ -21,10 +21,9 @@ function disableExpenseCataloging() {
 }
 
 /**
- * One-off, all-or-nothing migration from complete Tricount JSON exports.
- * It intentionally excludes fixtures and archived intake folders, never moves
- * historical folders, and clears the old ledger only after every source has
- * been parsed and normalized successfully.
+ * Resumable one-source-at-a-time migration from complete Tricount JSON exports.
+ * Normalized source snapshots are durable Drive staging files. The canonical
+ * ledger is untouched until a later, Gemini-free final commit.
  */
 function rebuildTransactionsFromTricountJson() {
   return withExpenseLock_('json-rebuild', function () {
@@ -32,30 +31,88 @@ function rebuildTransactionsFromTricountJson() {
     const root = DriveApp.getFolderById(getRootFolderId_());
     const config = getAutomationConfig_();
     const policy = loadDriveAgentsPolicy_(root);
-    const sources = listHistoricalTricountJsonSources_(root, config);
-    if (sources.length === 0) {
-      throw new Error('No eligible Tricount JSON exports were found outside excluded folders.');
+    const state = getOrCreateJsonRebuildState_(root, config);
+    if (state.nextIndex < state.sources.length) {
+      const source = state.sources[state.nextIndex];
+      stageJsonRebuildSource_(state, source, policy, config);
+      state.nextIndex += 1;
+      saveJsonRebuildState_(state);
+      return { status: 'STAGING', processedSources: state.nextIndex, totalSources: state.sources.length,
+        nextSource: state.sources[state.nextIndex] ? state.sources[state.nextIndex].name : '' };
     }
+    return commitJsonRebuild_(root, state);
+  });
+}
+
+/** Forget a failed staged migration without changing the canonical ledger. */
+function resetTricountJsonRebuild() {
+  PropertiesService.getScriptProperties().deleteProperty(CONFIG.PROPERTY_KEYS.JSON_REBUILD_STATE);
+  return { status: 'RESET' };
+}
+
+function getOrCreateJsonRebuildState_(root, config) {
+  const properties = PropertiesService.getScriptProperties();
+  const raw = properties.getProperty(CONFIG.PROPERTY_KEYS.JSON_REBUILD_STATE);
+  if (raw) {
+    const state = JSON.parse(raw);
+    if (state && state.version === 1 && Array.isArray(state.sources) && state.stagingFolderId) {
+      return state;
+    }
+    throw new Error('JSON rebuild state is invalid. Run resetTricountJsonRebuild first.');
+  }
+  const sources = listHistoricalTricountJsonSources_(root, config).map(function (source) {
+    return { fileId: source.file.getId(), folderId: source.folder.getId(), name: source.file.getName() };
+  });
+  if (sources.length === 0) {
+    throw new Error('No eligible Tricount JSON exports were found outside excluded folders.');
+  }
+  const state = { version: 1, runId: Utilities.getUuid(), stagingFolderId: getOrCreateJsonRebuildStagingFolder_(root).getId(),
+    sources: sources, nextIndex: 0, startedAt: new Date().toISOString() };
+  saveJsonRebuildState_(state);
+  return state;
+}
+
+function getOrCreateJsonRebuildStagingFolder_(root) {
+  const name = '.Cataloger-rebuild-staging';
+  const matches = root.getFoldersByName(name);
+  return matches.hasNext() ? matches.next() : root.createFolder(name);
+}
+
+function saveJsonRebuildState_(state) {
+  PropertiesService.getScriptProperties().setProperty(CONFIG.PROPERTY_KEYS.JSON_REBUILD_STATE, JSON.stringify(state));
+}
+
+function stageJsonRebuildSource_(state, source, policy, config) {
+  const stagingFolder = DriveApp.getFolderById(state.stagingFolderId);
+  const stageName = state.runId + '-' + source.fileId + '.json';
+  const existing = stagingFolder.getFilesByName(stageName);
+  if (existing.hasNext()) {
+    return;
+  }
+  const file = DriveApp.getFileById(source.fileId);
+  const folder = DriveApp.getFolderById(source.folderId);
+  const content = file.getBlob().getDataAsString('UTF-8');
+  let document;
+  try { document = JSON.parse(content); } catch (error) {
+    throw new Error('Invalid Tricount JSON source ' + file.getName() + ': ' + error.message);
+  }
+  const sourceFile = { id: file.getId(), name: file.getName(), url: file.getUrl(), contentHash: sha256_(content) };
+  const factualRecords = parseTricountJsonExport_(document, sourceFile, { id: folder.getId(), name: folder.getName() });
+  const records = normalizeExpenseJsonWithAi_(factualRecords, file, folder, policy, config);
+  stagingFolder.createFile(stageName, JSON.stringify({ sourceFile: sourceFile, records: records }), MimeType.JSON);
+}
+
+function commitJsonRebuild_(root, state) {
+    const stagingFolder = DriveApp.getFolderById(state.stagingFolderId);
     const sourceResults = [];
     const records = [];
-    sources.forEach(function (source) {
-      const content = source.file.getBlob().getDataAsString('UTF-8');
-      let document;
-      try {
-        document = JSON.parse(content);
-      } catch (error) {
-        throw new Error('Invalid Tricount JSON source ' + source.file.getName() + ': ' + error.message);
-      }
-      const sourceFile = {
-        id: source.file.getId(), name: source.file.getName(), url: source.file.getUrl(),
-        contentHash: sha256_(content)
-      };
-      const factualRecords = parseTricountJsonExport_(document, sourceFile, {
-        id: source.folder.getId(), name: source.folder.getName()
-      });
-      const normalized = normalizeExpenseJsonWithAi_(factualRecords, source.file, source.folder, policy, config);
-      normalized.forEach(function (record) { records.push(record); });
-      sourceResults.push({ file: source.file, sourceFile: sourceFile, status: 'READY', records: normalized });
+    state.sources.forEach(function (source) {
+      const matches = stagingFolder.getFilesByName(state.runId + '-' + source.fileId + '.json');
+      if (!matches.hasNext()) { throw new Error('Missing staged source ' + source.name + '.'); }
+      const staged = JSON.parse(matches.next().getBlob().getDataAsString('UTF-8'));
+      (staged.records || []).forEach(function (record) { records.push(record); });
+      sourceResults.push({ file: { getName: function () { return staged.sourceFile.name; } },
+        sourceFile: staged.sourceFile, status: 'READY', records: staged.records || [] });
     });
     const spreadsheet = SpreadsheetApp.openById(getSpreadsheetId_());
     const layout = getExpenseSheetLayout_(spreadsheet);
@@ -90,11 +147,11 @@ function rebuildTransactionsFromTricountJson() {
     const localization = getLocalization_();
     buildDashboard_(spreadsheet.getSheetByName(localization.sheetNames.dashboard),
       layout.transactions, localization);
+    PropertiesService.getScriptProperties().deleteProperty(CONFIG.PROPERTY_KEYS.JSON_REBUILD_STATE);
     return {
       status: 'REBUILT', sourceFiles: sourceResults.length, sourceEntries: records.length,
       imported: imported.length, openingBalanceChecks: openingBalances.length
     };
-  });
 }
 
 /** Safe manual entrypoint for a controlled folder-level test. */

@@ -61,11 +61,11 @@ summary.
 ## Full JSON rebuild
 
 `rebuildTransactionsFromTricountJson` is the explicit one-off migration for
-the existing historical exports. It scans eligible complete JSON documents
-outside `_Test-fixtures` and `_Imported`, preserves their source folders, and
-replaces the canonical ledger, audit, and source-reconciliation rows only after
-all sources have been parsed and normalized. Run it only after the controlled
-folder tests pass; this keeps fixture data out of the live ledger.
+the existing historical exports. Each invocation classifies and durably stages
+one eligible JSON document outside `_Test-fixtures` and `_Imported`; rerun it
+until it returns `REBUILT`. The ledger, audit, and reconciliation rows change
+only in that final Gemini-free commit. `resetTricountJsonRebuild` abandons a
+failed staging run without changing the canonical ledger.
 
 ## Recovery
 
