@@ -1,0 +1,19 @@
+# Credentials and installation state never belong to the Apps Script project.
+.clasp.json
+.installer/**
+config.local.json
+config.local.json.tmp*
+client_secret_*.json
+oauth-client*.json
+
+# Local documentation, tooling, and tests are not Apps Script source.
+.gitignore
+.markdownlint.json
+AGENTS.example.md
+AGENTS.md
+Makefile
+README.md
+config.example.json
+docs/**
+scripts/**
+tests/**

@@ -1,0 +1,24 @@
+{
+  "locale": "en",
+  "intake_keyword": "HoStello",
+  "excluded_root_folder_names": [
+    "Ricevute",
+    "_Test-fixtures",
+    "_Imported"
+  ],
+  "archive_folder_name": "_Imported",
+  "test_fixture_folder_name": "_Test-fixtures",
+  "notification_recipient": "REPLACE_WITH_EMAIL",
+  "categories": {
+    "Home and utilities": ["Rent", "Electricity", "Gas", "Water", "Internet", "Condominium"],
+    "Groceries": ["General groceries"],
+    "Food and drink": ["Restaurant", "Bar and breakfast", "Takeaway"],
+    "Transport": ["Fuel", "Public transport", "Vehicle maintenance"],
+    "Health": ["Pharmacy", "Medical expense", "Tests and analysis"],
+    "Dogs": ["Veterinarian", "Medicines", "Food", "Grooming", "Boarding", "Training"],
+    "Home purchases": ["Furniture and household items", "Maintenance"],
+    "Personal and gifts": ["Personal purchase", "Gift"],
+    "Leisure and travel": ["Entertainment", "Travel"],
+    "Other": ["Other"]
+  }
+}
