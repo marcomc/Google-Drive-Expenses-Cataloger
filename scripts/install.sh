@@ -80,10 +80,12 @@ collect_settings() {
   local recipient
   local root_folder_id
   local spreadsheet_id
+  local configured_time_zone
   ensure_local_config
   : "${GDEC_PROJECT_NAME:=Google Drive Expenses Cataloger}"
   : "${GDEC_GEMINI_MODE:=gemini_api_with_vertex_fallback}"
-  : "${GDEC_TIME_ZONE:=Europe/Rome}"
+  configured_time_zone="$(jq -r '.time_zone // empty' "${CONFIG_FILE}")"
+  : "${GDEC_TIME_ZONE:=${configured_time_zone:-Europe/Rome}}"
   recipient="$(jq -r '.notification_recipient' "${CONFIG_FILE}")"
   : "${GDEC_NOTIFICATION_RECIPIENT:=${recipient}}"
   : "${GDEC_ROOT_FOLDER:=}"
@@ -113,6 +115,15 @@ collect_settings() {
   state_set timeZone "${GDEC_TIME_ZONE}"
   state_set notificationRecipient "${GDEC_NOTIFICATION_RECIPIENT}"
   state_set billingAccountId "${GDEC_BILLING_ACCOUNT_ID#billingAccounts/}"
+}
+
+configure_manifest_time_zone() {
+  local time_zone manifest_tmp
+  time_zone="$(state_get '.timeZone')"
+  manifest_tmp="$(mktemp "${PROJECT_ROOT}/appsscript.XXXXXX")"
+  jq --arg time_zone "${time_zone}" '.timeZone = $time_zone' \
+    "${PROJECT_ROOT}/appsscript.json" >"${manifest_tmp}"
+  mv "${manifest_tmp}" "${PROJECT_ROOT}/appsscript.json"
 }
 
 ensure_cloud_project() {
@@ -170,6 +181,7 @@ create_and_push_script() {
       "${CLASP[@]}" create --type standalone --title="${project_name}"
     )
   fi
+  configure_manifest_time_zone
   (
     cd "${PROJECT_ROOT}"
     "${CLASP[@]}" push --force

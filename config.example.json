@@ -1,5 +1,6 @@
 {
   "locale": "en",
+  "time_zone": "Europe/Rome",
   "intake_keyword": "HoStello",
   "excluded_root_folder_names": [
     "Ricevute",

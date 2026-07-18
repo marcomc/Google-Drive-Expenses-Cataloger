@@ -16,6 +16,7 @@ bootstrap.
 | Key | Purpose |
 | --- | --- |
 | `locale` | `en` by default, or `it` for this installation. |
+| `time_zone` | IANA timezone used by Apps Script and the spreadsheet; defaults to `Europe/Rome`. |
 | `intake_keyword` | Required marker in an eligible folder or JSON filename. |
 | `excluded_root_folder_names` | Direct-root folders that the scanner ignores. |
 | `archive_folder_name` | Archive root, normally `_Imported`. |
