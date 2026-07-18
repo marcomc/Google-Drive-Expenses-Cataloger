@@ -144,10 +144,127 @@ function ensureInstallerPolicyFile_(root, text) {
   if (matches.length > 1) {
     throw new Error('The intake root contains multiple AGENTS.md files.');
   }
-  if (matches.length === 1) {
-    return matches[0];
+  const policy = matches.length === 1 ? matches[0] :
+    root.createFile(CONFIG.DRIVE_AGENTS_FILE_NAME, text, MimeType.PLAIN_TEXT);
+  const existing = matches.length === 1 ? readInstallerPolicyFile_(policy) : '';
+  const merged = mergeInstallerPolicyText_(existing, text);
+  policy.setContent(merged);
+  verifyInstallerPolicyFile_(policy, text, existing);
+  return policy;
+}
+
+function readInstallerPolicyFile_(file) {
+  return file.getBlob().getDataAsString('UTF-8');
+}
+
+function mergeInstallerPolicyText_(existing, template) {
+  const existingSections = splitInstallerPolicySections_(existing);
+  const templateSections = splitInstallerPolicySections_(template);
+  if (existingSections.length === 0) {
+    return renderInstallerPolicySections_(templateSections);
   }
-  return root.createFile(CONFIG.DRIVE_AGENTS_FILE_NAME, text, MimeType.PLAIN_TEXT);
+  templateSections.forEach(function (templateSection) {
+    const existingSection = existingSections.find(function (section) {
+      return section.heading === templateSection.heading;
+    });
+    if (!existingSection) {
+      existingSections.push({ heading: templateSection.heading,
+        blocks: templateSection.blocks.slice() });
+      return;
+    }
+    const existingBlocks = existingSection.blocks.map(normalizeInstallerPolicyBlock_);
+    templateSection.blocks.forEach(function (block) {
+      if (existingBlocks.indexOf(normalizeInstallerPolicyBlock_(block)) < 0) {
+        existingSection.blocks.push(block);
+      }
+    });
+  });
+  return renderInstallerPolicySections_(existingSections);
+}
+
+function splitInstallerPolicySections_(text) {
+  const sections = [];
+  let heading = '';
+  let lines = [];
+  const addSection = function () {
+    const blocks = splitInstallerPolicyBlocks_(lines);
+    if (heading || blocks.length > 0) {
+      sections.push({ heading: heading, blocks: blocks });
+    }
+  };
+  String(text || '').trim().split(/\r?\n/).forEach(function (line) {
+    if (/^##\s+/.test(line)) {
+      addSection();
+      heading = line.trim();
+      lines = [];
+      return;
+    }
+    lines.push(line);
+  });
+  addSection();
+  return sections;
+}
+
+function splitInstallerPolicyBlocks_(lines) {
+  const blocks = [];
+  let block = [];
+  const addBlock = function () {
+    if (block.length > 0) {
+      blocks.push({ text: block.join('\n') });
+      block = [];
+    }
+  };
+  lines.forEach(function (line) {
+    if (!line.trim()) {
+      addBlock();
+      return;
+    }
+    if (/^[-*+]\s+/.test(line) || /^#{1,6}\s+/.test(line)) {
+      addBlock();
+    }
+    block.push(line.trim());
+  });
+  addBlock();
+  return blocks;
+}
+
+function normalizeInstallerPolicyBlock_(block) {
+  return block.text.replace(/\s+/g, ' ').trim();
+}
+
+function renderInstallerPolicySections_(sections) {
+  return sections.map(function (section) {
+    const content = section.blocks.map(function (block) { return block.text; }).join('\n\n');
+    return [section.heading, content].filter(Boolean).join('\n\n');
+  }).join('\n\n').trim();
+}
+
+function verifyInstallerPolicyFile_(file, template, existing) {
+  const verifiedSections = splitInstallerPolicySections_(readInstallerPolicyFile_(file));
+  assertInstallerPolicyContent_(verifiedSections, template, 'template instructions');
+  if (String(existing || '').trim()) {
+    assertInstallerPolicyContent_(verifiedSections, existing, 'existing Drive instructions');
+  }
+}
+
+function assertInstallerPolicyContent_(verifiedSections, expectedText, description) {
+  splitInstallerPolicySections_(expectedText).forEach(function (expectedSection) {
+    const verifiedSection = verifiedSections.find(function (section) {
+      return section.heading === expectedSection.heading;
+    });
+    if (!verifiedSection) {
+      throw new Error('AGENTS.md verification failed: missing ' + description +
+        ' in ' + (expectedSection.heading || 'the policy preamble') + '.');
+    }
+    const verifiedBlocks = verifiedSection.blocks.map(normalizeInstallerPolicyBlock_);
+    const missing = expectedSection.blocks.some(function (block) {
+      return verifiedBlocks.indexOf(normalizeInstallerPolicyBlock_(block)) < 0;
+    });
+    if (missing) {
+      throw new Error('AGENTS.md verification failed: missing ' + description +
+        ' in ' + (expectedSection.heading || 'the policy preamble') + '.');
+    }
+  });
 }
 
 function ensureInstallerSpreadsheet_(root, spreadsheetId, title, config, timeZone) {

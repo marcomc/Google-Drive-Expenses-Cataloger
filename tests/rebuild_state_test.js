@@ -59,4 +59,73 @@ vm.runInContext(fs.readFileSync('ExpensesCataloging.gs', 'utf8'), resetContext);
 assert.deepEqual(JSON.parse(JSON.stringify(resetContext.resetTricountJsonRebuild())), { status: 'RESET' });
 assert.deepEqual(deleted, ['JSON_REBUILD_STATE']);
 
+function iterator(values) {
+  let index = 0;
+  return { hasNext: () => index < values.length, next: () => values[index++] };
+}
+
+let sourceContent = 'initial-content';
+const sourceFile = {
+  getId: () => 'source-file',
+  getName: () => 'transactions-hostello-202607.json',
+  getUrl: () => 'https://example.test/file/source-file',
+  getBlob: () => ({ getDataAsString: () => sourceContent })
+};
+const rootFolder = {
+  getId: () => 'root-folder',
+  getUrl: () => 'https://example.test/folder/root-folder',
+  getFiles: () => iterator([sourceFile]),
+  getFolders: () => iterator([])
+};
+const source = {
+  fileId: sourceFile.getId(), folderId: rootFolder.getId(), name: sourceFile.getName(),
+  contentHash: sourceContent, archiveType: 'file', archiveContainerId: sourceFile.getId(), archiveDepth: 0
+};
+const commitState = {
+  runId: 'run-2', stagingFolderId: 'staging-2', sources: [source], nextIndex: 1, commitStarted: true
+};
+const stagedFile = {
+  getBlob: () => ({ getDataAsString: () => JSON.stringify({
+    sourceFile: { id: source.fileId, name: source.name, contentHash: source.contentHash }, records: []
+  }) })
+};
+let cleared = false;
+let wroteLedger = false;
+const commitContext = { console };
+vm.createContext(commitContext);
+vm.runInContext(fs.readFileSync('ExpenseCore.gs', 'utf8'), commitContext);
+vm.runInContext(fs.readFileSync('ExpensesCataloging.gs', 'utf8'), commitContext);
+commitContext.sha256_ = value => String(value);
+commitContext.getAutomationConfig_ = () => ({
+  intake_keyword: 'hostello', archive_folder_name: 'Importazioni', excluded_root_folder_names: []
+});
+commitContext.DriveApp = {
+  getFileById: id => {
+    assert.equal(id, source.fileId);
+    return sourceFile;
+  },
+  getFolderById: id => {
+    assert.equal(id, commitState.stagingFolderId);
+    return { getFilesByName: () => iterator([stagedFile]) };
+  }
+};
+commitContext.getSpreadsheetId_ = () => 'spreadsheet-id';
+commitContext.SpreadsheetApp = { openById: () => ({}) };
+commitContext.getExpenseSheetLayout_ = () => {
+  sourceContent = 'changed-after-initial-validation';
+  return {};
+};
+commitContext.clearJsonRebuildTargets_ = () => { cleared = true; };
+commitContext.writeLedgerRows_ = () => {
+  wroteLedger = true;
+  return [];
+};
+
+assert.throws(
+  () => commitContext.commitJsonRebuild_(rootFolder, commitState),
+  /Eligible JSON sources changed during rebuild staging/
+);
+assert.equal(cleared, false);
+assert.equal(wroteLedger, false);
+
 console.log('rebuild state tests passed');

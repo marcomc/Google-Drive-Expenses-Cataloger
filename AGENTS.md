@@ -8,9 +8,10 @@
   non-excluded direct-child folders. Archive the closest folder that directly
   contains an accepted JSON; never move an ancestor collection folder.
 - Keep durable source-folder and ledger state before calling quota-limited AI
-  APIs. Resume completed AI stages after a retry, and remove their transient
-  state only after successful archival. Do not reprocess an unchanged archived
-  folder.
+  APIs. Resume completed AI stages after a retry, then remove their transient
+  state after ledger and audit verification but before archival so cleanup
+  failures remain retryable while the source is still discoverable. Do not
+  reprocess an unchanged archived folder.
 - Revalidate eligible JSON identities, content hashes, and source-unit
   membership immediately before ledger replacement or archival. On drift,
   preserve the source in intake and require a safe retry or rebuild reset.

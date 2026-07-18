@@ -162,6 +162,8 @@ function commitJsonRebuild_(root, state) {
       openingBalanceMarkers.push(record);
       return check;
     });
+    assertJsonRebuildDiscoveryUnchanged_(root, config, state.sources, true);
+    assertJsonRebuildSourcesUnchanged_(config, state.sources);
     clearJsonRebuildTargets_(layout);
     const imported = writeLedgerRows_(layout, importable, 'json-rebuild');
     verifyLedgerWrite_(layout.transactions, imported);

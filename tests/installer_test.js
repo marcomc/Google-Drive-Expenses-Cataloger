@@ -69,6 +69,75 @@ assert.throws(
   /geminiSecretVersion is required/
 );
 
+function createPolicyFile(content, ignoreWrites = false) {
+  let stored = content;
+  return {
+    getBlob: () => ({ getDataAsString: () => stored }),
+    setContent: (next) => {
+      if (!ignoreWrites) {
+        stored = next;
+      }
+    },
+    getUrl: () => 'https://example.test/policy',
+    getContent: () => stored
+  };
+}
+
+function createPolicyRoot(file) {
+  return {
+    getFilesByName: () => {
+      let read = false;
+      return {
+        hasNext: () => !read,
+        next: () => {
+          read = true;
+          return file;
+        }
+      };
+    }
+  };
+}
+
+const existingPolicy = [
+  '# Expense import policy',
+  '',
+  'Local operators classify bar tabs as shared expenses.',
+  '',
+  '## Scope',
+  '',
+  '- Retain the existing local retention period.',
+  '',
+  '## Local operations',
+  '',
+  '- Send an operator a weekly reconciliation reminder.'
+].join('\n');
+const templatePolicy = [
+  '# Expense import policy',
+  '',
+  'Template policy applies to every import.',
+  '',
+  '## Scope',
+  '',
+  '- Process matching JSON files in the configured root.',
+  '- Archive only after ledger verification.',
+  '',
+  '## Import',
+  '',
+  '- Preserve canonical source coordinates.'
+].join('\n');
+const existingPolicyFile = createPolicyFile(existingPolicy);
+context.ensureInstallerPolicyFile_(createPolicyRoot(existingPolicyFile), templatePolicy);
+assert.match(existingPolicyFile.getContent(), /Template policy applies to every import\./);
+assert.match(existingPolicyFile.getContent(), /Retain the existing local retention period\./);
+assert.match(existingPolicyFile.getContent(), /weekly reconciliation reminder/);
+assert.match(existingPolicyFile.getContent(), /Preserve canonical source coordinates\./);
+
+const failedPolicyWrite = createPolicyFile(existingPolicy, true);
+assert.throws(
+  () => context.ensureInstallerPolicyFile_(createPolicyRoot(failedPolicyWrite), templatePolicy),
+  /AGENTS\.md verification failed: missing template instructions/
+);
+
 context.ensureInstallerPolicyFile_ = () => ({ getUrl: () => 'https://example.test/policy' });
 context.ensureInstallerSpreadsheet_ = () => ({
   getId: () => 'spreadsheet',

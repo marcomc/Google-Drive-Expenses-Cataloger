@@ -48,6 +48,11 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - Authenticate Drive staging batches with independently bounded digest
   properties, rejecting modified or duplicate stage files, and cleaning them
   while the verified source remains discoverable for retry.
+- Revalidate every staged rebuild source immediately before replacing the
+  canonical ledger, preventing a late Drive change from triggering a stale,
+  destructive rebuild.
+- Merge and verify current policy template instructions into an existing Drive
+  `AGENTS.md` while preserving Drive-only policy blocks.
 - Restrict root-file attachment evidence lookup to direct-root siblings instead
   of recursively searching unrelated intake, fixture, receipt, and archive
   folders.
