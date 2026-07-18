@@ -29,6 +29,12 @@
 - Test new, exact re-import, and partially overlapping JSON inputs with copies.
 - Do not delete originals or move a candidate folder to `_Imported` before the
   ledger and audit write are verified.
+- When the installer temporarily changes a tracked manifest before a remote
+  push, isolate the write in a subshell, restore it with an `EXIT` trap, and
+  test both successful and failed pushes.
+- Reconfiguration paths must not retry deleted credential-transfer secrets.
+  Reuse an existing stable credential only through an explicit, validated
+  bootstrap option and test the default credential backend.
 
 ## CI delivery
 

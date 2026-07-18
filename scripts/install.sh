@@ -80,10 +80,12 @@ collect_settings() {
   local recipient
   local root_folder_id
   local spreadsheet_id
+  local configured_time_zone
   ensure_local_config
   : "${GDEC_PROJECT_NAME:=Google Drive Expenses Cataloger}"
   : "${GDEC_GEMINI_MODE:=gemini_api_with_vertex_fallback}"
-  : "${GDEC_TIME_ZONE:=Europe/Rome}"
+  configured_time_zone="$(jq -r '.time_zone // empty' "${CONFIG_FILE}")"
+  : "${GDEC_TIME_ZONE:=${configured_time_zone:-Europe/Rome}}"
   recipient="$(jq -r '.notification_recipient' "${CONFIG_FILE}")"
   : "${GDEC_NOTIFICATION_RECIPIENT:=${recipient}}"
   : "${GDEC_ROOT_FOLDER:=}"
@@ -114,6 +116,33 @@ collect_settings() {
   state_set notificationRecipient "${GDEC_NOTIFICATION_RECIPIENT}"
   state_set billingAccountId "${GDEC_BILLING_ACCOUNT_ID#billingAccounts/}"
 }
+
+push_script_with_configured_time_zone() (
+  local time_zone manifest_backup manifest_tmp
+  time_zone="$(state_get '.timeZone')"
+  manifest_backup="$(mktemp "${PROJECT_ROOT}/appsscript.backup.XXXXXX")"
+  manifest_tmp="$(mktemp "${PROJECT_ROOT}/appsscript.XXXXXX")"
+  if ! cp "${PROJECT_ROOT}/appsscript.json" "${manifest_backup}"; then
+    rm -f "${manifest_backup}" "${manifest_tmp}"
+    return 1
+  fi
+  # shellcheck disable=SC2154 # command_status is assigned when the EXIT trap executes.
+  trap '
+    command_status=$?
+    rm -f "${manifest_tmp}"
+    if [[ -f "${manifest_backup}" ]]; then
+      mv "${manifest_backup}" "${PROJECT_ROOT}/appsscript.json" || exit 1
+    fi
+    exit "${command_status}"
+  ' EXIT
+  jq --arg time_zone "${time_zone}" '.timeZone = $time_zone' \
+    "${PROJECT_ROOT}/appsscript.json" >"${manifest_tmp}"
+  mv "${manifest_tmp}" "${PROJECT_ROOT}/appsscript.json"
+  (
+    cd "${PROJECT_ROOT}"
+    "${CLASP[@]}" push --force
+  )
+)
 
 ensure_cloud_project() {
   local project_id
@@ -170,10 +199,7 @@ create_and_push_script() {
       "${CLASP[@]}" create --type standalone --title="${project_name}"
     )
   fi
-  (
-    cd "${PROJECT_ROOT}"
-    "${CLASP[@]}" push --force
-  )
+  push_script_with_configured_time_zone
 }
 
 ensure_api_executable_deployment() {
@@ -219,17 +245,25 @@ transfer_gemini_key() {
 run_bootstrap() {
   local options parameters secret_version mode project_id root_folder_id spreadsheet_id
   local notification_recipient time_zone config_json gemini_backend auto_vertex_fallback
-  local bootstrap_output bootstrap_status
+  local bootstrap_output bootstrap_status preserve_automatic_processing reuse_existing_gemini_api_key
   [[ -f "${STATE_FILE}" ]] || die 'No resumable installer state exists.'
+  reuse_existing_gemini_api_key="${1:-false}"
+  preserve_automatic_processing="${2:-false}"
+  [[ "${reuse_existing_gemini_api_key}" == 'true' || \
+    "${reuse_existing_gemini_api_key}" == 'false' ]] || die 'Invalid Gemini credential reuse mode.'
+  [[ "${preserve_automatic_processing}" == 'true' || \
+    "${preserve_automatic_processing}" == 'false' ]] || die 'Invalid automatic processing preservation mode.'
   mode="$(state_get '.geminiMode')"
   secret_version=''
-  [[ "${mode}" == 'vertex_ai' ]] || secret_version="$(state_get '.geminiSecretVersion')"
+  if [[ "${mode}" != 'vertex_ai' && "${reuse_existing_gemini_api_key}" != 'true' ]]; then
+    secret_version="$(state_get '.geminiSecretVersion')"
+  fi
   project_id="$(state_get '.projectId')"
   root_folder_id="$(state_get '.rootFolderId')"
   spreadsheet_id="$(state_get '.spreadsheetId')"
   notification_recipient="$(state_get '.notificationRecipient')"
   time_zone="$(state_get '.timeZone')"
-  config_json="$(<"${CONFIG_FILE}")"
+  config_json="$(jq --arg time_zone "${time_zone}" '.time_zone = $time_zone' "${CONFIG_FILE}")"
   gemini_backend='gemini_api'
   auto_vertex_fallback='false'
   if [[ "${mode}" == 'vertex_ai' ]]; then
@@ -250,13 +284,12 @@ run_bootstrap() {
     --arg agentsPolicy "$(<"${PROJECT_ROOT}/AGENTS.example.md")" \
     --arg timeZone "${time_zone}" \
     --argjson automationConfig "${config_json}" \
+    --argjson reuseExistingGeminiApiKey "${reuse_existing_gemini_api_key}" \
+    --argjson preserveAutomaticProcessing "${preserve_automatic_processing}" \
     --argjson autoVertexFallback "${auto_vertex_fallback}" \
-    '{projectId:$projectId,rootFolderId:$rootFolderId,spreadsheetId:$spreadsheetId,spreadsheetTitle:$spreadsheetTitle,notificationRecipient:$notificationRecipient,geminiBackend:$geminiBackend,geminiModel:$geminiModel,vertexLocation:$vertexLocation,geminiSecretVersion:$geminiSecretVersion,agentsPolicy:$agentsPolicy,timeZone:$timeZone,automationConfig:$automationConfig,autoVertexFallback:$autoVertexFallback}')"
+    '{projectId:$projectId,rootFolderId:$rootFolderId,spreadsheetId:$spreadsheetId,spreadsheetTitle:$spreadsheetTitle,notificationRecipient:$notificationRecipient,geminiBackend:$geminiBackend,geminiModel:$geminiModel,vertexLocation:$vertexLocation,geminiSecretVersion:$geminiSecretVersion,agentsPolicy:$agentsPolicy,timeZone:$timeZone,automationConfig:$automationConfig,reuseExistingGeminiApiKey:$reuseExistingGeminiApiKey,preserveAutomaticProcessing:$preserveAutomaticProcessing,autoVertexFallback:$autoVertexFallback}')"
   parameters="$(jq -cn --argjson options "${options}" '[ $options ]')"
-  (
-    cd "${PROJECT_ROOT}"
-    "${CLASP[@]}" push --force
-  )
+  push_script_with_configured_time_zone
   ensure_api_executable_deployment
   set +e
   bootstrap_output="$(
@@ -270,6 +303,19 @@ run_bootstrap() {
     printf '%s\n' "${bootstrap_output}" >&2
     die 'Apps Script bootstrap failed; the temporary Gemini secret was retained for retry.'
   fi
+}
+
+reconfigure_time_zone() {
+  local configured_time_zone
+  [[ -f "${STATE_FILE}" ]] || die 'No completed installer state exists.'
+  ensure_local_config
+  configured_time_zone="$(jq -r '.time_zone // empty' "${CONFIG_FILE}")"
+  : "${GDEC_TIME_ZONE:=${configured_time_zone:-Europe/Rome}}"
+  # shellcheck disable=SC2310 # Predicate functions intentionally signal invalid input with nonzero status.
+  is_valid_time_zone "${GDEC_TIME_ZONE}" || die 'Invalid GDEC_TIME_ZONE.'
+  state_set timeZone "${GDEC_TIME_ZONE}"
+  run_bootstrap true true
+  info "Timezone reconfigured: ${GDEC_TIME_ZONE}"
 }
 
 remove_transfer_secret() {
@@ -301,6 +347,11 @@ main() {
       info 'Installation complete. The Gemini API key remains only in Bitwarden and Script Properties.'
       return
       ;;
+    reconfigure-time-zone)
+      install_check
+      reconfigure_time_zone
+      return
+      ;;
     *) die 'Unsupported mode.' ;;
   esac
   install_check
@@ -316,6 +367,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --check) MODE='check' ;;
     --resume) MODE='resume' ;;
+    --reconfigure-time-zone) MODE='reconfigure-time-zone' ;;
     --reset) MODE='reset' ;;
     --debug) ;;
     *) die "Unknown option: $1" ;;

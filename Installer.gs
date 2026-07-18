@@ -12,6 +12,8 @@ function bootstrapCatalogerInstallation(options) {
   const spreadsheet = ensureInstallerSpreadsheet_(root, validated.spreadsheetId,
     validated.spreadsheetTitle, validated.automationConfig, validated.timeZone);
   const properties = PropertiesService.getScriptProperties();
+  const automaticProcessing = validated.preserveAutomaticProcessing &&
+    properties.getProperty(CONFIG.PROPERTY_KEYS.AUTO_PROCESSING) === 'true' ? 'true' : 'false';
   const values = {
     GEMINI_BACKEND: validated.geminiBackend,
     GEMINI_MODEL: validated.geminiModel,
@@ -22,7 +24,7 @@ function bootstrapCatalogerInstallation(options) {
     SPREADSHEET_ID: spreadsheet.getId(),
     AUTOMATION_CONFIG_JSON: JSON.stringify(validated.automationConfig),
     GOOGLE_CLOUD_PROJECT_ID: validated.projectId,
-    AUTO_PROCESSING: 'false',
+    AUTO_PROCESSING: automaticProcessing,
     INSTALLER_COMPLETED_AT: new Date().toISOString()
   };
   if (validated.geminiApiKey) {
@@ -88,6 +90,8 @@ function validateInstallerOptions_(options) {
     vertexLocation: String(options.vertexLocation).trim(),
     automationConfig: options.automationConfig, agentsPolicy: String(options.agentsPolicy),
     geminiSecretVersion: String(options.geminiSecretVersion || '').trim(), geminiApiKey: '',
+    reuseExistingGeminiApiKey: options.reuseExistingGeminiApiKey === true,
+    preserveAutomaticProcessing: options.preserveAutomaticProcessing === true,
     timeZone: String(options.timeZone).trim()
   };
 }
@@ -116,10 +120,14 @@ function readInstallerGeminiApiKey_(options) {
 
 function validateInstallerGeminiAccess_(options) {
   if (options.geminiBackend === 'gemini_api') {
-    if (!options.geminiSecretVersion) {
-      throw new Error('geminiSecretVersion is required for Gemini Developer API.');
+    if (options.geminiSecretVersion) {
+      return;
     }
-    return;
+    if (options.reuseExistingGeminiApiKey &&
+      PropertiesService.getScriptProperties().getProperty(CONFIG.PROPERTY_KEYS.GEMINI_API_KEY)) {
+      return;
+    }
+    throw new Error('geminiSecretVersion is required for Gemini Developer API.');
   }
   if (!options.projectId) {
     throw new Error('projectId is required for Vertex AI.');

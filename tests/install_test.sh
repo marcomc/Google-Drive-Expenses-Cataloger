@@ -19,5 +19,8 @@ if is_valid_gemini_mode invalid; then exit 1; fi
 is_valid_email test@example.com
 # shellcheck disable=SC2310 # The predicate's nonzero status is the behavior under test.
 if is_valid_email invalid; then exit 1; fi
+is_valid_time_zone Europe/Rome
+# shellcheck disable=SC2310 # The predicate's nonzero status is the behavior under test.
+if is_valid_time_zone Invalid/Timezone; then exit 1; fi
 
 printf 'installer helper tests passed\n'

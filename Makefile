@@ -32,8 +32,10 @@ install-reset: ## Remove private installer state only
 
 test: ## Run the verified core import seams
 	@node tests/expense_core_test.js
+	@node tests/installer_test.js
 	@node tests/rebuild_state_test.js
 	@bash tests/install_test.sh
+	@bash tests/install_time_zone_push_test.sh
 	@node scripts/validate-apps-script.js
 	@bash tests/deploy_apps_script_test.sh
 

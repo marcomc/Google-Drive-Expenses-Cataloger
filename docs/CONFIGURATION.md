@@ -16,11 +16,16 @@ bootstrap.
 | Key | Purpose |
 | --- | --- |
 | `locale` | `en` by default, or `it` for this installation. |
+| `time_zone` | IANA timezone used by Apps Script and the spreadsheet; defaults to `Europe/Rome`. |
 | `intake_keyword` | Required marker in an eligible folder or JSON filename. |
 | `excluded_root_folder_names` | Direct-root folders that the scanner ignores. |
 | `archive_folder_name` | Archive root, normally `_Imported`. |
 | `test_fixture_folder_name` | Isolated test root, normally `_Test-fixtures`. |
 | `categories` | Allowed category and one-level subcategory taxonomy. |
+
+Change the timezone of an installed instance explicitly with
+`./scripts/install.sh --reconfigure-time-zone`. Set `time_zone` in
+`config.local.json`, or temporarily override it with `GDEC_TIME_ZONE`.
 
 ## Script Properties
 
