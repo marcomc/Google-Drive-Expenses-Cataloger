@@ -51,8 +51,12 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - Revalidate every staged rebuild source immediately before replacing the
   canonical ledger, preventing a late Drive change from triggering a stale,
   destructive rebuild.
-- Merge and verify current policy template instructions into an existing Drive
-  `AGENTS.md` while preserving Drive-only policy blocks.
+- Authenticate historical rebuild staging payloads with durable digests and
+  retain a committed archival checkpoint so cleanup or archive retries cannot
+  discard the rebuilt ledger.
+- Replace managed policy template instructions in an existing Drive `AGENTS.md`
+  while preserving Drive-only policy blocks and migrating known pre-marker
+  template content.
 - Restrict root-file attachment evidence lookup to direct-root siblings instead
   of recursively searching unrelated intake, fixture, receipt, and archive
   folders.

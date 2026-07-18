@@ -56,7 +56,19 @@ function rebuildTransactionsFromTricountJson() {
 
 /** Forget a failed staged migration without changing the canonical ledger. */
 function resetTricountJsonRebuild() {
-  PropertiesService.getScriptProperties().deleteProperty(CONFIG.PROPERTY_KEYS.JSON_REBUILD_STATE);
+  const properties = PropertiesService.getScriptProperties();
+  const raw = properties.getProperty(CONFIG.PROPERTY_KEYS.JSON_REBUILD_STATE);
+  if (raw) {
+    let state = null;
+    try { state = JSON.parse(raw); } catch (error) { state = null; }
+    if (isValidJsonRebuildState_(state)) {
+      if (isJsonRebuildArchiveReady_(state)) {
+        throw new Error('The JSON rebuild ledger is already committed; rerun the rebuild to finish archival.');
+      }
+      cleanupJsonRebuildStages_(state);
+    }
+  }
+  properties.deleteProperty(CONFIG.PROPERTY_KEYS.JSON_REBUILD_STATE);
   return { status: 'RESET' };
 }
 
@@ -106,6 +118,7 @@ function stageJsonRebuildSource_(state, source, policy, config) {
   const stageName = getJsonRebuildStageFileName_(state, source);
   const existing = stagingFolder.getFilesByName(stageName);
   if (existing.hasNext()) {
+    loadJsonRebuildStage_(stagingFolder, state, source);
     return;
   }
   const file = DriveApp.getFileById(source.fileId);
@@ -120,12 +133,77 @@ function stageJsonRebuildSource_(state, source, policy, config) {
   const factualRecords = parseTricountJsonExport_(document, sourceFile, { id: folder.getId(), name: folder.getName() });
   const records = normalizeExpenseJsonWithAi_(factualRecords, file, folder, policy, config,
     source.archiveType !== 'file');
-  stagingFolder.createFile(stageName, JSON.stringify({ sourceFile: sourceFile, records: records }), MimeType.JSON);
+  const payload = JSON.stringify({ sourceFile: sourceFile, records: records });
+  stagingFolder.createFile(stageName, payload, MimeType.JSON);
+  PropertiesService.getScriptProperties().setProperty(
+    getJsonRebuildStageDigestPropertyKey_(stageName), sha256_(payload));
+}
+
+function getJsonRebuildStageDigestPropertyKey_(stageName) {
+  return 'EXPENSE_JSON_REBUILD_STAGE_DIGEST_' + String(stageName);
+}
+
+function loadJsonRebuildStage_(stagingFolder, state, source) {
+  const stageName = getJsonRebuildStageFileName_(state, source);
+  const expectedDigest = PropertiesService.getScriptProperties().getProperty(
+    getJsonRebuildStageDigestPropertyKey_(stageName));
+  if (!expectedDigest) {
+    throw new Error('Staged JSON rebuild data has no integrity digest for source ' + source.name +
+      '. Reset and restart.');
+  }
+  const matches = stagingFolder.getFilesByName(stageName);
+  if (!matches.hasNext()) {
+    throw new Error('Missing staged source ' + source.name + '.');
+  }
+  const stageFile = matches.next();
+  if (matches.hasNext()) {
+    throw new Error('Multiple staged JSON rebuild files exist for source ' + source.name + '.');
+  }
+  const stageText = stageFile.getBlob().getDataAsString('UTF-8');
+  if (sha256_(stageText) !== expectedDigest) {
+    throw new Error('Staged JSON rebuild data was modified for source ' + source.name +
+      '. Reset and restart.');
+  }
+  let staged;
+  try { staged = JSON.parse(stageText); } catch (error) {
+    throw new Error('Staged JSON rebuild data is invalid for source ' + source.name +
+      '. Reset and restart.');
+  }
+  if (!isValidJsonRebuildStage_(staged, source)) {
+    throw new Error('Staged JSON rebuild data does not match source ' + source.name + '. Reset and restart.');
+  }
+  return staged;
+}
+
+function cleanupJsonRebuildStages_(state) {
+  if (!isValidJsonRebuildState_(state)) {
+    return;
+  }
+  const properties = PropertiesService.getScriptProperties();
+  let stagingFolder = null;
+  try {
+    stagingFolder = DriveApp.getFolderById(state.stagingFolderId);
+  } catch (error) {
+    stagingFolder = null;
+  }
+  state.sources.forEach(function (source) {
+    const stageName = getJsonRebuildStageFileName_(state, source);
+    if (stagingFolder) {
+      const stages = stagingFolder.getFilesByName(stageName);
+      while (stages.hasNext()) {
+        stages.next().setTrashed(true);
+      }
+    }
+    properties.deleteProperty(getJsonRebuildStageDigestPropertyKey_(stageName));
+  });
 }
 
 function commitJsonRebuild_(root, state) {
     const config = getAutomationConfig_();
     assertJsonRebuildDiscoveryUnchanged_(root, config, state.sources, state.commitStarted === true);
+    if (isJsonRebuildArchiveReady_(state)) {
+      return finalizeJsonRebuildArchive_(root, state, config);
+    }
     if (state.commitStarted !== true) {
       state.commitStarted = true;
       saveJsonRebuildState_(state);
@@ -135,12 +213,7 @@ function commitJsonRebuild_(root, state) {
     const sourceResults = [];
     const records = [];
     state.sources.forEach(function (source) {
-      const matches = stagingFolder.getFilesByName(getJsonRebuildStageFileName_(state, source));
-      if (!matches.hasNext()) { throw new Error('Missing staged source ' + source.name + '.'); }
-      const staged = JSON.parse(matches.next().getBlob().getDataAsString('UTF-8'));
-      if (!isValidJsonRebuildStage_(staged, source)) {
-        throw new Error('Staged JSON rebuild data does not match source ' + source.name + '. Reset and restart.');
-      }
+      const staged = loadJsonRebuildStage_(stagingFolder, state, source);
       (staged.records || []).forEach(function (record) { records.push(record); });
       sourceResults.push({ file: { getName: function () { return staged.sourceFile.name; } },
         source: source, sourceFile: staged.sourceFile, status: 'READY', records: staged.records || [] });
@@ -175,17 +248,55 @@ function commitJsonRebuild_(root, state) {
     writeSourceReconciliations_(layout.sourceReconciliations,
       { name: 'Tricount JSON rebuild', url: root.getUrl() }, reconciliations);
     verifySourceReconciliations_(reconciliations);
-    assertJsonRebuildDiscoveryUnchanged_(root, config, state.sources, true);
-    archiveRebuiltSources_(root, sourceResults, config);
-    saveSourceFolderState_({});
     refreshBalanceViews_(spreadsheet);
     const localization = getLocalization_();
     buildDashboard_(spreadsheet.getSheetByName(localization.sheetNames.dashboard),
       layout.transactions, localization);
-    PropertiesService.getScriptProperties().deleteProperty(CONFIG.PROPERTY_KEYS.JSON_REBUILD_STATE);
+    state.archiveReady = true;
+    state.archiveYearsByFileId = {};
+    sourceResults.forEach(function (entry) {
+      state.archiveYearsByFileId[String(entry.source.fileId)] = deriveArchiveYear_(entry.records);
+    });
+    state.rebuildSummary = {
+      sourceEntries: records.length,
+      imported: imported.length,
+      openingBalanceChecks: openingBalances.length
+    };
+    saveJsonRebuildState_(state);
+    return finalizeJsonRebuildArchive_(root, state, config);
+}
+
+function isJsonRebuildArchiveReady_(state) {
+  const archiveYears = state && state.archiveYearsByFileId;
+  return Boolean(isValidJsonRebuildState_(state) && state.archiveReady === true && archiveYears &&
+    state.sources.every(function (source) {
+      return /^\d{4}$/.test(String(archiveYears[String(source.fileId)] || ''));
+    }));
+}
+
+function getJsonRebuildArchiveSourceResults_(state) {
+  if (!isJsonRebuildArchiveReady_(state)) {
+    throw new Error('JSON rebuild is not ready for archival.');
+  }
+  return state.sources.map(function (source) {
     return {
-      status: 'REBUILT', sourceFiles: sourceResults.length, sourceEntries: records.length,
-      imported: imported.length, openingBalanceChecks: openingBalances.length
+      source: source,
+      records: [{ date: String(state.archiveYearsByFileId[String(source.fileId)]) + '-01-01' }]
+    };
+  });
+}
+
+function finalizeJsonRebuildArchive_(root, state, config) {
+    cleanupJsonRebuildStages_(state);
+    assertJsonRebuildDiscoveryUnchanged_(root, config, state.sources, true);
+    assertJsonRebuildSourcesUnchanged_(config, state.sources);
+    archiveRebuiltSources_(root, getJsonRebuildArchiveSourceResults_(state), config);
+    saveSourceFolderState_({});
+    PropertiesService.getScriptProperties().deleteProperty(CONFIG.PROPERTY_KEYS.JSON_REBUILD_STATE);
+    const summary = state.rebuildSummary || {};
+    return {
+      status: 'REBUILT', sourceFiles: state.sources.length, sourceEntries: Number(summary.sourceEntries || 0),
+      imported: Number(summary.imported || 0), openingBalanceChecks: Number(summary.openingBalanceChecks || 0)
     };
 }
 

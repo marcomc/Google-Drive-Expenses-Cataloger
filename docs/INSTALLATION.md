@@ -23,9 +23,12 @@ after explicitly supplying a billing account for the cataloger Cloud project.
 
 Use the `Spese` folder as the intake root and grant the owner Editor access to
 its children and to the existing `HoStello - Spese` spreadsheet. The installer
-creates an `AGENTS.md` policy in the root. For an existing policy, it merges
-the current template instructions, preserves Drive-only instructions, then
-writes and rereads the same file to verify the merged policy.
+creates an `AGENTS.md` policy in the root. For an existing policy, it replaces
+only the current template between the managed-policy markers, preserving
+Drive-only instructions outside those markers, then writes and rereads the
+same file to verify the expected policy. The installer migrates recognized
+pre-marker template blocks once; keep local instructions outside the markers
+so later upgrades retain them.
 
 Create or select the cataloger Cloud project. Keep the Gemini key project
 separate and billing-disabled. A billing account is unnecessary unless you opt

@@ -1,9 +1,11 @@
+<!-- BEGIN Google Drive Expenses Cataloger managed policy -->
+
 # Expense import policy
 
 Use this file as the initial `AGENTS.md` policy in the configured Drive root.
-For an existing installation, merge new template instructions into the Drive
-file without removing Drive-only instructions or user customizations. The
-runtime reads that Drive copy for each import. Do not include credentials.
+For an existing installation, replace only the instructions between the managed
+policy markers and keep Drive-only instructions outside them. The runtime reads
+that Drive copy for each import. Do not include credentials.
 
 ## Scope
 
@@ -52,3 +54,5 @@ runtime reads that Drive copy for each import. Do not include credentials.
   verification. Root files move individually; a source folder moves with its
   siblings and descendants, while its parent collection remains in place.
   Never delete source files, folders, or attachments.
+
+<!-- END Google Drive Expenses Cataloger managed policy -->

@@ -84,8 +84,10 @@ the existing historical exports. Each invocation classifies and durably stages
 one eligible JSON document outside fixture and archive folders; rerun it until
 it returns `REBUILT`. The ledger, audit, and reconciliation rows change only in
 that final Gemini-free commit, then the same source-unit archive rules apply.
-`resetTricountJsonRebuild` abandons a failed staging run without changing the
-canonical ledger.
+Before that commit, `resetTricountJsonRebuild` abandons the staged run without
+changing the canonical ledger. After the commit is durable, rerun the rebuild
+to complete archival; reset deliberately refuses to discard that committed
+state.
 
 The rebuild records the discovered JSON inventory and content hashes before
 the first AI call. If a staged source changes or a source unit gains another
