@@ -245,11 +245,14 @@ transfer_gemini_key() {
 run_bootstrap() {
   local options parameters secret_version mode project_id root_folder_id spreadsheet_id
   local notification_recipient time_zone config_json gemini_backend auto_vertex_fallback
-  local bootstrap_output bootstrap_status reuse_existing_gemini_api_key
+  local bootstrap_output bootstrap_status preserve_automatic_processing reuse_existing_gemini_api_key
   [[ -f "${STATE_FILE}" ]] || die 'No resumable installer state exists.'
   reuse_existing_gemini_api_key="${1:-false}"
+  preserve_automatic_processing="${2:-false}"
   [[ "${reuse_existing_gemini_api_key}" == 'true' || \
     "${reuse_existing_gemini_api_key}" == 'false' ]] || die 'Invalid Gemini credential reuse mode.'
+  [[ "${preserve_automatic_processing}" == 'true' || \
+    "${preserve_automatic_processing}" == 'false' ]] || die 'Invalid automatic processing preservation mode.'
   mode="$(state_get '.geminiMode')"
   secret_version=''
   if [[ "${mode}" != 'vertex_ai' && "${reuse_existing_gemini_api_key}" != 'true' ]]; then
@@ -282,8 +285,9 @@ run_bootstrap() {
     --arg timeZone "${time_zone}" \
     --argjson automationConfig "${config_json}" \
     --argjson reuseExistingGeminiApiKey "${reuse_existing_gemini_api_key}" \
+    --argjson preserveAutomaticProcessing "${preserve_automatic_processing}" \
     --argjson autoVertexFallback "${auto_vertex_fallback}" \
-    '{projectId:$projectId,rootFolderId:$rootFolderId,spreadsheetId:$spreadsheetId,spreadsheetTitle:$spreadsheetTitle,notificationRecipient:$notificationRecipient,geminiBackend:$geminiBackend,geminiModel:$geminiModel,vertexLocation:$vertexLocation,geminiSecretVersion:$geminiSecretVersion,agentsPolicy:$agentsPolicy,timeZone:$timeZone,automationConfig:$automationConfig,reuseExistingGeminiApiKey:$reuseExistingGeminiApiKey,autoVertexFallback:$autoVertexFallback}')"
+    '{projectId:$projectId,rootFolderId:$rootFolderId,spreadsheetId:$spreadsheetId,spreadsheetTitle:$spreadsheetTitle,notificationRecipient:$notificationRecipient,geminiBackend:$geminiBackend,geminiModel:$geminiModel,vertexLocation:$vertexLocation,geminiSecretVersion:$geminiSecretVersion,agentsPolicy:$agentsPolicy,timeZone:$timeZone,automationConfig:$automationConfig,reuseExistingGeminiApiKey:$reuseExistingGeminiApiKey,preserveAutomaticProcessing:$preserveAutomaticProcessing,autoVertexFallback:$autoVertexFallback}')"
   parameters="$(jq -cn --argjson options "${options}" '[ $options ]')"
   push_script_with_configured_time_zone
   ensure_api_executable_deployment
@@ -310,7 +314,7 @@ reconfigure_time_zone() {
   # shellcheck disable=SC2310 # Predicate functions intentionally signal invalid input with nonzero status.
   is_valid_time_zone "${GDEC_TIME_ZONE}" || die 'Invalid GDEC_TIME_ZONE.'
   state_set timeZone "${GDEC_TIME_ZONE}"
-  run_bootstrap true
+  run_bootstrap true true
   info "Timezone reconfigured: ${GDEC_TIME_ZONE}"
 }
 

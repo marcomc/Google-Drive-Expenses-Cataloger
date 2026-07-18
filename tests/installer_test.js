@@ -9,7 +9,11 @@ const properties = new Map();
 const context = {
   PropertiesService: {
     getScriptProperties: () => ({
-      getProperty: (key) => properties.get(key) || ''
+      getProperty: (key) => properties.get(key) || '',
+      setProperties: (values) => {
+        Object.entries(values).forEach(([key, value]) => properties.set(key, value));
+      },
+      deleteProperty: (key) => properties.delete(key)
     })
   }
 };
@@ -55,5 +59,23 @@ assert.throws(
   () => context.validateInstallerGeminiAccess_(reconfigureOptions),
   /geminiSecretVersion is required/
 );
+
+context.ensureInstallerPolicyFile_ = () => ({ getUrl: () => 'https://example.test/policy' });
+context.ensureInstallerSpreadsheet_ = () => ({
+  getId: () => 'spreadsheet',
+  getUrl: () => 'https://example.test/spreadsheet'
+});
+context.assertCatalogConfiguration_ = () => {};
+context.getOrCreateChildFolder_ = () => {};
+context.installAutomationTriggers = () => {};
+context.getGeminiBackend_ = () => 'vertex_ai';
+context.DriveApp = { getFolderById: () => ({ getUrl: () => 'https://example.test/root' }) };
+properties.set('AUTO_PROCESSING', 'true');
+context.bootstrapCatalogerInstallation({
+  ...options,
+  geminiBackend: 'vertex_ai',
+  preserveAutomaticProcessing: true
+});
+assert.equal(properties.get('AUTO_PROCESSING'), 'true');
 
 console.log('installer tests passed');

@@ -45,6 +45,7 @@ case " $* " in
   *' --json run bootstrapCatalogerInstallation '*)
     jq -e '.[0].geminiSecretVersion == "" and
       .[0].reuseExistingGeminiApiKey == true and
+      .[0].preserveAutomaticProcessing == true and
       .[0].timeZone == "Pacific/Auckland"' <<<"${!#}" >/dev/null
     printf '%s\n' '{"response":{"installed":true}}'
     ;;
