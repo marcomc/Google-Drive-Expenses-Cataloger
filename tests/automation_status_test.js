@@ -20,6 +20,7 @@ let failCreationFor = '';
 let triggerLockAvailable = true;
 let triggerLockAcquisitions = 0;
 let triggerLockReleases = 0;
+const triggerLockTimeouts = [];
 
 function makeTrigger(handler, id) {
   return {
@@ -57,8 +58,9 @@ const context = {
   },
   LockService: {
     getScriptLock: () => ({
-      tryLock: () => {
+      tryLock: (timeout) => {
         triggerLockAcquisitions += 1;
+        triggerLockTimeouts.push(timeout);
         return triggerLockAvailable;
       },
       releaseLock: () => { triggerLockReleases += 1; }
@@ -135,6 +137,7 @@ assert.deepEqual(JSON.parse(JSON.stringify(duplicateStatus.duplicateTriggerHandl
 events.length = 0;
 triggerLockAcquisitions = 0;
 triggerLockReleases = 0;
+triggerLockTimeouts.length = 0;
 activeTriggers = [
   makeTrigger('processDriveEventQueue', 'existing-polling'),
   makeTrigger('runDailyExpenseCataloging', 'existing-daily')
@@ -152,9 +155,10 @@ assert.deepEqual(activeTriggers.map((trigger) => trigger.getHandlerFunction()).s
 ]);
 assert.equal(triggerLockAcquisitions, 1);
 assert.equal(triggerLockReleases, 1);
+assert.deepEqual(triggerLockTimeouts, [270000]);
 
 triggerLockAvailable = false;
-assert.throws(() => context.installAutomationTriggers(), /Another automation trigger operation is already running/);
+assert.throws(() => context.installAutomationTriggers(), /Could not acquire the automation trigger lock/);
 assert.equal(triggerLockReleases, 1);
 triggerLockAvailable = true;
 

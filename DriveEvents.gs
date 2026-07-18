@@ -36,8 +36,8 @@ function removeAutomationTriggers() {
 
 function withAutomationTriggerLock_(callback) {
   const lock = LockService.getScriptLock();
-  if (!lock.tryLock(1000)) {
-    throw new Error('Another automation trigger operation is already running. Retry shortly.');
+  if (!lock.tryLock(CONFIG.AUTOMATION_TRIGGER_LOCK_WAIT_MS)) {
+    throw new Error('Could not acquire the automation trigger lock before the execution deadline.');
   }
   try {
     return callback();

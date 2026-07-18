@@ -21,6 +21,9 @@ and the project uses [Semantic Versioning](https://semver.org/).
   processing unless exactly one managed trigger exists for each handler.
 - Rebind triggers through the promoted non-development executable even if
   `main` advances immediately after deployment promotion.
+- Wait for an in-flight import's shared lock before trigger reconciliation, so
+  deployment does not leave the prior trigger version in place during normal
+  processing.
 
 ## [0.2.0] - 2026-07-18
 
