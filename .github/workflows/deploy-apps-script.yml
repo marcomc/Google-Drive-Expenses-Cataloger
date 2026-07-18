@@ -1,0 +1,48 @@
+name: Deploy Apps Script
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apps-script-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    environment: production
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20
+      - run: |
+          sudo apt-get update
+          sudo apt-get install --yes jq shellcheck
+          npm install --global markdownlint-cli@0.47.0 @google/clasp@3.3.0
+      - run: make check
+      - name: Prepare private clasp configuration
+        env:
+          CLASP_AUTH_JSON: ${{ secrets.CLASP_AUTH_JSON }}
+          CLASP_PROJECT_JSON: ${{ secrets.CLASP_PROJECT_JSON }}
+        run: |
+          set -euo pipefail
+          jq -e 'type == "object"' <<<"$CLASP_AUTH_JSON" >/dev/null
+          jq -e '.scriptId | type == "string" and length > 0' <<<"$CLASP_PROJECT_JSON" >/dev/null
+          auth_dir="$RUNNER_TEMP/clasp-auth"
+          mkdir -m 700 "$auth_dir"
+          printf '%s' "$CLASP_AUTH_JSON" >"$auth_dir/.clasprc.json"
+          chmod 600 "$auth_dir/.clasprc.json"
+          printf '%s' "$CLASP_PROJECT_JSON" >.clasp.json
+          chmod 600 .clasp.json
+      - name: Deploy exact main revision
+        env:
+          APPS_SCRIPT_DEPLOYMENT_ID: ${{ secrets.APPS_SCRIPT_DEPLOYMENT_ID }}
+          DEPLOY_COMMIT_SHA: ${{ github.sha }}
+        run: ./scripts/deploy-apps-script.sh

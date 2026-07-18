@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 INSTALLER := ./scripts/install.sh
 MARKDOWNLINT ?= markdownlint
-MARKDOWNLINT_CONFIG ?= /Users/mmassari/.markdownlint.json
+MARKDOWNLINT_CONFIG ?= .markdownlint.json
 SHELLCHECK ?= shellcheck
 
 .DEFAULT_GOAL := help
@@ -35,6 +35,7 @@ test: ## Run the verified core import seams
 	@node tests/rebuild_state_test.js
 	@bash tests/install_test.sh
 	@node scripts/validate-apps-script.js
+	@bash tests/deploy_apps_script_test.sh
 
 lint-shell: ## Lint shell scripts
 	@$(SHELLCHECK) --enable=all --external-sources --source-path=scripts --source-path=. scripts/*.sh scripts/lib/*.sh tests/*.sh

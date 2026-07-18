@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.1.0] - 2026-07-18
 
 ### Added
 
@@ -20,3 +20,5 @@ and the project uses [Semantic Versioning](https://semver.org/).
   ledger unchanged until its final commit.
 - Installer, configuration, operational documentation, project policy,
   validation tests, and MIT license.
+- Pull-request-gated GitHub Actions validation and production Apps Script
+  deployment, including owner-only API executable preservation checks.
