@@ -69,7 +69,7 @@ case "${command_name}" in
     printf '%s\n' '{"versionNumber":5}'
     ;;
   run)
-    [[ "$*" == *' run installAutomationTriggers' ]]
+    [[ "$*" == *' run --nondev installAutomationTriggers' ]]
     printf '%s\n' triggers >>"${TEST_COMMAND_LOG}"
     printf '%s\n' '{"response":{"triggerCounts":{"processDriveEventQueue":1,"runDailyExpenseCataloging":1},"missingTriggerHandlers":[],"duplicateTriggerHandlers":[]}}'
     ;;
@@ -203,6 +203,13 @@ run_fixture "${stale_before_update_dir}" "${CURRENT_SHA}" "${CURRENT_SHA}" \
   'deployment-1' 'deployment-1' true false "${CURRENT_SHA},${CURRENT_SHA},${STALE_SHA}"
 actual_commands="$(tr '\n' ' ' <"${stale_before_update_dir}/commands.log")"
 test "${actual_commands}" = 'push version '
+
+stale_after_update_dir="${TEST_ROOT}/stale-after-update"
+mkdir -p "${stale_after_update_dir}"
+run_fixture "${stale_after_update_dir}" "${CURRENT_SHA}" "${CURRENT_SHA}" \
+  'deployment-1' 'deployment-1' true false "${CURRENT_SHA},${CURRENT_SHA},${CURRENT_SHA},${STALE_SHA}"
+actual_commands="$(tr '\n' ' ' <"${stale_after_update_dir}/commands.log")"
+test "${actual_commands}" = 'push version update triggers '
 
 missing_entry_point_dir="${TEST_ROOT}/missing-entry-point"
 mkdir -p "${missing_entry_point_dir}"

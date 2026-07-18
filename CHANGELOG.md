@@ -17,6 +17,10 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - Report the automatic-processing flag, missing handlers, duplicate handlers,
   and per-handler trigger counts through the read-only setup and installation
   status functions.
+- Serialize trigger installation and removal, and refuse to enable automatic
+  processing unless exactly one managed trigger exists for each handler.
+- Rebind triggers through the promoted non-development executable even if
+  `main` advances immediately after deployment promotion.
 
 ## [0.2.0] - 2026-07-18
 

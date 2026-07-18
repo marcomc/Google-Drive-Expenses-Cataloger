@@ -17,6 +17,9 @@ const properties = new Map([
 const events = [];
 let activeTriggers = [];
 let failCreationFor = '';
+let triggerLockAvailable = true;
+let triggerLockAcquisitions = 0;
+let triggerLockReleases = 0;
 
 function makeTrigger(handler, id) {
   return {
@@ -52,6 +55,15 @@ const context = {
       })
     })
   },
+  LockService: {
+    getScriptLock: () => ({
+      tryLock: () => {
+        triggerLockAcquisitions += 1;
+        return triggerLockAvailable;
+      },
+      releaseLock: () => { triggerLockReleases += 1; }
+    })
+  },
   console
 };
 
@@ -69,6 +81,7 @@ vm.createContext(context);
 vm.runInContext(fs.readFileSync('Config.gs', 'utf8'), context);
 vm.runInContext(fs.readFileSync('DriveEvents.gs', 'utf8'), context);
 vm.runInContext(fs.readFileSync('Installer.gs', 'utf8'), context);
+vm.runInContext(fs.readFileSync('ExpensesCataloging.gs', 'utf8'), context);
 
 assert.equal(context.getSetupStatus().automaticProcessingEnabled, true);
 
@@ -81,10 +94,22 @@ context.SpreadsheetApp = {
 };
 context.getExpenseSheetLayout_ = () => ({ transactions: {}, imports: {} });
 
+properties.delete('AUTO_PROCESSING');
+assert.equal(context.getSetupStatus().automaticProcessingEnabled, false);
+activeTriggers = [
+  makeTrigger('processDriveEventQueue', 'existing-polling'),
+  makeTrigger('runDailyExpenseCataloging', 'existing-daily')
+];
+assert.equal(context.validateCatalogerInstallation().installed, true);
+assert.equal(context.enableExpenseCataloging().status, 'ENABLED');
+assert.equal(properties.get('AUTO_PROCESSING'), 'true');
+assert.equal(context.disableExpenseCataloging().status, 'DISABLED');
+assert.equal(properties.get('AUTO_PROCESSING'), 'false');
+
 activeTriggers = [makeTrigger('runDailyExpenseCataloging', 'existing-daily')];
 assert.deepEqual(JSON.parse(JSON.stringify(context.validateCatalogerInstallation())), {
   installed: false,
-  automaticProcessingEnabled: true,
+  automaticProcessingEnabled: false,
   missingTriggerHandlers: ['processDriveEventQueue'],
   duplicateTriggerHandlers: [],
   triggerCounts: {
@@ -93,6 +118,8 @@ assert.deepEqual(JSON.parse(JSON.stringify(context.validateCatalogerInstallation
   },
   spreadsheetUrl: 'https://example.test/spreadsheet'
 });
+assert.throws(() => context.enableExpenseCataloging(), /Managed automation triggers are not healthy/);
+assert.equal(properties.get('AUTO_PROCESSING'), 'false');
 
 activeTriggers = [
   makeTrigger('processDriveEventQueue', 'duplicate-polling-one'),
@@ -106,6 +133,8 @@ assert.deepEqual(JSON.parse(JSON.stringify(duplicateStatus.duplicateTriggerHandl
 ]);
 
 events.length = 0;
+triggerLockAcquisitions = 0;
+triggerLockReleases = 0;
 activeTriggers = [
   makeTrigger('processDriveEventQueue', 'existing-polling'),
   makeTrigger('runDailyExpenseCataloging', 'existing-daily')
@@ -121,6 +150,29 @@ assert.deepEqual(activeTriggers.map((trigger) => trigger.getHandlerFunction()).s
   'processDriveEventQueue',
   'runDailyExpenseCataloging'
 ]);
+assert.equal(triggerLockAcquisitions, 1);
+assert.equal(triggerLockReleases, 1);
+
+triggerLockAvailable = false;
+assert.throws(() => context.installAutomationTriggers(), /Another automation trigger operation is already running/);
+assert.equal(triggerLockReleases, 1);
+triggerLockAvailable = true;
+
+events.length = 0;
+triggerLockAcquisitions = 0;
+triggerLockReleases = 0;
+activeTriggers = [
+  makeTrigger('processDriveEventQueue', 'existing-polling'),
+  makeTrigger('runDailyExpenseCataloging', 'existing-daily')
+];
+context.removeAutomationTriggers();
+assert.deepEqual(events, [
+  'delete:existing-polling',
+  'delete:existing-daily'
+]);
+assert.deepEqual(activeTriggers, []);
+assert.equal(triggerLockAcquisitions, 1);
+assert.equal(triggerLockReleases, 1);
 
 events.length = 0;
 activeTriggers = [
@@ -138,5 +190,3 @@ assert.deepEqual(activeTriggers.map((trigger) => trigger.getUniqueId()).sort(), 
   'existing-daily',
   'existing-polling'
 ]);
-
-console.log('automation status tests passed');

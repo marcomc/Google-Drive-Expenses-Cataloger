@@ -55,15 +55,18 @@ The stable deployment ID and its owner-only API-executable entry point are
 verified before source upload. The workflow uses the Apps Script Deployments API
 to update only the immutable version and description, retaining the entry-point
 access configuration. It then recreates only the two managed time triggers from
-that promoted deployment. Replacement triggers are created before old ones are
-removed, and the job fails if their handler counts are not exactly one each.
-Script Properties, Drive sources, spreadsheet data, and Gemini credentials are
-not changed by deployment.
+that promoted deployment in non-development mode. Replacement triggers are
+created before old ones are removed, and the job fails if their handler counts
+are not exactly one each. If `main` advances after the stable update, the
+running job still completes this trigger repair; the newer revision's deploy
+will supersede it. Script Properties, Drive sources, spreadsheet data, and
+Gemini credentials are not changed by deployment.
 
-`CLASP_AUTH_JSON` must carry the
-`https://www.googleapis.com/auth/script.deployments` and
-`https://www.googleapis.com/auth/script.projects` OAuth scopes. Re-authorize
-clasp with the owner account before adding or replacing that secret if the
+Create or renew `CLASP_AUTH_JSON` with the owner account using
+`clasp login --use-project-scopes --include-clasp-scopes`. This retains the
+manifest's runtime scopes and clasp's `script.deployments` and
+`script.projects` scopes needed by the deployment update and non-development
+trigger reconciliation. Re-authorize before replacing the secret if the
 workflow reports an insufficient-permission error.
 
 ## Secret handoff

@@ -98,10 +98,10 @@ jq -e --arg id "${APPS_SCRIPT_DEPLOYMENT_ID}" --argjson version "${version}" \
   ' <<<"${updated_deployment}" >/dev/null
 
 # Time-driven triggers are bound to the deployment that creates them. Recreate
-# the two managed triggers only after the stable API executable is updated so
-# scheduled imports use this exact production revision.
-ensure_current_main
-trigger_status="$(clasp -A "${auth_file}" --json run installAutomationTriggers)"
+# them from the stable API executable after it is updated. Do not stale-skip
+# this recovery after a successful update: leaving old triggers would recreate
+# the precise version mismatch this step repairs.
+trigger_status="$(clasp -A "${auth_file}" --json run --nondev installAutomationTriggers)"
 jq -e '
   .response.triggerCounts.processDriveEventQueue == 1 and
   .response.triggerCounts.runDailyExpenseCataloging == 1 and

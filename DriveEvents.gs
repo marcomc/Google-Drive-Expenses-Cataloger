@@ -10,24 +10,40 @@ const AUTOMATION_TRIGGER_HANDLERS = Object.freeze([
  * the importer holds a script lock and persists per-source state.
  */
 function installAutomationTriggers() {
-  const existing = getManagedAutomationTriggers_();
-  const created = [];
-  try {
-    created.push(ScriptApp.newTrigger('processDriveEventQueue').timeBased().everyMinutes(15).create());
-    created.push(ScriptApp.newTrigger('runDailyExpenseCataloging').timeBased()
-      .atHour(CONFIG.DAILY_TRIGGER_HOUR).everyDays(1).create());
-  } catch (error) {
-    created.forEach(function (trigger) { ScriptApp.deleteTrigger(trigger); });
-    throw error;
-  }
-  existing.forEach(function (trigger) { ScriptApp.deleteTrigger(trigger); });
-  return getAutomationTriggerStatus_();
+  return withAutomationTriggerLock_(function () {
+    const existing = getManagedAutomationTriggers_();
+    const created = [];
+    try {
+      created.push(ScriptApp.newTrigger('processDriveEventQueue').timeBased().everyMinutes(15).create());
+      created.push(ScriptApp.newTrigger('runDailyExpenseCataloging').timeBased()
+        .atHour(CONFIG.DAILY_TRIGGER_HOUR).everyDays(1).create());
+    } catch (error) {
+      created.forEach(function (trigger) { ScriptApp.deleteTrigger(trigger); });
+      throw error;
+    }
+    existing.forEach(function (trigger) { ScriptApp.deleteTrigger(trigger); });
+    return getAutomationTriggerStatus_();
+  });
 }
 
 function removeAutomationTriggers() {
-  getManagedAutomationTriggers_().forEach(function (trigger) {
-    ScriptApp.deleteTrigger(trigger);
+  return withAutomationTriggerLock_(function () {
+    getManagedAutomationTriggers_().forEach(function (trigger) {
+      ScriptApp.deleteTrigger(trigger);
+    });
   });
+}
+
+function withAutomationTriggerLock_(callback) {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) {
+    throw new Error('Another automation trigger operation is already running. Retry shortly.');
+  }
+  try {
+    return callback();
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function getManagedAutomationTriggers_() {
