@@ -5,6 +5,8 @@
 - [Purpose and ownership](#purpose-and-ownership)
 - [Initial provisioning](#initial-provisioning)
 - [Default schema](#default-schema)
+- [Initial-balance model](#initial-balance-model)
+- [Dashboard controls and charts](#dashboard-controls-and-charts)
 - [Runtime maintenance](#runtime-maintenance)
 - [Customization and future migrations](#customization-and-future-migrations)
 - [Related documentation](#related-documentation)
@@ -78,7 +80,7 @@ use localized names but the same roles.
 | `Transazioni` | Canonical transaction ledger | Durable; required headers are code-owned |
 | `Importazioni` | Import audit | Durable; required headers are code-owned |
 | `Riconciliazioni sorgenti` | Source-file reconciliation audit | Durable; required headers are code-owned |
-| `Configurazione` | Category and subcategory taxonomy | Rewritten from installation configuration during bootstrap |
+| `Configurazione` | Category taxonomy and editable initial-balance table | Taxonomy is rewritten at bootstrap; manually marked balance rows persist |
 | `Movimenti saldi` | Per-participant derived balance movements | Rebuilt from the ledger |
 | `Saldi mensili` | Derived monthly balance controls | Rebuilt from the ledger and audit controls |
 | `Dashboard` | Managed KPI cards, dynamic queries, and charts | Rebuilt by managed dashboard operations |
@@ -88,6 +90,94 @@ The Apps Script functions `getInstallerTransactionHeaders_`,
 `getInstallerImportAuditHeaders_`, and the localization files define the
 required column labels. `Transazioni` is the only canonical transaction data
 tab; the other tabs are audit, configuration, or derived reporting surfaces.
+
+## Initial-balance model
+
+`Bilancio` is not a spending transaction and is never inserted into
+`Transazioni`. For each currency, all `Bilancio` records on the earliest usable
+date form one multi-participant opening-balance vector. It is applied once to
+the cumulative calculation; subsequent `Bilancio` records are checkpoints in
+`Saldi mensili`. If a subsequent checkpoint differs only by a zero-sum
+cent-level rounding residual (at most 0.25 EUR per participant), the derived
+`Movimenti saldi` view adds a visible checkpoint-rounding alignment row. It
+never changes `Transazioni`; larger or non-zero-sum discrepancies remain
+`mismatch` values for investigation.
+
+The editable table is below the category taxonomy in `Configurazione` and has
+these fields:
+`Data saldo iniziale`, `Valuta`, `Partecipante`, `Saldo iniziale`, `Origine`,
+`Attivo`, and `Note`. Set `Origine` to `Manuale` to override the automatic
+value for the same currency and participant. The automatic rows are rebuilt,
+but manual rows are retained. `Assunto: zero` is used only when no usable
+opening-balance vector exists for that currency.
+
+Only a balance vector dated on or before the earliest ledger movement for that
+currency can become the automatic starting point. A later monthly balance
+cannot be added to the running total without counting the same position twice,
+so it remains a reconciliation checkpoint. Importing an older historical export
+therefore replaces the automatic baseline safely; importing a newer one does
+not.
+
+```mermaid
+flowchart LR
+  accTitle: Initial balance selection
+  accDescr: Shows how the balance configuration chooses one complete multi-participant baseline without treating later checkpoints as transactions.
+  audit["Import audit: Bilancio details"] --> candidate{"On or before first ledger movement for the currency?"}
+  candidate -->|Yes| vector["Aggregate all same-date Bilancio records"]
+  vector --> automatic["Automatic initial-balance vector"]
+  candidate -->|No| checkpoint["Monthly checkpoint only"]
+  manual["Configurazione: Manuale"] --> chosen["Effective initial balance"]
+  automatic --> chosen
+  chosen --> cumulative["Cumulative Movimenti saldi"]
+  checkpoint --> verification["Saldi mensili verification"]
+  cumulative --> verification
+```
+
+## Dashboard controls and charts
+
+`Dashboard` is a managed reporting surface. It presents KPI cards and five
+charts sourced from formula blocks in the visible, protected `Calculation data`
+sheet (localized as `Dati tecnici` in Italian installations). The source blocks
+recalculate from `Transazioni` when the ledger changes. Spending charts use
+EUR rows whose type is `expense` or signed `income`: an income is a categorized
+refund and reduces its category total. Transfers and opening-balance controls
+remain excluded. The dashboard itself contains only user-facing controls and
+charts; no technical tables are hidden in remote columns.
+
+Cash settlements recorded in Tricount (for example with the custom category
+`Contanti`) are classified as `transfer`: they remain visible in
+`Transazioni` and affect participant balances, but never increase the reported
+spending for a month, year, category, payer, or supplier.
+
+| Visible control or chart | Behavior |
+| --- | --- |
+| `Anni da confrontare` | Checkboxes select one or more years for comparative charts. New ledger years appear automatically after their first successful import. |
+| `Anno di dettaglio` | Dropdown selects the year used by the category-by-month and merchant detail charts. |
+| Spesa annua per categoria | The total for every selected year is shown directly below the chart; colors and legend identify categories. |
+| Confronto spese mensili per anno | January through December on the horizontal axis; one connected, color-coded line per selected year, with a year legend. |
+| Andamento mensile per categoria | Month names on the horizontal axis; colors and legend identify categories for the detail year. |
+| Spesa per pagatore | Selected years on the horizontal axis; colors and legend identify payers. |
+| Top 10 esercenti / fornitori | Largest suppliers for the detail year. |
+
+Changing a checkbox or the detail-year dropdown updates the dependent formulas
+and charts without an import or Apps Script execution. The last chart replaces
+the former dog-subcategory chart, while the former monthly-balance chart is no
+longer shown on the dashboard because its accounting-control purpose was not
+clear in a spending view. The underlying `Saldi mensili` tab remains available
+for reconciliation.
+
+```mermaid
+flowchart LR
+  accTitle: Dashboard filtering and reporting
+  accDescr: Shows that year controls filter dynamic summaries built from the canonical ledger.
+  ledger["Transazioni"] --> queries["Protected calculation summaries"]
+  comparison["Year checkboxes"] --> queries
+  detail["Detail-year dropdown"] --> queries
+  queries --> annual["Annual category comparison"]
+  queries --> monthly["Monthly totals by year"]
+  queries --> category["Monthly categories"]
+  queries --> suppliers["Top suppliers"]
+```
 
 ## Runtime maintenance
 
@@ -103,7 +193,10 @@ chart sources are `QUERY` formulas over the full ledger columns. Their technical
 source ranges are hidden from the visible dashboard and separated horizontally,
 so an expanding result for a new month, year, or category cannot overlap another
 summary block. Existing charts therefore update without rebuilding the dashboard
-on every import.
+between imports. Each successful import then rebuilds the managed dashboard so
+newly present years are added to the controls. The year controls preserve their
+selected values when a managed dashboard rebuild occurs, provided those years
+are still present in the ledger.
 
 The following operations rebuild the full managed dashboard, clearing its cells
 and removing its charts before recreating them:
@@ -145,9 +238,10 @@ idempotent migrations with these rules:
 4. Limit dashboard resets to explicitly project-managed ranges and charts.
 
 This allows a new installation to receive the complete default layout while an
-existing installation receives only safe additive improvements. Until that
-migration layer exists, manual content in `Dashboard`, `Configurazione`, and
-the two derived balance tabs must be treated as replaceable managed content.
+existing installation receives only safe additive improvements. The dashboard
+and derived balance tabs are managed content; category taxonomy and automatic
+balance rows are managed too, while `Configurazione` rows marked `Manuale` are
+preserved.
 
 For operational effects of imports and rebuilds, see the
 [operations guide](OPERATIONS.md).

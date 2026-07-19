@@ -344,6 +344,39 @@ const resumedBatchRecords = nativeNormalizeExpenseJsonWithAi(
 assert.equal(batchGeminiCalls, 3);
 assert.deepEqual(resumedBatchRecords.map(record => record.sourceTransactionId), ['batch-1', 'batch-2']);
 
+const incomeRefundRecord = {
+  sourceTransactionId: 'income-refund', transactionType: 'income', amount: -10,
+  description: 'Rimborso spesa grocery'
+};
+const transferRecord = {
+  sourceTransactionId: 'cash-settlement', transactionType: 'transfer', amount: 10
+};
+context.CONFIG = { TRICOUNT_JSON_NORMALIZATION_BATCH_SIZE: 10 };
+let incomeClassificationCalls = 0;
+context.callGeminiJson_ = prompt => {
+  incomeClassificationCalls += 1;
+  assert.match(prompt, /negative income refunds/);
+  return { records: [{
+    category: 'Groceries', subcategory: 'Supermarket', merchant: 'Conad', confidence: 1,
+    rationale: 'refund', conflict: false
+  }] };
+};
+const categorizedIncome = nativeNormalizeExpenseJsonWithAi(
+  [incomeRefundRecord, transferRecord], file('income-json', 'transactions-hostello-income.json'),
+  folder('income-folder', 'Income'), '', { categories: { Groceries: ['Supermarket'] } }, true, null
+);
+assert.equal(incomeClassificationCalls, 1);
+assert.equal(categorizedIncome.find(record => record.sourceTransactionId === 'income-refund').category,
+  'Groceries');
+assert.equal(categorizedIncome.find(record => record.sourceTransactionId === 'income-refund').amount, -10);
+assert.equal(categorizedIncome.find(record => record.sourceTransactionId === 'cash-settlement').category, '');
+assert.equal(context.isConfiguredIncomeRefundCategory_('Groceries', {
+  categories: { Groceries: ['Supermarket'] }
+}), true);
+assert.equal(context.isConfiguredIncomeRefundCategory_('', {
+  categories: { Groceries: ['Supermarket'] }
+}), false);
+
 const orchestrationEvents = [];
 const orchestrationJson = file('orchestration-json', 'transactions-hostello-202611.json', '{}');
 const orchestrationFolder = folder('orchestration-folder', 'Orchestration', [orchestrationJson]);
@@ -356,7 +389,7 @@ context.getAutomationConfig_ = () => config;
 let orchestrationState = {};
 context.loadSourceFolderState_ = () => orchestrationState;
 context.getSpreadsheetId_ = () => 'spreadsheet';
-context.SpreadsheetApp = { openById: () => ({}) };
+context.SpreadsheetApp = { openById: () => ({ getSheetByName: () => ({}) }) };
 context.getExpenseSheetLayout_ = () => ({
   transactions: {}, imports: {}, sourceReconciliations: {}, headers: []
 });
@@ -405,6 +438,10 @@ context.writeImportAudit_ = () => orchestrationEvents.push('audit-written');
 context.writeSourceReconciliations_ = () => orchestrationEvents.push('reconciliation-written');
 context.verifySourceReconciliations_ = () => orchestrationEvents.push('reconciliation-verified');
 context.refreshBalanceViews_ = () => orchestrationEvents.push('views-refreshed');
+context.getLocalization_ = () => ({ sheetNames: { dashboard: 'Dashboard', transactions: 'Transazioni' } });
+context.buildDashboard_ = () => orchestrationEvents.push('dashboard-refreshed');
+context.applyInstallerSpreadsheetPresentation_ = () => orchestrationEvents.push('presentation-refreshed');
+context.orderInstallerSheets_ = () => orchestrationEvents.push('sheets-ordered');
 context.archiveIntakeSource_ = () => orchestrationEvents.push('source-archived');
 const orchestrationResult = context.processExpenseSource_(
   orchestrationSource, root, 'policy', 'manual'
@@ -415,6 +452,7 @@ assert.deepEqual(orchestrationEvents, [
   'state-saved', 'source-validated', 'source-validated', 'ledger-write', 'ledger-verified',
   'ledger-sorted', 'audit-written',
   'reconciliation-written', 'reconciliation-verified', 'views-refreshed',
+  'dashboard-refreshed', 'presentation-refreshed', 'sheets-ordered',
   'source-validated', 'state-saved', 'source-validated', 'source-archived', 'state-saved'
 ]);
 assert.deepEqual(orchestrationState, {});

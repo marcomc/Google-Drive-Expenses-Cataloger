@@ -31,6 +31,58 @@ function isEligibleTricountJsonFileName_(name, config) {
     String(name || '').toLowerCase().indexOf(keyword) >= 0;
 }
 
+function isUnspecifiedMerchant_(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  return !normalized || ['unknown', 'n/a', 'na', 'none', 'null', '-'].indexOf(normalized) >= 0;
+}
+
+function inferMerchantFallback_(description, category, subcategory) {
+  const text = [description, category, subcategory].join(' ').toLowerCase();
+  if (/\b(delia|sigari?|sigarette|tabacco)\b/.test(text)) {
+    return 'Tabaccheria';
+  }
+  if (/\bfarmaco\s+veterinari|\bmedicin[ae]\s+(per\s+)?cani/.test(text)) {
+    return 'Farmacia veterinaria';
+  }
+  if (/\bveterinari|\bforasacchi\b/.test(text)) {
+    return 'Veterinario';
+  }
+  if (/\bmetano\b/.test(text)) {
+    return 'Distributore di metano';
+  }
+  if (/\bcarburante|\bbenzina|\bdiesel\b/.test(text)) {
+    return 'Distributore di carburante';
+  }
+  if (/\bterapi[ae]\b|\bpsicoterapi/.test(text)) {
+    return 'Studio di psicoterapia';
+  }
+  if (/\btatuagg/.test(text)) {
+    return 'Studio tatuaggi';
+  }
+  if (/\bcondominial/.test(text)) {
+    return 'Condominio';
+  }
+  if (/\blavaggio\s+(auto|macchina)|\bautolavaggio/.test(text)) {
+    return 'Autolavaggio';
+  }
+  if (/\b(colazione|aperitiv\w*|merenda\s+al\s+bar|caff[eè])\b/.test(text)) {
+    return 'Bar';
+  }
+  if (/\bpiadine\b/.test(text)) {
+    return 'Piadineria';
+  }
+  if (/\b(pranzo|cena)\b/.test(text)) {
+    return 'Ristorante';
+  }
+  return '';
+}
+
+function resolveMerchant_(merchant, description, category, subcategory) {
+  const value = String(merchant || '').trim();
+  return isUnspecifiedMerchant_(value) ?
+    inferMerchantFallback_(description, category, subcategory) : value;
+}
+
 /** Pure state-machine helpers for the durable historical rebuild. */
 function createJsonRebuildState_(runId, stagingFolderId, sources, startedAt) {
   return { version: 2, runId: String(runId), stagingFolderId: String(stagingFolderId),
@@ -104,14 +156,16 @@ function parseTricountJsonExport_(document, file, folder) {
 }
 
 function normalizeTricountJsonEntry_(entry, sourceRow, file, folder) {
-  const sourceAmount = getTricountMoneyAmount_(entry.amount);
+  const sourceNativeType = String(entry.type_transaction || 'NORMAL').toUpperCase();
+  const sourceAmount = normalizeTricountLedgerAmount_(entry.amount, sourceNativeType);
   const currency = getTricountMoneyCurrency_(entry.amount, entry.amount_local);
-  const allocations = (entry.allocations || []).map(normalizeTricountAllocation_);
+  const allocations = (entry.allocations || []).map(function (allocation) {
+    return normalizeTricountAllocation_(allocation, sourceNativeType);
+  });
   const payer = getTricountMembershipName_(entry.membership_owned);
   const beneficiaries = allocations.map(function (allocation) {
     return allocation.participant;
   }).filter(Boolean).join(', ');
-  const sourceNativeType = String(entry.type_transaction || 'NORMAL').toUpperCase();
   const description = String(entry.description || '');
   const sourceCustomCategory = String(entry.category_custom || '');
   const attachments = getTricountAttachmentReferences_(entry.attachment);
@@ -129,7 +183,7 @@ function normalizeTricountJsonEntry_(entry, sourceRow, file, folder) {
     date: normalizeTricountDate_(entry.date),
     payer: payer,
     beneficiaries: beneficiaries,
-    amount: Math.abs(sourceAmount),
+    amount: sourceAmount,
     currency: currency,
     description: description,
     transactionType: mapTricountTransactionType_(sourceNativeType, description, sourceCustomCategory),
@@ -159,11 +213,20 @@ function getTricountAttachmentReferences_(attachments) {
   return { fileNames: fileNames, urls: urls };
 }
 
-function normalizeTricountAllocation_(allocation) {
-  const amount = getTricountMoneyAmount_(allocation && allocation.amount);
+function normalizeTricountLedgerAmount_(money, sourceNativeType) {
+  const amount = Math.abs(getTricountMoneyAmount_(money));
+  // Tricount serializes expenses as negative amounts and incoming money as
+  // positive amounts. Canonical ledger convention is the converse: expenses
+  // are positive, whereas income and refunds are negative so their balance
+  // effects are not reversed by the payer-minus-allocation calculation.
+  return String(sourceNativeType || '').toUpperCase() === 'INCOME' ? -amount : amount;
+}
+
+function normalizeTricountAllocation_(allocation, sourceNativeType) {
+  const amount = normalizeTricountLedgerAmount_(allocation && allocation.amount, sourceNativeType);
   return {
     participant: getTricountMembershipName_(allocation && allocation.membership),
-    amount: Math.abs(amount),
+    amount: amount,
     currency: getTricountMoneyCurrency_(allocation && allocation.amount,
       allocation && allocation.amount_local),
     type: String(allocation && allocation.type || ''),
@@ -209,11 +272,26 @@ function normalizeTricountExchangeRate_(value) {
 }
 
 function mapTricountTransactionType_(sourceNativeType, description, customCategory) {
-  if (sourceNativeType !== 'BALANCE') {
-    return 'expense';
-  }
+  const nativeType = String(sourceNativeType || '').toUpperCase();
   const marker = String(description || '') + ' ' + String(customCategory || '');
-  return /\bbilancio\b/i.test(marker) ? 'opening_balance' : 'transfer';
+  if (nativeType === 'BALANCE' && /\bbilancio\b/i.test(marker)) {
+    return 'opening_balance';
+  }
+  if (nativeType === 'INCOME') {
+    return 'income';
+  }
+  // Tricount has exported cash settlements both as BALANCE and as NORMAL
+  // entries with the custom category "Contanti". Both settle a debt between
+  // participants: preserve them in the ledger and balance calculation, but
+  // never treat them as household spending.
+  if (nativeType === 'BALANCE' || isTricountCashSettlementCategory_(customCategory)) {
+    return 'transfer';
+  }
+  return 'expense';
+}
+
+function isTricountCashSettlementCategory_(customCategory) {
+  return /\b(contanti|cash|trasferiment[oi]|transfer)\b/i.test(String(customCategory || ''));
 }
 
 /** Builds exact debt/credit deltas from the Tricount allocation amounts. */
@@ -235,7 +313,10 @@ function buildExactBalanceDeltas_(record) {
   return Object.keys(balances).sort(function (left, right) {
     return names[left].localeCompare(names[right]);
   }).map(function (key) {
-    return { name: names[key], amount: roundBalanceAmount_(balances[key]) };
+    // Keep source allocation precision through the full balance computation.
+    // Values are rounded only at persisted/display boundaries, otherwise small
+    // fractional splits accumulate into artificial month-end mismatches.
+    return { name: names[key], amount: balances[key] };
   }).filter(function (entry) { return Math.abs(entry.amount) > 0.000001; });
 }
 
@@ -518,26 +599,87 @@ function buildLegacyBalanceDeltas_(record) {
   return deltas;
 }
 
+function getOpeningBalanceRecordsFromCheck_(check) {
+  const records = Array.isArray(check && check.records) ? check.records : [check && check.record];
+  return records.filter(function (record) {
+    return record && record.date && record.currency;
+  });
+}
+
+function uniqueOpeningBalanceRecords_(records) {
+  const selected = {};
+  (records || []).forEach(function (record) {
+    if (!record || !record.date || !record.currency) {
+      return;
+    }
+    // CSV and JSON exports of the same monthly carry-over are distinct Drive
+    // records but one economic checkpoint. Prefer the richer JSON record.
+    const key = [record.date, String(record.currency).toUpperCase(), normalizeParticipantName_(record.payer),
+      roundBalanceAmount_(Math.abs(Number(record.amount)))].join('|');
+    const current = selected[key];
+    const quality = (Array.isArray(record.allocations) && record.allocations.length > 0 ? 2 : 0) +
+      (record.sourceTransactionId ? 1 : 0);
+    const currentQuality = current ? (Array.isArray(current.allocations) && current.allocations.length > 0 ? 2 : 0) +
+      (current.sourceTransactionId ? 1 : 0) : -1;
+    if (!current || quality > currentQuality) {
+      selected[key] = record;
+    }
+  });
+  return Object.keys(selected).map(function (key) { return selected[key]; });
+}
+
+function groupOpeningBalanceRecords_(records) {
+  const grouped = {};
+  uniqueOpeningBalanceRecords_(records).forEach(function (record) {
+    const key = String(record.date) + '|' + String(record.currency).toUpperCase();
+    if (!grouped[key]) {
+      grouped[key] = { date: String(record.date), currency: String(record.currency).toUpperCase(), records: [] };
+    }
+    grouped[key].records.push(record);
+  });
+  return Object.keys(grouped).map(function (key) { return grouped[key]; }).sort(function (left, right) {
+    return left.date.localeCompare(right.date) || left.currency.localeCompare(right.currency);
+  });
+}
+
+function buildOpeningBalanceVector_(records, currency) {
+  return buildBalanceVector_((records || []).map(function (record) {
+    return Object.assign({}, record, { date: '0000-01-01', transactionType: 'transfer' });
+  }), { cutoffDate: '9999-12-31', currency: currency });
+}
+
 function findOpeningBalanceAnchor_(openingRecord, openingBalanceMarkers) {
   const currency = String(openingRecord.currency || '').toUpperCase();
   const date = String(openingRecord.date || '');
-  return (openingBalanceMarkers || []).filter(function (marker) {
+  const anchors = (openingBalanceMarkers || []).filter(function (marker) {
     return String(marker.date || '') < date &&
       String(marker.currency || '').toUpperCase() === currency;
   }).sort(function (left, right) {
     return String(right.date || '').localeCompare(String(left.date || ''));
-  })[0] || null;
+  });
+  if (anchors.length === 0) {
+    return null;
+  }
+  const anchorDate = String(anchors[0].date || '');
+  return { date: anchorDate, records: anchors.filter(function (marker) {
+    return String(marker.date || '') === anchorDate;
+  }) };
 }
 
-function evaluateOpeningBalance_(openingRecord, historicalRecords, tolerance, openingBalanceMarkers) {
-  const expected = buildBalanceVector_([Object.assign({}, openingRecord, {
-    date: '0000-01-01', transactionType: 'transfer'
-  })], { cutoffDate: '9999-12-31', currency: openingRecord.currency });
+function evaluateOpeningBalanceGroup_(openingRecords, historicalRecords, tolerance, openingBalanceMarkers) {
+  const records = uniqueOpeningBalanceRecords_(openingRecords);
+  if (records.length === 0) {
+    throw new Error('An opening-balance check requires at least one valid record.');
+  }
+  const openingRecord = records[0];
+  const expected = buildOpeningBalanceVector_(records, openingRecord.currency);
   const anchor = findOpeningBalanceAnchor_(openingRecord, openingBalanceMarkers);
   const recordsSinceAnchor = (historicalRecords || []).filter(function (record) {
     return !anchor || String(record.date || '') >= String(anchor.date || '');
   });
-  const recordsToCheck = (anchor ? [Object.assign({}, anchor, { transactionType: 'transfer' })] : [])
+  const recordsToCheck = (anchor ? anchor.records.map(function (record) {
+    return Object.assign({}, record, { transactionType: 'transfer' });
+  }) : [])
     .concat(recordsSinceAnchor);
   const actual = buildBalanceVector_(recordsToCheck, {
     cutoffDate: openingRecord.date,
@@ -563,7 +705,7 @@ function evaluateOpeningBalance_(openingRecord, historicalRecords, tolerance, op
   const status = actual.recordCount === 0 ? 'unverifiable' :
     (maxDifference <= Number(tolerance || 0.01) ? 'matched' : 'mismatch');
   return {
-    record: openingRecord,
+    record: openingRecord, records: records,
     status: status,
     matched: status === 'matched',
     currency: String(openingRecord.currency || '').toUpperCase(),
@@ -574,6 +716,19 @@ function evaluateOpeningBalance_(openingRecord, historicalRecords, tolerance, op
     } : null,
     differences: differences
   };
+}
+
+function evaluateOpeningBalance_(openingRecord, historicalRecords, tolerance, openingBalanceMarkers) {
+  return evaluateOpeningBalanceGroup_([openingRecord], historicalRecords, tolerance, openingBalanceMarkers);
+}
+
+function evaluateOpeningBalanceGroups_(openingRecords, historicalRecords, tolerance, openingBalanceMarkers) {
+  const markers = uniqueOpeningBalanceRecords_(openingBalanceMarkers);
+  return groupOpeningBalanceRecords_(openingRecords).map(function (group) {
+    const check = evaluateOpeningBalanceGroup_(group.records, historicalRecords, tolerance, markers);
+    group.records.forEach(function (record) { markers.push(record); });
+    return check;
+  });
 }
 
 function roundBalanceAmount_(amount) {

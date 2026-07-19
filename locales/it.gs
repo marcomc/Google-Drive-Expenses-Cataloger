@@ -4,7 +4,7 @@ function getItalianLocalization_() {
       transactions: 'Transazioni', imports: 'Importazioni', dashboard: 'Dashboard',
       configuration: 'Configurazione', balanceMovements: 'Movimenti saldi',
       monthlyBalances: 'Saldi mensili', sourceReconciliations: 'Riconciliazioni sorgenti',
-      personalAnalysis: 'Analisi personali'
+      personalAnalysis: 'Analisi personali', technicalData: 'Dati tecnici'
     },
     headers: {
       transactionId: 'ID transazione', date: 'Data', year: 'Anno', month: 'Mese',
@@ -27,13 +27,29 @@ function getItalianLocalization_() {
       sourceCustomCategory: 'Categoria personalizzata sorgente', allocationDetails: 'Quote partecipanti',
       exchangeRate: 'Tasso di cambio', sourceCreatedAt: 'Creato nella sorgente', sourceUpdatedAt: 'Aggiornato nella sorgente'
     },
+    initialBalanceConfiguration: {
+      headers: ['Data saldo iniziale', 'Valuta', 'Partecipante', 'Saldo iniziale', 'Origine', 'Attivo', 'Note'],
+      origins: { automatic: 'Automatico', manual: 'Manuale', assumedZero: 'Assunto: zero' },
+      automaticNotePrefix: 'Rilevato dalla prima importazione disponibile: ',
+      assumedZeroNote: 'Nessun saldo iniziale rilevato: il calcolo parte esplicitamente da zero.'
+    },
     dashboard: {
       title: 'Spese di HoStello', subtitle: 'Riepilogo dinamico basato sulle transazioni importate',
       totalSpend: 'Spesa complessiva', latestMonth: 'Ultimo mese importato',
       latestMonthSpend: 'Spesa ultimo mese', expenseCount: 'Transazioni di spesa',
-      annualSpend: 'Spesa annua per categoria', monthlySpend: 'Andamento mensile per categoria',
-      dogSpend: 'Spese cani per sottocategoria', payerSpend: 'Spesa per pagatore',
-      monthlyBalances: 'Saldi mensili esatti (EUR)'
+      annualSpend: 'Spesa annua per categoria', monthlyComparison: 'Confronto spese mensili per anno',
+      monthlySpend: 'Andamento mensile per categoria', payerSpend: 'Spesa per pagatore',
+      topMerchants: 'Top 10 esercenti / fornitori', comparisonYears: 'Anni da confrontare',
+      detailYear: 'Anno di dettaglio', year: 'Anno', includeYear: 'Mostra',
+      selectedYear: 'Visualizza dettagli per',
+      monthNames: ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
+        'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre']
+    },
+    categoryLabels: {
+      Dogs: 'Cani', 'Food and drink': 'Cibo e bevande', Groceries: 'Spesa alimentare',
+      Health: 'Salute', 'Home and utilities': 'Casa e utenze',
+      'Home purchases': 'Acquisti per la casa', 'Leisure and travel': 'Tempo libero e viaggi',
+      Other: 'Altro', 'Personal and gifts': 'Personale e regali', Transport: 'Trasporti'
     }
   };
 }

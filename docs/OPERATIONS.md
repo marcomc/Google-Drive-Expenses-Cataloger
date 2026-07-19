@@ -6,6 +6,7 @@
 - [Review email](#review-email)
 - [Duplicate behavior](#duplicate-behavior)
 - [Source reconciliation](#source-reconciliation)
+- [Initial balances and monthly checks](#initial-balances-and-monthly-checks)
 - [Dashboard](#dashboard)
 - [Full JSON rebuild](#full-json-rebuild)
 - [Archive name migration](#archive-name-migration)
@@ -71,13 +72,48 @@ Per-person balance views use the exact allocation amounts retained by Tricount.
 are not imported into the ledger. They validate the prior balance trajectory
 without being counted twice.
 
+Cash settlements between participants (including the Tricount custom category
+`Contanti`) remain `transfer` rows in `Transazioni`. They update the individual
+balance trajectory but are excluded from household-spending KPIs, summaries,
+and dashboard charts.
+
+Tricount `INCOME` records, including refunds, retain a negative canonical
+amount and allocation sign. They therefore reverse the appropriate participant
+balance effect and reduce the associated household-spending category and total.
+
+## Initial balances and monthly checks
+
+The import audit writes a readable `Opening balance details` value for every
+detected `Bilancio`: date, currency, participant, amount, and checkpoint
+status. The same information remains available in the structured audit field
+for the runtime.
+
+`Configurazione` contains one editable initial-balance table per participant
+and currency. For a currency, the automatic rows are the complete net vector
+from all `Bilancio` entries on the oldest usable date; that vector is applied
+once in the cumulative balance calculation. Set `Origine` to `Manuale` to make
+an active row override the automatic value. Later monthly `Bilancio` values do
+not reset the running balance: `Saldi mensili` compares them with the calculated
+month-end position so a mismatch is visible as a checkpoint discrepancy.
+
+During a balance refresh, ledger rows from the pre-allocation schema that have
+an empty `Quote partecipanti` field are restored from the linked Tricount JSON
+or, for a legacy CSV row, from one unambiguous matching JSON in the managed
+archive. This repair never changes classifications or transaction amounts. If
+the source JSON is unavailable or ambiguous, the balance view uses the legacy
+equal-share fallback and the runtime logs the unresolved source ID.
+
 ## Dashboard
 
-The dashboard provides annual and monthly category trends, dog-cost,
-payer, and monthly-balance comparisons. KPI cards and chart data are dynamic
-queries over the canonical ledger; importing a new month, year, or category
-updates them automatically. Spending charts use EUR `expense` rows only, so
-they do not mix currencies or count `transfer` and `opening_balance` records.
+The dashboard provides annual category comparison, monthly total comparison by
+year, monthly category detail, payer comparison, and top suppliers. KPI cards
+and chart data are dynamic queries over the canonical ledger; importing a new
+month, year, or category updates them automatically. Use the `Anni da
+confrontare` checkboxes for multi-year charts and the `Anno di dettaglio`
+dropdown for the category and supplier detail charts. Spending charts use EUR
+`expense` and signed `income` rows, so refunds reduce their corresponding
+category. They do not mix currencies or count `transfer` and `opening_balance`
+records.
 
 The dashboard is a managed Apps Script surface, not a safe home for manual
 content. Its full rebuild behavior and the safe customization boundary are in

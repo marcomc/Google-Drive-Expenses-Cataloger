@@ -32,6 +32,7 @@ install-reset: ## Remove private installer state only
 
 test: ## Run the verified core import seams
 	@node tests/expense_core_test.js
+	@node tests/balance_views_test.js
 	@node tests/automation_status_test.js
 	@node tests/gemini_response_test.js
 	@node tests/intake_source_test.js

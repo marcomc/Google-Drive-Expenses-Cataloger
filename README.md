@@ -37,9 +37,15 @@ date-derived year and month, payer, beneficiaries, amount and currency,
 transaction type, source type/status, source and custom categories, exact
 participant allocations, exchange rate, provenance, AI confidence, and an
 immutable duplicate fingerprint. Transfers are excluded from spending totals.
+Tricount `INCOME` records retain their negative canonical sign and are
+categorized as refunds: they reduce the corresponding category, month, and
+year spending totals while also affecting participant balances.
 Tricount `Bilancio` entries are opening-balance controls rather than ledger
 rows. `Source reconciliations` proves that every JSON entry and amount has an
 explicit durable outcome (imported, duplicate, or opening-balance marker).
+The editable initial-balance table in `Configurazione` supplies the earliest
+usable multi-participant baseline once per currency; later `Bilancio` entries
+remain reconciliation checks. See the [spreadsheet lifecycle and schema](docs/SPREADSHEET.md).
 
 ## Setup
 

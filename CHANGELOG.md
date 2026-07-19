@@ -7,6 +7,40 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [0.2.2] - 2026-07-19
 
+### Added
+
+- A localized, formula-driven dashboard with year-selection controls, dynamic
+  category, payer, merchant, and monthly-spending visualizations.
+- A protected `Technical data` worksheet for dashboard calculation ranges,
+  keeping generated formulas out of the user-facing dashboard.
+- Automatic initial-balance configuration and explanatory opening-balance audit
+  details, with manual overrides retained separately from generated values.
+- Merchant enrichment for incomplete imports, including deterministic fallback
+  merchants inferred from the transaction description and category.
+- Spreadsheet lifecycle and customization documentation, including the
+  installer-owned default schema and non-destructive update behavior.
+- A targeted `categorizeIncomeRefunds` maintenance entrypoint that classifies
+  legacy income rows missing a reporting category, without rewriting their
+  amount, allocation, or source provenance.
+
+### Changed
+
+- Make `Transazioni` the sole canonical ledger and derive all summaries,
+  balances, dashboard tables, and charts dynamically from it.
+- Refresh the dashboard visual design, chart legends, localized Italian labels,
+  and category names while retaining English as the installation default.
+- Preserve every user-adjusted dashboard chart position and size during a
+  refresh; new installations use the approved default layout.
+- Show all months and their spending totals in the monthly-category chart, and
+  retain the adaptive annual-label format for one or multiple selected years.
+- Organize generated spreadsheet controls and calculation data into managed,
+  protected sheets rather than hidden remote columns in user-facing tabs.
+- Treat Tricount `INCOME` rows as categorized, signed refunds in spending
+  reports: they reduce the relevant category, month, year, payer, merchant,
+  and KPI total instead of inflating spending or appearing uncategorized.
+- Keep participant cash settlements visible for balance reconciliation while
+  excluding them from all household-spending totals and charts.
+
 ### Fixed
 
 - Persist normal-intake and historical-rebuild JSON stages with the supported
@@ -17,6 +51,16 @@ and the project uses [Semantic Versioning](https://semver.org/).
   prepayment-credit responses; retry generic transient rate limits in place.
 - Keep OAuth credentials out of deployment command arguments and validate the
   provider execution envelope before accepting post-promotion trigger repair.
+- Rebuild balance movements from opening balances and participant allocations,
+  preventing systematic monthly carry-forward mismatches; tolerate only
+  cent-level checkpoint residuals through explicit balancing adjustments.
+- Backfill missing allocation details, normalize historic transaction types,
+  and exclude transfers and opening-balance controls from spending aggregates.
+- Classify historic income refunds before rebuilding dashboard formulas, so
+  existing negative rows immediately reduce their appropriate reporting
+  categories without a destructive JSON re-import.
+- Prevent dashboard charts from being created before their dynamic sources are
+  calculated, and avoid repositioning or resizing charts on later refreshes.
 
 ## [0.2.1] - 2026-07-18
 

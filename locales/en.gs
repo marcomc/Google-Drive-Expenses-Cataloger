@@ -4,7 +4,7 @@ function getEnglishLocalization_() {
       transactions: 'Transactions', imports: 'Imports', dashboard: 'Dashboard',
       configuration: 'Configuration', balanceMovements: 'Balance movements',
       monthlyBalances: 'Monthly balances', sourceReconciliations: 'Source reconciliations',
-      personalAnalysis: 'Personal analysis'
+      personalAnalysis: 'Personal analysis', technicalData: 'Calculation data'
     },
     headers: {
       transactionId: 'Transaction ID', date: 'Date', year: 'Year', month: 'Month',
@@ -27,13 +27,29 @@ function getEnglishLocalization_() {
       sourceCustomCategory: 'Source custom category', allocationDetails: 'Participant allocations',
       exchangeRate: 'Exchange rate', sourceCreatedAt: 'Source created at', sourceUpdatedAt: 'Source updated at'
     },
+    initialBalanceConfiguration: {
+      headers: ['Initial-balance date', 'Currency', 'Participant', 'Initial balance', 'Origin', 'Active', 'Notes'],
+      origins: { automatic: 'Automatic', manual: 'Manual', assumedZero: 'Assumed zero' },
+      automaticNotePrefix: 'Detected from the earliest available import: ',
+      assumedZeroNote: 'No initial balance detected: the calculation explicitly starts at zero.'
+    },
     dashboard: {
       title: 'HoStello expenses', subtitle: 'Dynamic summary based on imported transactions',
       totalSpend: 'Total spending', latestMonth: 'Latest imported month',
       latestMonthSpend: 'Latest-month spending', expenseCount: 'Expense transactions',
-      annualSpend: 'Annual spending by category', monthlySpend: 'Monthly spending by category',
-      dogSpend: 'Dog spending by subcategory', payerSpend: 'Spending by payer',
-      monthlyBalances: 'Exact monthly balances (EUR)'
+      annualSpend: 'Annual spending by category', monthlyComparison: 'Monthly spending comparison by year',
+      monthlySpend: 'Monthly spending by category', payerSpend: 'Spending by payer',
+      topMerchants: 'Top 10 merchants / suppliers', comparisonYears: 'Years to compare',
+      detailYear: 'Detail year', year: 'Year', includeYear: 'Show',
+      selectedYear: 'Show details for',
+      monthNames: ['January', 'February', 'March', 'April', 'May', 'June', 'July',
+        'August', 'September', 'October', 'November', 'December']
+    },
+    categoryLabels: {
+      Dogs: 'Dogs', 'Food and drink': 'Food and drink', Groceries: 'Groceries',
+      Health: 'Health', 'Home and utilities': 'Home and utilities',
+      'Home purchases': 'Home purchases', 'Leisure and travel': 'Leisure and travel',
+      Other: 'Other', 'Personal and gifts': 'Personal and gifts', Transport: 'Transport'
     }
   };
 }

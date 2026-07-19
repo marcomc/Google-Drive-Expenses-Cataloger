@@ -21,6 +21,40 @@ vm.createContext(context);
 vm.runInContext(fs.readFileSync('Config.gs', 'utf8'), context);
 vm.runInContext(fs.readFileSync('Installer.gs', 'utf8'), context);
 
+const dashboardFormulas = context.getDashboardDataSpecifications_('Transazioni');
+assert.equal(dashboardFormulas.map((specification) => specification.anchor).join(','),
+  'A2,A30,A61,A90,A120');
+assert.match(dashboardFormulas[0].formula, /FILTER\("C = "&'Dashboard'!\$Q\$3:\$Q,'Dashboard'!\$R\$3:\$R=TRUE\)/);
+assert.match(dashboardFormulas[1].formula, /select D,sum\(G\).*pivot C order by D/);
+assert.match(dashboardFormulas[1].formula, /VSTACK\("Month",MAP\(INDEX\(summary,,1\),LAMBDA\(month,CHOOSE\(month,"January"/);
+assert.match(dashboardFormulas[1].formula, /TRANSPOSE\(FILTER\('Dashboard'!\$Q\$3:\$Q,'Dashboard'!\$R\$3:\$R=TRUE\)\)/);
+assert.match(dashboardFormulas[2].formula, /C = "&'Dashboard'!\$V\$3/);
+assert.match(dashboardFormulas[4].formula, /order by sum\(G\) desc limit 10/);
+assert.match(dashboardFormulas[0].formula,
+  /MAP\(years,totals,LAMBDA\(year,total,year&IF\(ROWS\(years\)=1," · ",CHAR\(10\)\)&total\)\)/);
+const installerSource = fs.readFileSync('Installer.gs', 'utf8');
+assert.doesNotMatch(installerSource, /function getDashboardAxisTicks_/);
+assert.match(dashboardFormulas[2].formula,
+  /MAP\(labels,totals,LAMBDA\(label,total,label&" · "&total\)\)/);
+assert.match(installerSource, /const DASHBOARD_CHART_LAYOUT_DEFAULTS = \{/);
+assert.match(installerSource, /function captureDashboardChartLayouts_\(dashboard, labels\)/);
+assert.match(installerSource, /showTextEvery: 1/);
+const italianDashboardFormulas = context.getDashboardDataSpecifications_('Transazioni', 'Dashboard', {
+  headers: { month: 'Mese' },
+  dashboard: {
+    monthNames: ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
+      'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre']
+  }
+});
+assert.match(italianDashboardFormulas[1].formula, /VSTACK\("Mese",MAP\(INDEX\(summary,,1\),LAMBDA\(month,CHOOSE\(month,"Gennaio"/);
+assert.match(italianDashboardFormulas[2].formula, /CHOOSE\(month,"Gennaio","Febbraio"/);
+const italianLatestMonthFormula = context.getDashboardLatestMonthLabelFormula_('Transazioni', [
+  'Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto',
+  'Settembre', 'Ottobre', 'Novembre', 'Dicembre'
+]);
+assert.match(italianLatestMonthFormula, /CHOOSE\(MONTH\(latestDate\),"Gennaio"/);
+assert.match(italianLatestMonthFormula, /&" "&YEAR\(latestDate\)/);
+
 const options = {
   projectId: 'project',
   rootFolderId: 'folder',
@@ -63,15 +97,17 @@ assert.equal(italianOptions.automationConfig.archive_folder_name, 'Importazioni'
 assert.ok(italianOptions.automationConfig.excluded_root_folder_names.includes('_Imported'));
 assert.ok(italianOptions.automationConfig.excluded_root_folder_names.includes('Importazioni'));
 
-const dashboardData = context.getDashboardDataSpecifications_('Transazioni', 'Saldi mensili');
+const dashboardData = context.getDashboardDataSpecifications_('Transazioni', 'Dashboard');
 assert.deepEqual(
   JSON.parse(JSON.stringify(dashboardData.map((specification) => specification.anchor))),
-  ['AA1', 'BA1', 'DA1', 'FA1', 'HA1']
+  ['A2', 'A30', 'A61', 'A90', 'A120']
 );
-assert.ok(dashboardData.every((specification) => specification.formula.includes("'Transazioni'!A:AD") ||
-  specification.formula.includes("'Saldi mensili'!A:H")));
+assert.ok(dashboardData.every((specification) => specification.formula.includes("'Transazioni'!A:AD")));
 assert.match(context.getDashboardLatestMonthSpendFormula_('Transazioni'), /SUM\(FILTER/);
-assert.match(context.getDashboardLatestMonthSpendFormula_('Transazioni'), /"expense"/);
+assert.match(context.getDashboardLatestMonthSpendFormula_('Transazioni'), /expense\|income/);
+assert.match(context.getDashboardSpendingSumFormula_('Transazioni'), /SUMIFS\([^)]*"expense"[\s\S]*SUMIFS\([^)]*"income"/);
+assert.match(context.getDashboardSpendingCountFormula_('Transazioni'), /COUNTIFS\([^)]*"expense"[\s\S]*COUNTIFS\([^)]*"income"/);
+assert.ok(dashboardData.every((specification) => specification.formula.includes("J = 'income'")));
 
 properties.clear();
 assert.throws(

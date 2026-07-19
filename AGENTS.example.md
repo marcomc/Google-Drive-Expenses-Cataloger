@@ -37,8 +37,16 @@ that Drive copy for each import. Do not include credentials.
   and spending charts. Treat Tricount `Bilancio` records as opening-balance
   controls rather than ledger rows. Exact participant allocations in the JSON
   are the balance-control source of truth.
+- Treat Tricount `INCOME` rows as categorized refunds: retain their negative
+  sign and include them in spending totals so they reduce the relevant category.
 - Use exactly one category and one subcategory for an expense. Normalize the
   merchant or supplier in its own field; do not add tags.
+- Never use Unknown, N/A, or a placeholder as the merchant. Preserve a specific
+  merchant named by the source. When it is absent, infer only a defensible
+  merchant type from the description and classification: tobacco, cigarettes,
+  or cigars become Tabaccheria; metano fuel becomes Distributore di metano; a
+  veterinary visit becomes Veterinario. Leave the field blank when the source
+  does not support either a specific merchant or a defensible type.
 - Preserve the source category, custom category, description, and exact
   allocations. Prefer them and previous human corrections for classification.
   Use attachment evidence only when those are insufficient.
