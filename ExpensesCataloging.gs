@@ -139,7 +139,7 @@ function stageJsonRebuildSource_(state, source, policy, config) {
   const records = normalizeExpenseJsonWithAi_(factualRecords, file, folder, policy, config,
     source.archiveType !== 'file');
   const payload = JSON.stringify({ sourceFile: sourceFile, records: records });
-  stagingFolder.createFile(stageName, payload, MimeType.JSON);
+  stagingFolder.createFile(stageName, payload, 'application/json');
   PropertiesService.getScriptProperties().setProperty(
     getJsonRebuildStageDigestPropertyKey_(stageName), sha256_(payload));
 }
@@ -565,7 +565,7 @@ function createIntakeStageController_(root, source, state, sourceFile) {
       while (stale.hasNext()) {
         stale.next().setTrashed(true);
       }
-      stagingFolder.createFile(stageName, payload, MimeType.JSON);
+      stagingFolder.createFile(stageName, payload, 'application/json');
       PropertiesService.getScriptProperties().setProperty(
         getIntakeStageDigestPropertyKey_(stageName), sha256_(payload));
     }

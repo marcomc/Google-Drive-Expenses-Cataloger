@@ -30,6 +30,10 @@
   replacements before deleting stale triggers, require exactly one polling
   handler and one daily handler, and finish that repair after promotion even if
   a newer source revision becomes available.
+- Run post-promotion trigger repair under the same workload-aware lock as
+  normal processing, within its configured execution budget. Invoke the
+  configured stable deployment explicitly and validate the provider's actual
+  response envelope; do not substitute a script ID for a deployment ID.
 
 ## Drive policy synchronization
 
@@ -67,6 +71,8 @@
 - Reconfiguration paths must not retry deleted credential-transfer secrets.
   Reuse an existing stable credential only through an explicit, validated
   bootstrap option and test the default credential backend.
+- Keep Apps Script mocks faithful to the supported runtime API: do not invent
+  enum members, and make service stubs reject missing required arguments.
 
 ## CI delivery
 

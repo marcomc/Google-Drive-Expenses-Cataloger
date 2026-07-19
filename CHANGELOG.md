@@ -5,6 +5,13 @@ All notable changes to this project are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [Semantic Versioning](https://semver.org/).
 
+## [0.2.2] - 2026-07-19
+
+### Fixed
+
+- Persist normal-intake and historical-rebuild JSON stages with the supported
+  `application/json` MIME string, restoring resumable imports in Apps Script.
+
 ## [0.2.1] - 2026-07-18
 
 ### Fixed

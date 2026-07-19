@@ -62,7 +62,10 @@ function folder(id, name, initialFiles = [], initialFolders = []) {
       folders.push(childFolder);
       childFolder.setParent(sourceFolder);
     },
-    createFile: (fileName, content) => {
+    createFile: (fileName, content, mimeType) => {
+      if (!mimeType) {
+        throw new Error('Argument cannot be null: mimeType');
+      }
       const created = file(`created-${files.length}`, fileName, content);
       sourceFolder.addFile(created);
       return created;
@@ -88,7 +91,7 @@ vm.createContext(context);
 vm.runInContext(fs.readFileSync('ExpenseCore.gs', 'utf8'), context);
 vm.runInContext(fs.readFileSync('ExpensesCataloging.gs', 'utf8'), context);
 context.sha256_ = value => String(value);
-context.MimeType = { JSON: 'application/json' };
+context.MimeType = {};
 const scriptProperties = {};
 context.getScriptProperty_ = key => scriptProperties[key] || '';
 context.PropertiesService = { getScriptProperties: () => ({
