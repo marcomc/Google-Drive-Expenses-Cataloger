@@ -1087,9 +1087,13 @@ function callGeminiResponse_(parts) {
 }
 
 function parseGeminiJsonResponse_(response) {
-  const text = response.candidates && response.candidates[0] && response.candidates[0].content &&
-    response.candidates[0].content.parts && response.candidates[0].content.parts[0] &&
-    response.candidates[0].content.parts[0].text;
+  const candidate = response.candidates && response.candidates[0];
+  const finishReason = String(candidate && candidate.finishReason || 'UNSPECIFIED');
+  if (finishReason !== 'STOP') {
+    throw new Error('Gemini response was incomplete (finish reason: ' + finishReason + ').');
+  }
+  const text = candidate && candidate.content && candidate.content.parts &&
+    candidate.content.parts[0] && candidate.content.parts[0].text;
   if (!text) {
     throw new Error('Gemini returned no JSON content.');
   }
@@ -1133,20 +1137,43 @@ function callVertexAi_(parts) {
 
 function callGeminiWithTransientRetry_(fetchResponse, backend) {
   const delays = CONFIG.GEMINI_TRANSIENT_RETRY_DELAYS_MS;
-  let response = fetchResponse();
-  for (let attempt = 0; response.getResponseCode() === 503 && attempt < delays.length; attempt += 1) {
+  let response;
+  for (let attempt = 0; attempt <= delays.length; attempt += 1) {
+    try {
+      response = fetchResponse();
+    } catch (error) {
+      if (attempt === delays.length) {
+        throw new Error(backend + ' network request failed after retry: ' +
+          String(error && error.message || error));
+      }
+      Utilities.sleep(delays[attempt]);
+      continue;
+    }
+    if (!isTransientGeminiResponse_(response, backend) || attempt === delays.length) {
+      return parseGeminiHttpResponse_(response, backend);
+    }
     Utilities.sleep(delays[attempt]);
-    response = fetchResponse();
   }
-  return parseGeminiHttpResponse_(response, backend);
+  throw new Error(backend + ' request retry state is invalid.');
+}
+
+function isTransientGeminiResponse_(response, backend) {
+  const status = response.getResponseCode();
+  if ([408, 429, 500, 502, 503, 504].indexOf(status) < 0) {
+    return false;
+  }
+  return status !== 429 || backend !== 'Gemini Developer API' ||
+    !getGeminiVertexFallbackReason_(response.getContentText());
 }
 
 function parseGeminiHttpResponse_(response, backend) {
   const status = response.getResponseCode();
   if (status !== 200) {
     const body = response.getContentText();
-    if (status === 429 && getGeminiBackend_() === 'gemini_api' &&
-      getScriptProperty_(CONFIG.PROPERTY_KEYS.GEMINI_AUTO_VERTEX_FALLBACK) === 'true') {
+    const fallbackReason = getGeminiVertexFallbackReason_(body);
+    if (status === 429 && backend === 'Gemini Developer API' &&
+      getScriptProperty_(CONFIG.PROPERTY_KEYS.GEMINI_AUTO_VERTEX_FALLBACK) === 'true' &&
+      fallbackReason) {
       PropertiesService.getScriptProperties().setProperty(
         CONFIG.PROPERTY_KEYS.GEMINI_VERTEX_FALLBACK_UNTIL,
         String(Date.now() + CONFIG.GEMINI_VERTEX_FALLBACK_COOLDOWN_MS)
@@ -1158,8 +1185,17 @@ function parseGeminiHttpResponse_(response, backend) {
   return JSON.parse(response.getContentText());
 }
 
-function isGeminiDailyQuotaExhausted_(body) {
-  return /per.?day|daily/i.test(String(body || ''));
+function getGeminiVertexFallbackReason_(body) {
+  const responseText = String(body || '');
+  if (/GenerateRequestsPerDay|generate_content_free_tier_requests|requests?\s+per\s+day|\bRPD\b/i
+    .test(responseText)) {
+    return 'gemini-api-daily-quota-exhausted';
+  }
+  if (/prepayment credits?\s+(?:are\s+)?(?:depleted|exhausted)|(?:prepay(?:ment)?\s+)?(?:credits?|credit balance).{0,40}(?:depleted|exhausted|empty)/i
+    .test(responseText)) {
+    return 'gemini-api-prepayment-credits-depleted';
+  }
+  return '';
 }
 
 function enrichAmbiguousRecordsWithAttachment_(records, folder, policy, config, recursiveAttachmentSearch) {

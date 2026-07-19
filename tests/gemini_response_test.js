@@ -1,0 +1,163 @@
+#!/usr/bin/env node
+'use strict';
+
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+
+const properties = new Map([
+  ['GEMINI_BACKEND', 'gemini_api'],
+  ['GEMINI_AUTO_VERTEX_FALLBACK', 'true']
+]);
+const sleepDelays = [];
+const context = vm.createContext({
+  console,
+  PropertiesService: {
+    getScriptProperties: () => ({
+      getProperty: (key) => properties.get(key) || '',
+      setProperty: (key, value) => properties.set(key, String(value))
+    })
+  },
+  Utilities: {
+    sleep: (delay) => sleepDelays.push(delay)
+  }
+});
+
+vm.runInContext(fs.readFileSync('Config.gs', 'utf8'), context);
+vm.runInContext(fs.readFileSync('ExpensesCataloging.gs', 'utf8'), context);
+
+function generationResponse(finishReason, text) {
+  return {
+    candidates: [{
+      finishReason,
+      content: { parts: [{ text }] }
+    }]
+  };
+}
+
+function httpResponse(status, body) {
+  return {
+    getResponseCode: () => status,
+    getContentText: () => typeof body === 'string' ? body : JSON.stringify(body)
+  };
+}
+
+assert.deepEqual(
+  JSON.parse(JSON.stringify(context.parseGeminiJsonResponse_(
+    generationResponse('STOP', '{"accepted":true}')
+  ))),
+  { accepted: true }
+);
+assert.throws(
+  () => context.parseGeminiJsonResponse_(
+    generationResponse('MAX_TOKENS', '{"accepted":true}')
+  ),
+  /finish reason: MAX_TOKENS/
+);
+assert.throws(
+  () => context.parseGeminiJsonResponse_({
+    candidates: [{ content: { parts: [{ text: '{"accepted":true}' }] } }]
+  }),
+  /finish reason: UNSPECIFIED/
+);
+
+const dailyQuota = httpResponse(429, {
+  error: { message: 'GenerateRequestsPerDay quota exceeded.' }
+});
+const fallback = context.parseGeminiHttpResponse_(dailyQuota, 'Gemini Developer API');
+assert.equal(fallback.__retryWithVertex, true);
+assert.ok(Number(properties.get('GEMINI_VERTEX_FALLBACK_UNTIL')) > Date.now());
+
+properties.delete('GEMINI_VERTEX_FALLBACK_UNTIL');
+const prepaidQuota = httpResponse(429, {
+  error: { message: 'Your prepayment credits are depleted.' }
+});
+assert.equal(
+  context.parseGeminiHttpResponse_(prepaidQuota, 'Gemini Developer API').__retryWithVertex,
+  true
+);
+
+properties.delete('GEMINI_VERTEX_FALLBACK_UNTIL');
+properties.set('GEMINI_AUTO_VERTEX_FALLBACK', 'false');
+assert.throws(
+  () => context.parseGeminiHttpResponse_(dailyQuota, 'Gemini Developer API'),
+  /HTTP 429/
+);
+assert.equal(properties.has('GEMINI_VERTEX_FALLBACK_UNTIL'), false);
+properties.set('GEMINI_AUTO_VERTEX_FALLBACK', 'true');
+
+properties.delete('GEMINI_VERTEX_FALLBACK_UNTIL');
+const genericRateLimit = httpResponse(429, {
+  error: { message: 'Too many requests. Retry shortly.' }
+});
+assert.throws(
+  () => context.parseGeminiHttpResponse_(genericRateLimit, 'Gemini Developer API'),
+  /HTTP 429/
+);
+assert.equal(properties.has('GEMINI_VERTEX_FALLBACK_UNTIL'), false);
+
+const vertexDailyQuota = httpResponse(429, {
+  error: { message: 'GenerateRequestsPerDay quota exceeded on Vertex.' }
+});
+assert.throws(
+  () => context.parseGeminiHttpResponse_(vertexDailyQuota, 'Vertex AI'),
+  /Vertex AI failed \(HTTP 429\)/
+);
+assert.equal(properties.has('GEMINI_VERTEX_FALLBACK_UNTIL'), false);
+
+let fetchCount = 0;
+sleepDelays.length = 0;
+const transientResult = context.callGeminiWithTransientRetry_(() => {
+  fetchCount += 1;
+  return fetchCount === 1 ? genericRateLimit : httpResponse(200, { ok: true });
+}, 'Gemini Developer API');
+assert.deepEqual(JSON.parse(JSON.stringify(transientResult)), { ok: true });
+assert.deepEqual(sleepDelays, [500]);
+
+fetchCount = 0;
+sleepDelays.length = 0;
+context.callGeminiWithTransientRetry_(() => {
+  fetchCount += 1;
+  return dailyQuota;
+}, 'Gemini Developer API');
+assert.equal(fetchCount, 1);
+assert.deepEqual(sleepDelays, []);
+
+fetchCount = 0;
+sleepDelays.length = 0;
+assert.throws(
+  () => context.callGeminiWithTransientRetry_(() => {
+    fetchCount += 1;
+    return vertexDailyQuota;
+  }, 'Vertex AI'),
+  /Vertex AI failed \(HTTP 429\)/
+);
+assert.equal(fetchCount, 3);
+assert.deepEqual(sleepDelays, [500, 1500]);
+
+fetchCount = 0;
+sleepDelays.length = 0;
+const networkRetryResult = context.callGeminiWithTransientRetry_(() => {
+  fetchCount += 1;
+  if (fetchCount === 1) {
+    throw new Error('temporary transport failure');
+  }
+  return httpResponse(200, { ok: true });
+}, 'Gemini Developer API');
+assert.deepEqual(JSON.parse(JSON.stringify(networkRetryResult)), { ok: true });
+assert.equal(fetchCount, 2);
+assert.deepEqual(sleepDelays, [500]);
+
+fetchCount = 0;
+sleepDelays.length = 0;
+assert.throws(
+  () => context.callGeminiWithTransientRetry_(() => {
+    fetchCount += 1;
+    throw new Error('persistent transport failure');
+  }, 'Vertex AI'),
+  /Vertex AI network request failed after retry: persistent transport failure/
+);
+assert.equal(fetchCount, 3);
+assert.deepEqual(sleepDelays, [500, 1500]);
+
+console.log('Gemini response tests passed.');
