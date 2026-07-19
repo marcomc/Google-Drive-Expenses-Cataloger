@@ -3,7 +3,8 @@ function getItalianLocalization_() {
     sheetNames: {
       transactions: 'Transazioni', imports: 'Importazioni', dashboard: 'Dashboard',
       configuration: 'Configurazione', balanceMovements: 'Movimenti saldi',
-      monthlyBalances: 'Saldi mensili', sourceReconciliations: 'Riconciliazioni sorgenti'
+      monthlyBalances: 'Saldi mensili', sourceReconciliations: 'Riconciliazioni sorgenti',
+      personalAnalysis: 'Analisi personali'
     },
     headers: {
       transactionId: 'ID transazione', date: 'Data', year: 'Anno', month: 'Mese',
@@ -25,6 +26,14 @@ function getItalianLocalization_() {
       sourceNativeType: 'Tipo transazione sorgente', sourceStatus: 'Stato sorgente',
       sourceCustomCategory: 'Categoria personalizzata sorgente', allocationDetails: 'Quote partecipanti',
       exchangeRate: 'Tasso di cambio', sourceCreatedAt: 'Creato nella sorgente', sourceUpdatedAt: 'Aggiornato nella sorgente'
+    },
+    dashboard: {
+      title: 'Spese di HoStello', subtitle: 'Riepilogo dinamico basato sulle transazioni importate',
+      totalSpend: 'Spesa complessiva', latestMonth: 'Ultimo mese importato',
+      latestMonthSpend: 'Spesa ultimo mese', expenseCount: 'Transazioni di spesa',
+      annualSpend: 'Spesa annua per categoria', monthlySpend: 'Andamento mensile per categoria',
+      dogSpend: 'Spese cani per sottocategoria', payerSpend: 'Spesa per pagatore',
+      monthlyBalances: 'Saldi mensili esatti (EUR)'
     }
   };
 }

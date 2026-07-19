@@ -3,7 +3,8 @@ function getEnglishLocalization_() {
     sheetNames: {
       transactions: 'Transactions', imports: 'Imports', dashboard: 'Dashboard',
       configuration: 'Configuration', balanceMovements: 'Balance movements',
-      monthlyBalances: 'Monthly balances', sourceReconciliations: 'Source reconciliations'
+      monthlyBalances: 'Monthly balances', sourceReconciliations: 'Source reconciliations',
+      personalAnalysis: 'Personal analysis'
     },
     headers: {
       transactionId: 'Transaction ID', date: 'Date', year: 'Year', month: 'Month',
@@ -25,6 +26,14 @@ function getEnglishLocalization_() {
       sourceNativeType: 'Source transaction type', sourceStatus: 'Source status',
       sourceCustomCategory: 'Source custom category', allocationDetails: 'Participant allocations',
       exchangeRate: 'Exchange rate', sourceCreatedAt: 'Source created at', sourceUpdatedAt: 'Source updated at'
+    },
+    dashboard: {
+      title: 'HoStello expenses', subtitle: 'Dynamic summary based on imported transactions',
+      totalSpend: 'Total spending', latestMonth: 'Latest imported month',
+      latestMonthSpend: 'Latest-month spending', expenseCount: 'Expense transactions',
+      annualSpend: 'Annual spending by category', monthlySpend: 'Monthly spending by category',
+      dogSpend: 'Dog spending by subcategory', payerSpend: 'Spending by payer',
+      monthlyBalances: 'Exact monthly balances (EUR)'
     }
   };
 }

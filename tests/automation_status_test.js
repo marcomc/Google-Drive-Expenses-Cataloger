@@ -86,6 +86,8 @@ vm.runInContext(fs.readFileSync('Installer.gs', 'utf8'), context);
 vm.runInContext(fs.readFileSync('ExpensesCataloging.gs', 'utf8'), context);
 
 assert.equal(context.getSetupStatus().automaticProcessingEnabled, true);
+assert.equal(context.getSetupStatus().applicationVersion, '0.2.2');
+assert.equal(context.getApplicationVersion(), '0.2.2');
 
 context.assertCatalogConfiguration_ = () => {};
 context.getRootFolderId_ = () => 'root-folder';

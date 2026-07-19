@@ -10,6 +10,7 @@
 - [Full JSON rebuild](#full-json-rebuild)
 - [Archive name migration](#archive-name-migration)
 - [Recovery](#recovery)
+- [Related documentation](#related-documentation)
 
 ## Normal flow
 
@@ -72,10 +73,15 @@ without being counted twice.
 
 ## Dashboard
 
-The dashboard provides annual, month-by-year, category, subcategory, dog-cost,
-merchant, and payer comparisons. Spending charts exclude `transfer` and
-`opening_balance`; those types remain available in the ledger and their own
-summary.
+The dashboard provides annual and monthly category trends, dog-cost,
+payer, and monthly-balance comparisons. KPI cards and chart data are dynamic
+queries over the canonical ledger; importing a new month, year, or category
+updates them automatically. Spending charts use EUR `expense` rows only, so
+they do not mix currencies or count `transfer` and `opening_balance` records.
+
+The dashboard is a managed Apps Script surface, not a safe home for manual
+content. Its full rebuild behavior and the safe customization boundary are in
+[Spreadsheet lifecycle and schema](SPREADSHEET.md).
 
 ## Full JSON rebuild
 
@@ -153,3 +159,11 @@ run the controlled import again. If it fails after a ledger write, consult the
 configured archive (`Imported` or `Importazioni`) and the source links before
 retrying. Do not delete rows or source folders blindly: the audit exists to
 make an intentional correction safe.
+
+## Related documentation
+
+- [Project overview and documentation index](../README.md)
+- [Installation guide](INSTALLATION.md)
+- [Spreadsheet lifecycle and schema](SPREADSHEET.md)
+- [Configuration reference](CONFIGURATION.md)
+- [Deployment guide](DEPLOYMENT.md)

@@ -8,6 +8,8 @@ function refreshBalanceViews() {
   const localization = getLocalization_();
   buildDashboard_(spreadsheet.getSheetByName(localization.sheetNames.dashboard),
     spreadsheet.getSheetByName(localization.sheetNames.transactions), localization);
+  applyInstallerSpreadsheetPresentation_(spreadsheet, localization);
+  orderInstallerSheets_(spreadsheet, localization);
   return { status: 'REFRESHED', sortedRows: sortedRows };
 }
 

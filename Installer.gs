@@ -65,6 +65,15 @@ function validateCatalogerInstallation() {
   };
 }
 
+/** Reapply the managed layout, reporting formulas, and presentation explicitly. */
+function refreshSpreadsheetLayoutAndPresentation() {
+  assertCatalogConfiguration_();
+  const spreadsheet = SpreadsheetApp.openById(getSpreadsheetId_());
+  initializeInstallerSheets_(spreadsheet, getAutomationConfig_());
+  SpreadsheetApp.flush();
+  return { status: 'REFRESHED', spreadsheetUrl: spreadsheet.getUrl() };
+}
+
 function validateInstallerOptions_(options) {
   if (!options || typeof options !== 'object' || Array.isArray(options)) {
     throw new Error('Installer options must be an object.');
@@ -402,12 +411,11 @@ function initializeInstallerSheets_(spreadsheet, config) {
     getMonthlyBalanceHeaders_(localization));
   writeConfigurationTaxonomy_(configuration, config.categories);
   const dashboard = ensureInstallerSheet_(spreadsheet, localization.sheetNames.dashboard, []);
+  ensureInstallerSheet_(spreadsheet, localization.sheetNames.personalAnalysis, []);
   buildDashboard_(dashboard, transactions, localization);
-  transactions.setFrozenRows(1);
-  transactions.getRange(1, 1, 1, headers.length).setFontWeight('bold');
-  imports.setFrozenRows(1);
-  imports.getRange(1, 1, 1, imports.getLastColumn()).setFontWeight('bold');
   refreshBalanceViews_(spreadsheet);
+  applyInstallerSpreadsheetPresentation_(spreadsheet, localization);
+  orderInstallerSheets_(spreadsheet, localization);
 }
 
 /** One-way display migration for the former delimited-source header labels. */
@@ -532,36 +540,195 @@ function writeConfigurationTaxonomy_(sheet, categories) {
 }
 
 function buildDashboard_(dashboard, transactions, localization) {
-  dashboard.clear();
-  dashboard.getCharts().forEach(function (chart) { dashboard.removeChart(chart); });
-  dashboard.getRange('A1').setValue('Expense dashboard').setFontSize(16).setFontWeight('bold');
-  const name = transactions.getName().replace(/'/g, "''");
-  dashboard.getRange('A3').setFormula("=QUERY('" + name +
-    "'!A:U,\"select C,sum(G) where J = 'expense' group by C pivot K label sum(G) ''\",1)");
-  dashboard.getRange('A20').setFormula("=QUERY('" + name +
-    "'!A:U,\"select C,D,sum(G) where J = 'expense' group by C,D pivot K label sum(G) ''\",1)");
-  dashboard.getRange('A40').setFormula("=QUERY('" + name +
-    "'!A:U,\"select C,K,L,sum(G) where J = 'expense' group by C,K,L label sum(G) ''\",1)");
-  dashboard.getRange('A60').setFormula("=QUERY('" + name +
-    "'!A:U,\"select C,sum(G) where J <> 'expense' group by C pivot J label sum(G) ''\",1)");
-  dashboard.getRange('A80').setFormula("=QUERY('" + name +
-    "'!A:U,\"select C,D,sum(G) where J = 'expense' and K = 'Dogs' group by C,D pivot L label sum(G) ''\",1)");
-  dashboard.getRange('A100').setFormula("=QUERY('" + name +
-    "'!A:U,\"select C,sum(G) where J = 'expense' group by C pivot E label sum(G) ''\",1)");
+  const labels = localization.dashboard;
+  const transactionsName = transactions.getName().replace(/'/g, "''");
   const balanceName = localization.sheetNames.monthlyBalances.replace(/'/g, "''");
-  dashboard.getRange('A120').setFormula("=QUERY('" + balanceName +
-    "'!A:H,\"select A,B,sum(E) where C = 'EUR' group by A,B pivot D label sum(E) ''\",1)");
-  [
-    ['A3:Z18', 3, 28, 'Annual spending by category'],
-    ['A20:Z38', 20, 28, 'Monthly spending by category'],
-    ['A80:Z98', 80, 28, 'Dog spending by subcategory'],
-    ['A100:Z118', 100, 28, 'Spending by payer'],
-    ['A120:Z138', 120, 28, 'Exact monthly balances (EUR)']
-  ].forEach(function (specification) {
-    dashboard.insertChart(dashboard.newChart().asLineChart()
-      .addRange(dashboard.getRange(specification[0]))
-      .setPosition(specification[1], specification[2], 0, 0)
-      .setOption('title', specification[3]).build());
+  dashboard.clear();
+  dashboard.getRange('A1:Z40').breakApart();
+  dashboard.getCharts().forEach(function (chart) { dashboard.removeChart(chart); });
+  dashboard.getRange('A1:O1').merge().setValue(labels.title);
+  dashboard.getRange('A2:O2').merge().setValue(labels.subtitle);
+  writeDashboardKpiCard_(dashboard, 'A4:C4', 'A5:C7', labels.totalSpend,
+    '=SUMIFS(\'' + transactionsName + '\'!G:G,\'' + transactionsName +
+      '\'!J:J,"expense",\'' + transactionsName + '\'!H:H,"EUR")', true);
+  writeDashboardKpiCard_(dashboard, 'E4:G4', 'E5:G7', labels.latestMonth,
+    '=IFERROR(TEXT(MAX(FILTER(\'' + transactionsName + '\'!B2:B,\'' +
+      transactionsName + '\'!J2:J="expense",\'' + transactionsName +
+      '\'!H2:H="EUR")),"mmmm yyyy"),"-")', false);
+  writeDashboardKpiCard_(dashboard, 'I4:K4', 'I5:K7', labels.latestMonthSpend,
+    getDashboardLatestMonthSpendFormula_(transactionsName), true);
+  writeDashboardKpiCard_(dashboard, 'M4:O4', 'M5:O7', labels.expenseCount,
+    '=COUNTIFS(\'' + transactionsName + '\'!J:J,"expense",\'' + transactionsName +
+      '\'!H:H,"EUR")', false);
+  getDashboardDataSpecifications_(transactionsName, balanceName).forEach(function (specification) {
+    dashboard.getRange(specification.anchor).setFormula(specification.formula);
   });
+  insertDashboardChart_(dashboard, 'AA1:AZ1000', 'A9', labels.annualSpend, 'column');
+  insertDashboardChart_(dashboard, 'BA1:BZ1000', 'M9', labels.monthlySpend, 'column');
+  insertDashboardChart_(dashboard, 'DA1:DZ1000', 'A29', labels.dogSpend, 'column');
+  insertDashboardChart_(dashboard, 'FA1:FZ1000', 'M29', labels.payerSpend, 'bar');
+  insertDashboardChart_(dashboard, 'HA1:HZ1000', 'A49', labels.monthlyBalances, 'line');
+  dashboard.hideColumns(27, dashboard.getMaxColumns() - 26);
   dashboard.setFrozenRows(1);
+}
+
+function getDashboardDataSpecifications_(transactionsName, balanceName) {
+  const ledger = "'" + transactionsName + "'!A:AD";
+  return [
+    { anchor: 'AA1', formula: '=QUERY(' + ledger +
+      ",\"select C,sum(G) where J = 'expense' and H = 'EUR' group by C pivot K label sum(G) ''\",1)" },
+    { anchor: 'BA1', formula: '=QUERY(' + ledger +
+      ",\"select C,D,sum(G) where J = 'expense' and H = 'EUR' group by C,D pivot K label sum(G) ''\",1)" },
+    { anchor: 'DA1', formula: '=QUERY(' + ledger +
+      ",\"select C,D,sum(G) where J = 'expense' and H = 'EUR' and K = 'Dogs' group by C,D pivot L label sum(G) ''\",1)" },
+    { anchor: 'FA1', formula: '=QUERY(' + ledger +
+      ",\"select C,sum(G) where J = 'expense' and H = 'EUR' group by C pivot E label sum(G) ''\",1)" },
+    { anchor: 'HA1', formula: "=QUERY('" + balanceName +
+      "'!A:H,\"select A,B,sum(E) where C = 'EUR' group by A,B pivot D label sum(E) ''\",1)" }
+  ];
+}
+
+function getDashboardLatestMonthSpendFormula_(transactionsName) {
+  const date = "'" + transactionsName + "'!B2:B";
+  const type = "'" + transactionsName + "'!J2:J";
+  const currency = "'" + transactionsName + "'!H2:H";
+  const amount = "'" + transactionsName + "'!G2:G";
+  const latestDate = 'MAX(FILTER(' + date + ',' + type + '="expense",' + currency + '="EUR"))';
+  return '=IFERROR(SUM(FILTER(' + amount + ',' + type + '="expense",' + currency +
+    '="EUR",YEAR(' + date + ')=YEAR(' + latestDate + '),MONTH(' + date + ')=MONTH(' + latestDate + '))),0)';
+}
+
+function writeDashboardKpiCard_(dashboard, labelRange, valueRange, label, formula, currency) {
+  dashboard.getRange(labelRange).merge().setValue(label);
+  dashboard.getRange(valueRange).merge().setFormula(formula);
+  const labelCell = dashboard.getRange(labelRange);
+  const valueCell = dashboard.getRange(valueRange);
+  labelCell.setBackground('#1A1B1F').setFontColor('#FFFFFF').setFontFamily('Montserrat')
+    .setFontSize(10).setFontWeight('bold').setHorizontalAlignment('center');
+  valueCell.setBackground('#EAF7F2').setFontColor('#1A1B1F').setFontFamily('Montserrat')
+    .setFontSize(18).setFontWeight('bold').setHorizontalAlignment('center')
+    .setVerticalAlignment('middle');
+  if (currency) {
+    valueCell.setNumberFormat('#,##0.00 [$EUR]');
+  }
+}
+
+function insertDashboardChart_(dashboard, sourceRange, anchor, title, type) {
+  const builder = type === 'bar' ? dashboard.newChart().asBarChart() :
+    type === 'line' ? dashboard.newChart().asLineChart() : dashboard.newChart().asColumnChart();
+  const row = Number(anchor.match(/\d+/)[0]);
+  const column = anchor.match(/[A-Z]+/)[0] === 'A' ? 1 : 13;
+  dashboard.insertChart(builder.addRange(dashboard.getRange(sourceRange))
+    .setPosition(row, column, 0, 0)
+    .setOption('title', title).setOption('legend', { position: 'bottom' })
+    .setOption('backgroundColor', '#FFFFFF').setOption('colors', ['#20B486', '#4F7CAC', '#F59E0B', '#A855F7'])
+    .build());
+}
+
+const INSTALLER_PRESENTATION_VERSION = '1';
+
+function applyInstallerSpreadsheetPresentation_(spreadsheet, localization) {
+  const names = localization.sheetNames;
+  [
+    [names.transactions, '#20B486'], [names.imports, '#4F7CAC'],
+    [names.sourceReconciliations, '#4F7CAC'], [names.configuration, '#F59E0B'],
+    [names.balanceMovements, '#A855F7'], [names.monthlyBalances, '#A855F7']
+  ].forEach(function (specification) {
+    const sheet = spreadsheet.getSheetByName(specification[0]);
+    if (sheet) {
+      styleManagedDataSheet_(sheet, specification[1]);
+    }
+  });
+  styleDashboardSheet_(spreadsheet.getSheetByName(names.dashboard));
+  const personalAnalysis = spreadsheet.getSheetByName(names.personalAnalysis);
+  if (personalAnalysis) {
+    personalAnalysis.setTabColor('#94A3B8');
+    personalAnalysis.setHiddenGridlines(true);
+  }
+  applyManagedConditionalFormatting_(spreadsheet, localization);
+}
+
+function styleManagedDataSheet_(sheet, tabColor) {
+  const lastColumn = Math.max(1, sheet.getLastColumn());
+  const lastRow = Math.max(2, sheet.getLastRow());
+  const header = sheet.getRange(1, 1, 1, lastColumn);
+  sheet.setTabColor(tabColor);
+  sheet.setHiddenGridlines(true);
+  sheet.setFrozenRows(1);
+  sheet.setRowHeight(1, 32);
+  header.setBackground('#1A1B1F').setFontColor('#FFFFFF').setFontFamily('Montserrat')
+    .setFontSize(10).setFontWeight('bold').setVerticalAlignment('middle');
+  sheet.getRange(2, 1, lastRow - 1, lastColumn).setFontFamily('Montserrat')
+    .setFontSize(10).setFontColor('#1A1B1F').setVerticalAlignment('middle');
+}
+
+function styleDashboardSheet_(dashboard) {
+  if (!dashboard) {
+    return;
+  }
+  dashboard.setTabColor('#20B486');
+  dashboard.setHiddenGridlines(true);
+  dashboard.setFrozenRows(2);
+  dashboard.getRange('A1:O1').setBackground('#1A1B1F').setFontColor('#FFFFFF')
+    .setFontFamily('Montserrat').setFontSize(20).setFontWeight('bold')
+    .setVerticalAlignment('middle');
+  dashboard.getRange('A2:O2').setBackground('#1A1B1F').setFontColor('#CBD5E1')
+    .setFontFamily('Montserrat').setFontSize(10).setFontStyle('italic');
+  dashboard.setRowHeight(1, 40);
+  dashboard.setRowHeight(2, 24);
+  dashboard.setColumnWidths(1, 15, 92);
+}
+
+function applyManagedConditionalFormatting_(spreadsheet, localization) {
+  const properties = PropertiesService.getScriptProperties();
+  if (properties.getProperty('SPREADSHEET_PRESENTATION_VERSION') ===
+    INSTALLER_PRESENTATION_VERSION) {
+    return;
+  }
+  const names = localization.sheetNames;
+  const transactions = spreadsheet.getSheetByName(names.transactions);
+  const imports = spreadsheet.getSheetByName(names.imports);
+  const reconciliations = spreadsheet.getSheetByName(names.sourceReconciliations);
+  if (transactions) {
+    const rules = transactions.getConditionalFormatRules();
+    rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('expense')
+      .setBackground('#EAF7F2').setRanges([transactions.getRange('J2:J')]).build());
+    rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('transfer')
+      .setBackground('#EEF2FF').setRanges([transactions.getRange('J2:J')]).build());
+    transactions.setConditionalFormatRules(rules);
+  }
+  if (imports) {
+    const rules = imports.getConditionalFormatRules();
+    rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('OK')
+      .setBackground('#DCFCE7').setRanges([imports.getRange('N2:N')]).build());
+    rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('mismatch')
+      .setBackground('#FEE2E2').setRanges([imports.getRange('N2:N')]).build());
+    imports.setConditionalFormatRules(rules);
+  }
+  if (reconciliations) {
+    const rules = reconciliations.getConditionalFormatRules();
+    rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('OK')
+      .setBackground('#DCFCE7').setRanges([reconciliations.getRange('O2:O')]).build());
+    rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('mismatch')
+      .setBackground('#FEE2E2').setRanges([reconciliations.getRange('O2:O')]).build());
+    reconciliations.setConditionalFormatRules(rules);
+  }
+  properties.setProperty('SPREADSHEET_PRESENTATION_VERSION', INSTALLER_PRESENTATION_VERSION);
+}
+
+function orderInstallerSheets_(spreadsheet, localization) {
+  const names = localization.sheetNames;
+  [names.dashboard, names.transactions, names.imports, names.sourceReconciliations,
+    names.configuration, names.balanceMovements, names.monthlyBalances, names.personalAnalysis]
+    .forEach(function (name, index) {
+      const sheet = spreadsheet.getSheetByName(name);
+      if (sheet) {
+        spreadsheet.setActiveSheet(sheet);
+        spreadsheet.moveActiveSheet(index + 1);
+      }
+    });
+  const dashboard = spreadsheet.getSheetByName(names.dashboard);
+  if (dashboard) {
+    spreadsheet.setActiveSheet(dashboard);
+  }
 }

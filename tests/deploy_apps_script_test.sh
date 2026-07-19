@@ -55,6 +55,12 @@ test "${auth_file}" = "${RUNNER_TEMP}/clasp-auth/.clasprc.json"
 test -f "${auth_file}"
 case "${command_name}" in
   deployments)
+    deployments_count="$(cat "${TEST_CLASP_DEPLOYMENTS_COUNT_FILE}")"
+    deployments_count="$((deployments_count + 1))"
+    printf '%s\n' "${deployments_count}" >"${TEST_CLASP_DEPLOYMENTS_COUNT_FILE}"
+    if [[ "${deployments_count}" -gt "${TEST_FAIL_DEPLOYMENTS_AFTER}" ]]; then
+      exit 9
+    fi
     printf '[{"deploymentId":"%s","versionNumber":4}]\n' "${TEST_LISTED_DEPLOYMENT_ID}"
     ;;
   pull)
@@ -79,7 +85,13 @@ method='GET'
 payload=''
 next=''
 url=''
+authorization=''
+header_source=''
 for argument in "$@"; do
+  if [[ "${argument}" == Authorization:* ]]; then
+    printf '%s\n' 'Authorization header must not be passed through argv.' >&2
+    exit 7
+  fi
   case "${next}" in
     method)
       method="${argument}"
@@ -91,17 +103,27 @@ for argument in "$@"; do
       next=''
       continue
       ;;
+    header)
+      test "${argument}" = '@-'
+      header_source='stdin'
+      next=''
+      continue
+      ;;
   esac
   case "${argument}" in
     --request) next='method' ;;
     --data) next='payload' ;;
+    --header) next='header' ;;
     https://*) url="${argument}" ;;
   esac
 done
-if [[ "${url}" == 'https://oauth2.googleapis.com/token' ]]; then
-  printf '%s\n' '{"access_token":"test-token"}'
-  exit 0
-fi
+test "${header_source}" = 'stdin'
+while IFS= read -r header; do
+  if [[ "${header}" == Authorization:* ]]; then
+    authorization="${header}"
+  fi
+done
+test "${authorization}" = 'Authorization: Bearer test-token'
 deployment_url="https://script.googleapis.com/v1/projects/test-script/deployments/${APPS_SCRIPT_DEPLOYMENT_ID}"
 execution_url="https://script.googleapis.com/v1/scripts/${APPS_SCRIPT_DEPLOYMENT_ID}:run"
 if [[ "${url}" == "${execution_url}" ]]; then
@@ -109,7 +131,11 @@ if [[ "${url}" == "${execution_url}" ]]; then
   jq -e '.function == "installAutomationTriggers" and .parameters == [] and .devMode == false' \
     <<<"${payload}" >/dev/null
   printf '%s\n' triggers >>"${TEST_COMMAND_LOG}"
-  printf '%s\n' '{"done":true,"response":{"result":{"triggerCounts":{"processDriveEventQueue":1,"runDailyExpenseCataloging":1},"missingTriggerHandlers":[],"duplicateTriggerHandlers":[]}}}'
+  if [[ "${TEST_TRIGGER_RESULT_VALID}" != 'true' ]]; then
+    printf '%s\n' '{"done":true,"response":{"result":{"triggerCounts":{}}}}'
+    exit 0
+  fi
+  printf '%s\n' '{"done":true,"response":{"@type":"type.googleapis.com/google.apps.script.v1.ExecutionResponse","result":{"triggerCounts":{"processDriveEventQueue":1,"runDailyExpenseCataloging":1},"missingTriggerHandlers":[],"duplicateTriggerHandlers":[]}}}'
   exit 0
 fi
 test "${url}" = "${deployment_url}"
@@ -150,15 +176,18 @@ run_fixture() {
   local has_api_entry_point="$6"
   local mutate_update="${7:-false}"
   local main_sha_sequence="${8:-${current_sha},${current_sha},${current_sha}}"
+  local trigger_result_valid="${9:-true}"
+  local fail_deployments_after="${10:-99}"
 
   mkdir -p "${fixture_dir}/runner/clasp-auth"
   printf '%s\n' \
-    '{"tokens":{"default":{"client_id":"client","client_secret":"secret","refresh_token":"refresh"}}}' \
+    '{"tokens":{"default":{"access_token":"test-token"}}}' \
     >"${fixture_dir}/runner/clasp-auth/.clasprc.json"
   printf '%s\n' '{"scriptId":"test-script","rootDir":"."}' >"${fixture_dir}/.clasp.json"
   printf '%s\n' '{"timeZone":"Etc/UTC"}' >"${fixture_dir}/appsscript.json"
   : >"${fixture_dir}/commands.log"
   printf '%s\n' 0 >"${fixture_dir}/git-call-count"
+  printf '%s\n' 0 >"${fixture_dir}/clasp-deployments-count"
   (
     cd "${fixture_dir}"
     PATH="${FAKE_BIN}:${PATH}" \
@@ -171,6 +200,9 @@ run_fixture() {
       TEST_LISTED_DEPLOYMENT_ID="${listed_deployment_id}" \
       TEST_HAS_API_ENTRY_POINT="${has_api_entry_point}" \
       TEST_MUTATE_UPDATE="${mutate_update}" \
+      TEST_TRIGGER_RESULT_VALID="${trigger_result_valid}" \
+      TEST_CLASP_DEPLOYMENTS_COUNT_FILE="${fixture_dir}/clasp-deployments-count" \
+      TEST_FAIL_DEPLOYMENTS_AFTER="${fail_deployments_after}" \
       TEST_COMMAND_LOG="${fixture_dir}/commands.log" \
       "${PROJECT_ROOT}/scripts/deploy-apps-script.sh"
   )
@@ -201,6 +233,25 @@ mkdir -p "${stale_before_push_dir}"
 run_fixture "${stale_before_push_dir}" "${CURRENT_SHA}" "${CURRENT_SHA}" \
   'deployment-1' 'deployment-1' true false "${CURRENT_SHA},${STALE_SHA}"
 test ! -s "${stale_before_push_dir}/commands.log"
+
+refresh_failure_dir="${TEST_ROOT}/refresh-failure"
+mkdir -p "${refresh_failure_dir}"
+set +e
+(
+  set -e
+  run_fixture "${refresh_failure_dir}" "${CURRENT_SHA}" "${CURRENT_SHA}" \
+    'deployment-1' 'deployment-1' true false \
+    "${CURRENT_SHA},${CURRENT_SHA},${CURRENT_SHA}" true 1
+) >"${refresh_failure_dir}/output.log" 2>&1
+refresh_failure_status=$?
+set -e
+if [[ "${refresh_failure_status}" -eq 0 ]]; then
+  printf '%s\n' 'A failed post-preflight authorization refresh was accepted.' >&2
+  exit 1
+fi
+test ! -s "${refresh_failure_dir}/commands.log"
+grep -q 'Could not refresh Apps Script deployment authorization' \
+  "${refresh_failure_dir}/output.log"
 
 stale_before_update_dir="${TEST_ROOT}/stale-before-update"
 mkdir -p "${stale_before_update_dir}"
@@ -248,5 +299,21 @@ if [[ "${mutated_update_status}" -eq 0 ]]; then
 fi
 actual_commands="$(tr '\n' ' ' <"${mutated_update_dir}/commands.log")"
 test "${actual_commands}" = 'push version update '
+
+invalid_trigger_result_dir="${TEST_ROOT}/invalid-trigger-result"
+mkdir -p "${invalid_trigger_result_dir}"
+set +e
+(
+  set -e
+  run_fixture "${invalid_trigger_result_dir}" "${CURRENT_SHA}" "${CURRENT_SHA}" \
+    'deployment-1' 'deployment-1' true false \
+    "${CURRENT_SHA},${CURRENT_SHA},${CURRENT_SHA}" false
+) >/dev/null 2>&1
+invalid_trigger_result_status=$?
+set -e
+if [[ "${invalid_trigger_result_status}" -eq 0 ]]; then
+  printf '%s\n' 'An invalid trigger execution envelope was accepted.' >&2
+  exit 1
+fi
 
 printf '%s\n' 'Apps Script deployment tests passed.'

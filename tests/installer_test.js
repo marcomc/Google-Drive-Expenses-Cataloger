@@ -63,6 +63,16 @@ assert.equal(italianOptions.automationConfig.archive_folder_name, 'Importazioni'
 assert.ok(italianOptions.automationConfig.excluded_root_folder_names.includes('_Imported'));
 assert.ok(italianOptions.automationConfig.excluded_root_folder_names.includes('Importazioni'));
 
+const dashboardData = context.getDashboardDataSpecifications_('Transazioni', 'Saldi mensili');
+assert.deepEqual(
+  JSON.parse(JSON.stringify(dashboardData.map((specification) => specification.anchor))),
+  ['AA1', 'BA1', 'DA1', 'FA1', 'HA1']
+);
+assert.ok(dashboardData.every((specification) => specification.formula.includes("'Transazioni'!A:AD") ||
+  specification.formula.includes("'Saldi mensili'!A:H")));
+assert.match(context.getDashboardLatestMonthSpendFormula_('Transazioni'), /SUM\(FILTER/);
+assert.match(context.getDashboardLatestMonthSpendFormula_('Transazioni'), /"expense"/);
+
 properties.clear();
 assert.throws(
   () => context.validateInstallerGeminiAccess_(reconfigureOptions),

@@ -7,6 +7,7 @@
 - [Install](#install)
 - [Browser handoff](#browser-handoff)
 - [First controlled run](#first-controlled-run)
+- [Related documentation](#related-documentation)
 
 ## Prerequisites
 
@@ -67,6 +68,9 @@ the Drive policy, ignored fixture/archive folders, and time triggers. Automatic
 processing is deliberately disabled at first, so the historical folders can be
 isolated without a race. It then validates the ledger layout and trigger before
 reporting the installed spreadsheet URL.
+
+For the create-versus-adopt decision, managed tabs, and customization boundary,
+see [Spreadsheet lifecycle and schema](SPREADSHEET.md).
 
 ## First controlled run
 
@@ -133,3 +137,11 @@ npx --yes @google/clasp@3.3.0 \
 The 15-minute trigger will then process future eligible source units. Do not
 run `clasp login` again for these commands; the dedicated authorization already
 contains the required Apps Script, Drive, Sheets, and mail scopes.
+
+## Related documentation
+
+- [Project overview and documentation index](../README.md)
+- [Spreadsheet lifecycle and schema](SPREADSHEET.md)
+- [Configuration reference](CONFIGURATION.md)
+- [Operations guide](OPERATIONS.md)
+- [Deployment guide](DEPLOYMENT.md)

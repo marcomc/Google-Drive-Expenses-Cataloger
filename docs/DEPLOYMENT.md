@@ -6,6 +6,7 @@
 - [Required secrets](#required-secrets)
 - [Secret handoff](#secret-handoff)
 - [Repository settings](#repository-settings)
+- [Related documentation](#related-documentation)
 
 ## Flow
 
@@ -62,6 +63,9 @@ advances after the stable update, the running job still completes this trigger
 repair; the newer revision's deploy will supersede it. Script Properties, Drive
 sources, spreadsheet data, and Gemini credentials are not changed by deployment.
 
+For spreadsheet provisioning, schema ownership, and managed-dashboard behavior,
+see [Spreadsheet lifecycle and schema](SPREADSHEET.md).
+
 Create or renew `CLASP_AUTH_JSON` with the owner account using
 `clasp login --use-project-scopes --include-clasp-scopes`. This retains the
 manifest's runtime scopes and clasp's `script.deployments` and
@@ -90,3 +94,11 @@ Protect `main`: require pull requests, one approval, fresh approval after new
 commits, resolved conversations, and the `Validation / check` status check.
 Disable direct pushes. The `production` environment may additionally require
 an approval before it releases its secrets.
+
+## Related documentation
+
+- [Project overview and documentation index](../README.md)
+- [Installation guide](INSTALLATION.md)
+- [Spreadsheet lifecycle and schema](SPREADSHEET.md)
+- [Configuration reference](CONFIGURATION.md)
+- [Operations guide](OPERATIONS.md)

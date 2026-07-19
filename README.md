@@ -63,9 +63,18 @@ No source folder is deleted.
 
 ## Documentation
 
-See [installation](docs/INSTALLATION.md), [configuration](docs/CONFIGURATION.md),
-and [operations](docs/OPERATIONS.md). The planned work is in [TODO.md](TODO.md)
-and the delivered changes are in [CHANGELOG.md](CHANGELOG.md).
+Use the documentation by task:
+
+| Document | Use it for |
+| --- | --- |
+| [Installation guide](docs/INSTALLATION.md) | Provisioning or adopting a Drive root and spreadsheet |
+| [Spreadsheet lifecycle and schema](docs/SPREADSHEET.md) | Tab ownership, default layout, dashboard behavior, and safe customization |
+| [Configuration reference](docs/CONFIGURATION.md) | Local configuration, Script Properties, Drive policy, and taxonomy |
+| [Operations guide](docs/OPERATIONS.md) | Imports, audits, rebuilds, archival, and recovery |
+| [Deployment guide](docs/DEPLOYMENT.md) | Promoting an approved Apps Script revision |
+
+The planned work is in [TODO.md](TODO.md) and delivered changes are in
+[CHANGELOG.md](CHANGELOG.md).
 
 ## Deployment
 
