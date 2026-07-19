@@ -89,6 +89,35 @@ assert.equal(context.getSetupStatus().automaticProcessingEnabled, true);
 assert.equal(context.getSetupStatus().applicationVersion, '0.2.2');
 assert.equal(context.getApplicationVersion(), '0.2.2');
 
+let fallbackUntil = Date.now() + 60000;
+properties.set('GEMINI_AUTO_VERTEX_FALLBACK', 'true');
+properties.set('GEMINI_VERTEX_FALLBACK_UNTIL', String(fallbackUntil));
+let setupStatus = context.getSetupStatus();
+assert.equal(setupStatus.geminiBackend, 'gemini_api');
+assert.equal(setupStatus.geminiEffectiveBackend, 'vertex_ai');
+assert.equal(setupStatus.geminiAutoVertexFallbackEnabled, true);
+assert.equal(setupStatus.geminiVertexFallbackUntil, new Date(fallbackUntil).toISOString());
+
+properties.set('GEMINI_VERTEX_FALLBACK_UNTIL', String(Date.now() - 1));
+setupStatus = context.getSetupStatus();
+assert.equal(setupStatus.geminiEffectiveBackend, 'gemini_api');
+assert.equal(setupStatus.geminiVertexFallbackUntil, '');
+
+properties.set('GEMINI_VERTEX_FALLBACK_UNTIL', String(fallbackUntil));
+properties.set('GEMINI_AUTO_VERTEX_FALLBACK', 'false');
+setupStatus = context.getSetupStatus();
+assert.equal(setupStatus.geminiEffectiveBackend, 'gemini_api');
+assert.equal(setupStatus.geminiAutoVertexFallbackEnabled, false);
+assert.equal(setupStatus.geminiVertexFallbackUntil, new Date(fallbackUntil).toISOString());
+
+properties.set('GEMINI_BACKEND', 'vertex_ai');
+setupStatus = context.getSetupStatus();
+assert.equal(setupStatus.geminiBackend, 'vertex_ai');
+assert.equal(setupStatus.geminiEffectiveBackend, 'vertex_ai');
+properties.set('GEMINI_BACKEND', 'gemini_api');
+properties.delete('GEMINI_AUTO_VERTEX_FALLBACK');
+properties.delete('GEMINI_VERTEX_FALLBACK_UNTIL');
+
 context.assertCatalogConfiguration_ = () => {};
 context.getRootFolderId_ = () => 'root-folder';
 context.loadDriveAgentsPolicy_ = () => {};

@@ -12,18 +12,28 @@ test -f "${auth_file}"
 jq -e '.scriptId | type == "string" and length > 0' .clasp.json >/dev/null
 script_id="$(jq -er '.scriptId' .clasp.json)"
 
+refresh_apps_script_authorization() {
+  if ! clasp -A "${auth_file}" --json deployments >/dev/null; then
+    printf '%s\n' 'Could not refresh Apps Script deployment authorization.' >&2
+    return 1
+  fi
+}
+
 apps_script_request() {
   local method="$1"
   local payload="$2"
   local url="$3"
+  local refresh_authorization="${4:-true}"
   local access_token
   local response
   local request_status
   local -a request_args
 
-  if ! clasp -A "${auth_file}" --json deployments >/dev/null; then
-    printf '%s\n' 'Could not refresh Apps Script deployment authorization.' >&2
-    return 1
+  if [[ "${refresh_authorization}" == 'true' ]]; then
+    if ! clasp -A "${auth_file}" --json deployments >/dev/null; then
+      printf '%s\n' 'Could not refresh Apps Script deployment authorization.' >&2
+      return 1
+    fi
   fi
   access_token="$(jq -er '
     .tokens.default.access_token |
@@ -57,6 +67,32 @@ apps_script_request() {
   printf '%s' "${response}"
 }
 
+validate_owner_only_api_deployment() {
+  local deployment_json="$1"
+  local expected_version="${2:-}"
+
+  if ! jq -e --arg id "${APPS_SCRIPT_DEPLOYMENT_ID}" --arg script_id "${script_id}" '
+    .deploymentId == $id and
+    .deploymentConfig.scriptId == $script_id and
+    (.deploymentConfig.versionNumber | type == "number") and
+    .deploymentConfig.manifestFileName == "appsscript" and
+    (.entryPoints | type == "array" and length == 1) and
+    .entryPoints[0].entryPointType == "EXECUTION_API" and
+    .entryPoints[0].executionApi.entryPointConfig.access == "MYSELF"
+  ' <<<"${deployment_json}" >/dev/null; then
+    printf '%s\n' 'The stable deployment is not an owner-only API executable.' >&2
+    return 1
+  fi
+  if [[ -n "${expected_version}" ]] &&
+    ! jq -e --argjson version "${expected_version}" \
+      '.deploymentConfig.versionNumber == $version' \
+      <<<"${deployment_json}" >/dev/null; then
+    printf 'The stable deployment is not on expected version %s.\n' \
+      "${expected_version}" >&2
+    return 1
+  fi
+}
+
 ensure_current_main() {
   local current_main_sha
   git fetch --no-tags origin main
@@ -70,27 +106,17 @@ ensure_current_main() {
 ensure_current_main
 
 deployments="$(clasp -A "${auth_file}" --json deployments)"
-jq -e --arg id "${APPS_SCRIPT_DEPLOYMENT_ID}" 'any(.[]; .deploymentId == $id and (.versionNumber | type == "number"))' \
-  <<<"${deployments}" >/dev/null
+listed_version="$(jq -er --arg id "${APPS_SCRIPT_DEPLOYMENT_ID}" '
+  [.[] | select(.deploymentId == $id and (.versionNumber | type == "number"))] |
+  select(length == 1) |
+  .[0].versionNumber
+' <<<"${deployments}")"
 
 deployment="$(apps_script_request GET '' \
   "https://script.googleapis.com/v1/projects/${script_id}/deployments/${APPS_SCRIPT_DEPLOYMENT_ID}")"
-jq -e --arg id "${APPS_SCRIPT_DEPLOYMENT_ID}" --arg script_id "${script_id}" '
-  .deploymentId == $id and
-  .deploymentConfig.scriptId == $script_id and
-  (.entryPoints | type == "array" and length > 0) and
-  any(.entryPoints[];
-    .entryPointType == "EXECUTION_API" and
-    .executionApi.entryPointConfig.access == "MYSELF"
-  )
-' <<<"${deployment}" >/dev/null
+validate_owner_only_api_deployment "${deployment}" "${listed_version}"
 entry_points="$(jq -ce '.entryPoints' <<<"${deployment}")"
-execution_api="$(jq -ce '
-  [.entryPoints[] |
-    select(.entryPointType == "EXECUTION_API") |
-    .executionApi.entryPointConfig
-  ] | first
-' <<<"${deployment}")"
+execution_api="$(jq -ce '.entryPoints[0].executionApi.entryPointConfig' <<<"${deployment}")"
 
 snapshot_dir="${RUNNER_TEMP}/apps-script-snapshot"
 mkdir -m 700 "${snapshot_dir}"
@@ -113,15 +139,16 @@ deployment_config="$(jq -ce --argjson version "${version}" --arg description "${
   .description = $description
 ' <<<"${deployment}")"
 update_payload="$(jq -cn --argjson config "${deployment_config}" '{deploymentConfig: $config}')"
+# Refresh before the final main-revision check so no authorization request can
+# reopen a stale-deployment race between that check and the stable mutation.
+refresh_apps_script_authorization
 ensure_current_main
 updated_deployment="$(apps_script_request PUT "${update_payload}" \
-  "https://script.googleapis.com/v1/projects/${script_id}/deployments/${APPS_SCRIPT_DEPLOYMENT_ID}")"
-jq -e --arg id "${APPS_SCRIPT_DEPLOYMENT_ID}" --argjson version "${version}" \
-  --argjson entry_points "${entry_points}" '
-    .deploymentId == $id and
-    .deploymentConfig.versionNumber == $version and
-    .entryPoints == $entry_points
-  ' <<<"${updated_deployment}" >/dev/null
+  "https://script.googleapis.com/v1/projects/${script_id}/deployments/${APPS_SCRIPT_DEPLOYMENT_ID}" \
+  false)"
+validate_owner_only_api_deployment "${updated_deployment}" "${version}"
+jq -e --argjson entry_points "${entry_points}" \
+  '.entryPoints == $entry_points' <<<"${updated_deployment}" >/dev/null
 
 # Time-driven triggers are bound to the deployment that creates them. Recreate
 # them through the exact stable API executable after it is updated. Do not

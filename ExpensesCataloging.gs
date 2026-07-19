@@ -257,8 +257,6 @@ function commitJsonRebuild_(root, state) {
     const localization = getLocalization_();
     buildDashboard_(spreadsheet.getSheetByName(localization.sheetNames.dashboard),
       layout.transactions, localization);
-    applyInstallerSpreadsheetPresentation_(spreadsheet, localization);
-    orderInstallerSheets_(spreadsheet, localization);
     state.archiveReady = true;
     state.archiveYearsByFileId = {};
     sourceResults.forEach(function (entry) {
@@ -1139,13 +1137,24 @@ function callVertexAi_(parts) {
 
 function callGeminiWithTransientRetry_(fetchResponse, backend) {
   const delays = CONFIG.GEMINI_TRANSIENT_RETRY_DELAYS_MS;
-  let response = fetchResponse();
-  for (let attempt = 0; isTransientGeminiResponse_(response, backend) &&
-    attempt < delays.length; attempt += 1) {
+  let response;
+  for (let attempt = 0; attempt <= delays.length; attempt += 1) {
+    try {
+      response = fetchResponse();
+    } catch (error) {
+      if (attempt === delays.length) {
+        throw new Error(backend + ' network request failed after retry: ' +
+          String(error && error.message || error));
+      }
+      Utilities.sleep(delays[attempt]);
+      continue;
+    }
+    if (!isTransientGeminiResponse_(response, backend) || attempt === delays.length) {
+      return parseGeminiHttpResponse_(response, backend);
+    }
     Utilities.sleep(delays[attempt]);
-    response = fetchResponse();
   }
-  return parseGeminiHttpResponse_(response, backend);
+  throw new Error(backend + ' request retry state is invalid.');
 }
 
 function isTransientGeminiResponse_(response, backend) {
