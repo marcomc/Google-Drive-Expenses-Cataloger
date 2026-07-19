@@ -1,4 +1,5 @@
 const CONFIG = Object.freeze({
+  APP_VERSION: '0.2.2',
   DEFAULT_MODEL: 'gemini-3.5-flash',
   DAILY_TRIGGER_HOUR: 7,
   MAX_RUNTIME_MS: 280000,
@@ -13,7 +14,7 @@ const CONFIG = Object.freeze({
     GEMINI_BACKEND: 'GEMINI_BACKEND',
     GEMINI_MODEL: 'GEMINI_MODEL',
     GEMINI_AUTO_VERTEX_FALLBACK: 'GEMINI_AUTO_VERTEX_FALLBACK',
-  GEMINI_VERTEX_FALLBACK_UNTIL: 'GEMINI_VERTEX_FALLBACK_UNTIL',
+    GEMINI_VERTEX_FALLBACK_UNTIL: 'GEMINI_VERTEX_FALLBACK_UNTIL',
     JSON_REBUILD_STATE: 'JSON_REBUILD_STATE',
     VERTEX_AI_LOCATION: 'VERTEX_AI_LOCATION',
     NOTIFICATION_RECIPIENT: 'NOTIFICATION_RECIPIENT',
@@ -30,6 +31,7 @@ function getSetupStatus() {
   const property = CONFIG.PROPERTY_KEYS;
   const properties = PropertiesService.getScriptProperties();
   return {
+    applicationVersion: CONFIG.APP_VERSION,
     geminiApiKeyConfigured: Boolean(properties.getProperty(property.GEMINI_API_KEY)),
     geminiBackend: getGeminiBackend_(),
     rootFolderConfigured: Boolean(properties.getProperty(property.ROOT_FOLDER_ID)),
@@ -38,6 +40,10 @@ function getSetupStatus() {
     cloudProjectConfigured: Boolean(properties.getProperty(property.GOOGLE_CLOUD_PROJECT_ID)),
     automaticProcessingEnabled: isAutomaticProcessingEnabled_()
   };
+}
+
+function getApplicationVersion() {
+  return CONFIG.APP_VERSION;
 }
 
 /** Enable the configured Vertex project when Gemini Developer API quota is exhausted. */

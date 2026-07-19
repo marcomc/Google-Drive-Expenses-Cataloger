@@ -11,6 +11,12 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 - Persist normal-intake and historical-rebuild JSON stages with the supported
   `application/json` MIME string, restoring resumable imports in Apps Script.
+- Reject incomplete Gemini candidates instead of accepting truncated JSON, and
+  expose the runtime application version through setup status.
+- Activate automatic Vertex fallback only for verified daily-quota or depleted
+  prepayment-credit responses; retry generic transient rate limits in place.
+- Keep OAuth credentials out of deployment command arguments and validate the
+  provider execution envelope before accepting post-promotion trigger repair.
 
 ## [0.2.1] - 2026-07-18
 

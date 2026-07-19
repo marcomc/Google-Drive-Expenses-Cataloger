@@ -12,18 +12,49 @@ test -f "${auth_file}"
 jq -e '.scriptId | type == "string" and length > 0' .clasp.json >/dev/null
 script_id="$(jq -er '.scriptId' .clasp.json)"
 
-refresh_access_token() {
-  local client_id client_secret refresh_token
-  client_id="$(jq -er '.tokens.default.client_id | select(type == "string" and length > 0)' "${auth_file}")"
-  client_secret="$(jq -er '.tokens.default.client_secret | select(type == "string" and length > 0)' "${auth_file}")"
-  refresh_token="$(jq -er '.tokens.default.refresh_token | select(type == "string" and length > 0)' "${auth_file}")"
-  "${CURL_BIN}" --silent --show-error --fail --request POST \
-    https://oauth2.googleapis.com/token \
-    --data-urlencode "client_id=${client_id}" \
-    --data-urlencode "client_secret=${client_secret}" \
-    --data-urlencode "refresh_token=${refresh_token}" \
-    --data-urlencode 'grant_type=refresh_token' |
-    jq -er '.access_token | select(type == "string" and length > 0)'
+apps_script_request() {
+  local method="$1"
+  local payload="$2"
+  local url="$3"
+  local access_token
+  local response
+  local request_status
+  local -a request_args
+
+  if ! clasp -A "${auth_file}" --json deployments >/dev/null; then
+    printf '%s\n' 'Could not refresh Apps Script deployment authorization.' >&2
+    return 1
+  fi
+  access_token="$(jq -er '
+    .tokens.default.access_token |
+    select(type == "string" and length > 0)
+  ' "${auth_file}")" || {
+    printf '%s\n' 'The clasp authorization has no usable access token.' >&2
+    return 1
+  }
+  request_args=(--silent --show-error --fail --header @-)
+  if [[ "${method}" != "GET" ]]; then
+    request_args+=(--request "${method}")
+  fi
+  if [[ -n "${payload}" ]]; then
+    request_args+=(--data "${payload}")
+  fi
+  if response="$(
+    printf 'Authorization: Bearer %s\nAccept: application/json\nContent-Type: application/json\n' \
+      "${access_token}" |
+      "${CURL_BIN}" "${request_args[@]}" "${url}"
+  )"; then
+    request_status=0
+  else
+    request_status=$?
+  fi
+  unset access_token
+  if [[ "${request_status}" -ne 0 ]]; then
+    printf 'Apps Script API request failed with curl status %s.\n' \
+      "${request_status}" >&2
+    return 1
+  fi
+  printf '%s' "${response}"
 }
 
 ensure_current_main() {
@@ -42,9 +73,7 @@ deployments="$(clasp -A "${auth_file}" --json deployments)"
 jq -e --arg id "${APPS_SCRIPT_DEPLOYMENT_ID}" 'any(.[]; .deploymentId == $id and (.versionNumber | type == "number"))' \
   <<<"${deployments}" >/dev/null
 
-access_token="$(refresh_access_token)"
-deployment="$("${CURL_BIN}" --silent --show-error --fail \
-  --header "Authorization: Bearer ${access_token}" \
+deployment="$(apps_script_request GET '' \
   "https://script.googleapis.com/v1/projects/${script_id}/deployments/${APPS_SCRIPT_DEPLOYMENT_ID}")"
 jq -e --arg id "${APPS_SCRIPT_DEPLOYMENT_ID}" --arg script_id "${script_id}" '
   .deploymentId == $id and
@@ -85,10 +114,7 @@ deployment_config="$(jq -ce --argjson version "${version}" --arg description "${
 ' <<<"${deployment}")"
 update_payload="$(jq -cn --argjson config "${deployment_config}" '{deploymentConfig: $config}')"
 ensure_current_main
-updated_deployment="$("${CURL_BIN}" --silent --show-error --fail --request PUT \
-  --header "Authorization: Bearer ${access_token}" \
-  --header 'Content-Type: application/json' \
-  --data "${update_payload}" \
+updated_deployment="$(apps_script_request PUT "${update_payload}" \
   "https://script.googleapis.com/v1/projects/${script_id}/deployments/${APPS_SCRIPT_DEPLOYMENT_ID}")"
 jq -e --arg id "${APPS_SCRIPT_DEPLOYMENT_ID}" --argjson version "${version}" \
   --argjson entry_points "${entry_points}" '
@@ -101,14 +127,14 @@ jq -e --arg id "${APPS_SCRIPT_DEPLOYMENT_ID}" --argjson version "${version}" \
 # them through the exact stable API executable after it is updated. Do not
 # stale-skip this recovery after a successful update: leaving old triggers
 # would recreate the precise version mismatch this step repairs.
-trigger_status="$("${CURL_BIN}" --silent --show-error --fail --request POST \
-  --header "Authorization: Bearer ${access_token}" \
-  --header 'Content-Type: application/json' \
-  --data '{"function":"installAutomationTriggers","parameters":[],"devMode":false}' \
+trigger_status="$(apps_script_request POST \
+  '{"function":"installAutomationTriggers","parameters":[],"devMode":false}' \
   "https://script.googleapis.com/v1/scripts/${APPS_SCRIPT_DEPLOYMENT_ID}:run")"
 jq -e '
   .done == true and
   .error == null and
+  .response["@type"] ==
+    "type.googleapis.com/google.apps.script.v1.ExecutionResponse" and
   .response.result.triggerCounts.processDriveEventQueue == 1 and
   .response.result.triggerCounts.runDailyExpenseCataloging == 1 and
   .response.result.missingTriggerHandlers == [] and
