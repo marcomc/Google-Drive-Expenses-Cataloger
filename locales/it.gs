@@ -50,6 +50,8 @@ function getItalianLocalization_() {
       yearColors: { green: 'Verde', blue: 'Blu', orange: 'Arancione', purple: 'Viola', pink: 'Rosa', teal: 'Turchese', red: 'Rosso', lime: 'Lime' },
       detailYear: 'Anno di dettaglio', year: 'Anno', includeYear: 'Mostra',
       selectedYear: 'Visualizza dettagli per',
+      merchantSort: 'Ordina esercenti', merchantSortBy: 'Ordina per',
+      merchantSortBySpend: 'Per spesa', merchantSortAlphabetically: 'Alfabetico',
       monthNames: ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
         'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre']
     },

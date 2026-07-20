@@ -177,16 +177,17 @@ spending for a month, year, category, payer, or supplier.
 | --- | --- |
 | `Anni da confrontare` | Three-cell control to the right of `Confronto spese mensili per anno`: year, checkbox, and editable color dropdown. The chosen color is applied to year-series charts. New ledger years appear automatically after their first successful import. |
 | `Anno di dettaglio` | Three-cell dropdown panel at `V47:X48`, to the right of `Andamento mensile per categoria`; selects the year used by category and merchant detail charts. |
-| Spesa annua per categoria | The total for every selected year is shown directly below the chart; colors and legend identify categories. |
+| `Ordina esercenti` | Three-cell panel at `V50:X51`, below `Anno di dettaglio`; selects either spending total (default) or alphabetical order for the supplier chart. |
+| Spesa annua per categoria | Each selected year has one native horizontal label with its EUR spending total; transfers and opening-balance controls remain excluded. Colors and legend identify categories. |
 | Confronto spese mensili per anno | January through December on the horizontal axis; one connected, color-coded 12-point line per selected year, with zeroes for months without spending. Year colors come from `Anni da confrontare`. |
 | Andamento mensile per categoria | Month names on the horizontal axis; colors and legend identify categories for the detail year. |
 | Spesa per pagatore | Payers on the horizontal axis; one column per selected comparison year, using the colors from `Anni da confrontare`. |
-| Top 20 esercenti / fornitori | Largest suppliers for the detail year. Each supplier is a chart row with one differently coloured horizontal bar; the legend is hidden and the chart has the same height as `Andamento mensile per categoria`. |
+| Top 20 esercenti / fornitori | Suppliers for the detail year, ordered by the `Ordina esercenti` control. Each supplier is a chart row with one differently coloured horizontal bar; the legend is hidden and the chart has the same height as `Andamento mensile per categoria`. |
 
-Both control panels occupy three cells and end at column X, matching the right
-edge of the dashboard. Changing a checkbox or the detail-year dropdown updates
-the dependent formulas immediately; a managed edit trigger reapplies the chosen
-year colors after checkbox or color changes. The last chart replaces
+All control panels occupy three cells and end at column X, matching the right
+edge of the dashboard. Changing a checkbox, detail-year dropdown, or merchant
+sort dropdown updates the dependent formulas immediately; a managed edit
+trigger reapplies the chosen year colors after checkbox or color changes. The last chart replaces
 the former dog-subcategory chart, while the former monthly-balance chart is no
 longer shown on the dashboard because its accounting-control purpose was not
 clear in a spending view. The underlying `Saldi mensili` tab remains available

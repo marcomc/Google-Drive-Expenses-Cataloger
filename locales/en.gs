@@ -50,6 +50,8 @@ function getEnglishLocalization_() {
       yearColors: { green: 'Green', blue: 'Blue', orange: 'Orange', purple: 'Purple', pink: 'Pink', teal: 'Teal', red: 'Red', lime: 'Lime' },
       detailYear: 'Detail year', year: 'Year', includeYear: 'Show',
       selectedYear: 'Show details for',
+      merchantSort: 'Sort merchants', merchantSortBy: 'Sort by',
+      merchantSortBySpend: 'By spending', merchantSortAlphabetically: 'Alphabetical',
       monthNames: ['January', 'February', 'March', 'April', 'May', 'June', 'July',
         'August', 'September', 'October', 'November', 'December']
     },

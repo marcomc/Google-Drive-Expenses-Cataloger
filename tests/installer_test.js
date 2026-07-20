@@ -24,7 +24,7 @@ vm.runInContext(fs.readFileSync('Installer.gs', 'utf8'), context);
 
 const dashboardFormulas = context.getDashboardDataSpecifications_('Transazioni');
 assert.equal(dashboardFormulas.map((specification) => specification.anchor).join(','),
-  'A1,A30,A60,A90,A120,AA1');
+  'A1,A30,A60,A90,A120');
 assert.match(dashboardFormulas[0].formula, /FILTER\("C = "&'Dashboard'!\$V\$11:\$V,'Dashboard'!\$W\$11:\$W=TRUE\)/);
 assert.match(dashboardFormulas[1].formula, /monthIndexes,SEQUENCE\(12\)/);
 assert.match(dashboardFormulas[1].formula, /MAKEARRAY\(12,ROWS\(years\)/);
@@ -34,15 +34,15 @@ assert.match(dashboardFormulas[1].formula,
 assert.match(dashboardFormulas[2].formula, /C = "&'Dashboard'!\$X\$48/);
 assert.match(dashboardFormulas[3].formula,
   /select E,sum\(G\).*FILTER\("C = "&'Dashboard'!\$V\$11:\$V,'Dashboard'!\$W\$11:\$W=TRUE\).*group by E pivot C order by E/);
-assert.match(dashboardFormulas[4].formula, /order by sum\(G\) desc limit 20/);
+assert.match(dashboardFormulas[4].formula,
+  /IF\('Dashboard'!\$X\$51="Alphabetical","order by M asc","order by sum\(G\) desc"\)&" limit 20/,
+  'Top 20 chart data must use the merchant-sort dropdown before applying its limit');
 assert.match(dashboardFormulas[4].formula,
   /VSTACK\(\{"Merchant \/ supplier","Amount"\},HSTACK\(INDEX\(summary,,1\),INDEX\(summary,,2\)\)\)/,
   'Top 20 chart data must use one merchant category per row');
-assert.match(dashboardFormulas[0].formula, /HSTACK\(years,values\)/,
-  'annual chart data must keep raw years for tooltip domain values');
-assert.match(dashboardFormulas.find((specification) => specification.anchor === 'AA1').formula,
-  /BYROW\(values,LAMBDA\(row,SUM\(row\)\)\)/,
-  'annual chart helper data must calculate totals separately from the domain');
+assert.match(dashboardFormulas[0].formula,
+  /MAP\(years,totals,LAMBDA\(year,total,year&" · "&total\)\)/,
+  'annual chart labels must use one clear native axis label per year');
 const installerSource = fs.readFileSync('Installer.gs', 'utf8');
 assert.doesNotMatch(installerSource, /function getDashboardAxisTicks_/);
 assert.equal(context.getInstallerImportAuditHeaders_().indexOf('Source reconciliation status') + 1, 15);
@@ -62,7 +62,7 @@ assert.deepEqual(context.removeManagedTextFormatRules_({
 assert.match(dashboardFormulas[2].formula,
   /MAP\(labels,totals,LAMBDA\(label,total,label&" · "&total\)\)/);
 assert.match(installerSource, /const DASHBOARD_CHART_LAYOUT_DEFAULTS = \{/);
-assert.equal(context.formatAnnualChartTotal_(23322.28), '23,322.28');
+assert.doesNotMatch(installerSource, /function writeDashboardAnnualChartLabels_/);
 assert.match(installerSource, /'Q4:T4', 'Q5:T7', labels\.latestMonth/,
   'latest-imported-month KPI must use the same four-column card geometry');
 assert.match(installerSource, /'U4:X4', 'U5:X7', labels\.latestMonthSpend/,
@@ -185,7 +185,8 @@ context.writeDashboardYearControls_({
   getRange: (...arguments_) => getDashboardControlRange_(arguments_.join(':'))
 }, [2023, 2024, 2025], { selectedYears: [2023, 2024], detailYear: 2024 }, {
   comparisonYears: 'Years to compare', detailYear: 'Detail year', year: 'Year',
-  includeYear: 'Show', selectedYear: 'Show details for'
+  includeYear: 'Show', selectedYear: 'Show details for', merchantSort: 'Sort merchants',
+  merchantSortBy: 'Sort by', merchantSortBySpend: 'By spending', merchantSortAlphabetically: 'Alphabetical'
 });
 assert.equal(dashboardControlRanges.get('X48').value, 2024,
   'the detail-year selection must end at the dashboard right margin in column X');
@@ -196,6 +197,11 @@ assert.equal(dashboardControlRanges.get('V10:X10').values[0].length, 3,
   'the comparison-year panel must reserve three horizontal cells');
 assert.equal(dashboardControlRanges.get('V47:X47').value, 'Detail year',
   'the detail-year panel must use the dashboard position selected by the user');
+assert.equal(dashboardControlRanges.get('X51').value, 'By spending',
+  'merchant sorting must default to spending total');
+assert.deepEqual(dashboardControlRanges.get('X51').validation, { type: 'year-list' });
+assert.equal(dashboardControlRanges.get('V50:X50').value, 'Sort merchants',
+  'the merchant-sort panel must use the dashboard right margin');
 function createGridSheet(initialRows) {
   const grid = Array.from({ length: 40 }, () => Array(10).fill(''));
   initialRows.forEach((row, rowIndex) => row.forEach((value, columnIndex) => {
@@ -349,12 +355,13 @@ const intermediateDashboardSelection = context.getDashboardSelectionState_({
   }
 });
 assert.deepEqual(JSON.parse(JSON.stringify(intermediateDashboardSelection)), {
-  selectedYears: [2024], detailYear: 2025, yearColors: { 2024: 'Blue', 2025: 'Orange' }
+  selectedYears: [2024], detailYear: 2025, yearColors: { 2024: 'Blue', 2025: 'Orange' }, merchantSort: ''
 });
 const italianDashboardFormulas = context.getDashboardDataSpecifications_('Transazioni', 'Dashboard', {
   headers: { month: 'Mese' },
   categoryLabels: { Dogs: 'Cani' },
   dashboard: {
+    merchantSortAlphabetically: 'Alfabetico',
     monthNames: ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
       'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre']
   }
@@ -369,6 +376,10 @@ assert.match(italianDashboardFormulas[0].formula, /,TRIM\(header\)\)\)\)/,
 assert.match(italianDashboardFormulas[0].formula, /\$V\$11:\$V/);
 assert.match(italianDashboardFormulas[1].formula, /\$V\$11:\$V/);
 assert.match(italianDashboardFormulas[2].formula, /\$X\$48/);
+assert.match(italianDashboardFormulas[4].formula, /\$X\$51="Alfabetico"/,
+  'the merchant chart source must use the localized sort dropdown');
+assert.match(italianDashboardFormulas[4].formula, /order by M asc/);
+assert.match(italianDashboardFormulas[4].formula, /order by sum\(G\) desc/);
 const italianLatestMonthFormula = context.getDashboardLatestMonthLabelFormula_('Transazioni', [
   'Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto',
   'Settembre', 'Ottobre', 'Novembre', 'Dicembre'
@@ -426,7 +437,7 @@ assert.ok(italianOptions.automationConfig.excluded_root_folder_names.includes('I
 const dashboardData = context.getDashboardDataSpecifications_('Transazioni', 'Dashboard');
 assert.deepEqual(
   JSON.parse(JSON.stringify(dashboardData.map((specification) => specification.anchor))),
-  ['A1', 'A30', 'A60', 'A90', 'A120', 'AA1']
+  ['A1', 'A30', 'A60', 'A90', 'A120']
 );
 assert.ok(dashboardData.filter((specification) => specification.anchor !== 'A30')
   .every((specification) => specification.formula.includes("'Transazioni'!A:AD")));

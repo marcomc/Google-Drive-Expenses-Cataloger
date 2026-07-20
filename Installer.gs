@@ -625,10 +625,9 @@ function buildDashboard_(dashboard, transactions, localization) {
   // dynamic pivot has settled, otherwise a late-arriving payer or category is
   // permanently omitted from the newly-created chart.
   waitForDashboardChartSources_(technicalData);
-  const annualTicks = getDashboardAnnualChartTicks_(technicalData);
   insertDashboardChart_(dashboard, getDashboardChartSourceRange_(technicalData, 1, 25),
     getDashboardChartLayout_(chartLayouts, 'annualSpend'), labels.annualSpend, 'column', false, {
-      focusTarget: 'datum', hAxis: { ticks: annualTicks, slantedText: false }
+      focusTarget: 'datum', hAxis: { slantedText: false }
     });
   insertDashboardChart_(dashboard, getDashboardChartSourceRange_(technicalData, 30, 55),
     getDashboardChartLayout_(chartLayouts, 'monthlyComparison'), labels.monthlyComparison, 'line', false, {
@@ -696,6 +695,7 @@ function getDashboardSelectionState_(dashboard) {
     (maxColumns >= 27 ? Number(dashboard.getRange('AA50').getValue()) : 0) ||
     Number(dashboard.getRange('V30').getValue()) ||
     Number(dashboard.getRange('V2').getValue()) || Number(dashboard.getRange('V3').getValue());
+  const merchantSort = String(dashboard.getRange('X51').getValue() || '');
   const yearColors = currentRows.reduce(function (colors, row) {
     const year = Number(row[0]);
     if (year && row[2]) {
@@ -703,7 +703,12 @@ function getDashboardSelectionState_(dashboard) {
     }
     return colors;
   }, {});
-  return { selectedYears: selectedYears, detailYear: detailYear, yearColors: yearColors };
+  return {
+    selectedYears: selectedYears,
+    detailYear: detailYear,
+    yearColors: yearColors,
+    merchantSort: merchantSort
+  };
 }
 
 function getDashboardAvailableYears_(transactions) {
@@ -724,6 +729,12 @@ function getDashboardAvailableYears_(transactions) {
 function writeDashboardYearControls_(dashboard, years, selectionState, labels) {
   const selectedYears = selectionState.selectedYears.length ? selectionState.selectedYears : years;
   const detailYear = years.indexOf(selectionState.detailYear) >= 0 ? selectionState.detailYear : years[years.length - 1];
+  const merchantSortOptions = [
+    labels.merchantSortBySpend || 'By spending',
+    labels.merchantSortAlphabetically || 'Alphabetical'
+  ];
+  const merchantSort = merchantSortOptions.indexOf(selectionState.merchantSort) >= 0 ?
+    selectionState.merchantSort : merchantSortOptions[0];
   const colorOptions = getDashboardYearColorOptions_(labels);
   const colorNames = colorOptions.map(function (option) { return option.name; });
   const colorByName = colorOptions.reduce(function (result, option) {
@@ -732,11 +743,16 @@ function writeDashboardYearControls_(dashboard, years, selectionState, labels) {
   }, {});
   dashboard.getRange('V9:X9').merge().setValue(labels.comparisonYears);
   dashboard.getRange('V47:X47').merge().setValue(labels.detailYear);
+  dashboard.getRange('V50:X50').merge().setValue(labels.merchantSort || 'Sort merchants');
   dashboard.getRange('V10:X10').setValues([[labels.year, labels.includeYear, labels.color || 'Color']]);
   dashboard.getRange('V48:W48').merge().setValue(labels.selectedYear);
   dashboard.getRange('X48').setValue(detailYear);
+  dashboard.getRange('V51:W51').merge().setValue(labels.merchantSortBy || 'Sort by');
+  dashboard.getRange('X51').setValue(merchantSort);
   dashboard.getRange('X48').setDataValidation(SpreadsheetApp.newDataValidation()
     .requireValueInList(years.map(String), true).setAllowInvalid(false).build());
+  dashboard.getRange('X51').setDataValidation(SpreadsheetApp.newDataValidation()
+    .requireValueInList(merchantSortOptions, true).setAllowInvalid(false).build());
   const yearRows = years.map(function (year, index) {
     const colorName = selectionState.yearColors && selectionState.yearColors[year];
     return [year, selectedYears.indexOf(year) >= 0, colorByName[colorName] ? colorName : colorNames[index % colorNames.length]];
@@ -753,14 +769,20 @@ function writeDashboardYearControls_(dashboard, years, selectionState, labels) {
     .setFontFamily('Montserrat').setFontSize(10).setFontWeight('bold').setHorizontalAlignment('center');
   dashboard.getRange('V47:X47').setBackground('#1A1B1F').setFontColor('#FFFFFF')
     .setFontFamily('Montserrat').setFontSize(10).setFontWeight('bold').setHorizontalAlignment('center');
+  dashboard.getRange('V50:X50').setBackground('#1A1B1F').setFontColor('#FFFFFF')
+    .setFontFamily('Montserrat').setFontSize(10).setFontWeight('bold').setHorizontalAlignment('center');
   dashboard.getRange('V10:X10').setBackground('#EAF7F2').setFontColor('#1A1B1F')
     .setFontFamily('Montserrat').setFontSize(9).setFontWeight('bold').setHorizontalAlignment('center');
   dashboard.getRange('V48:W48').setBackground('#EAF7F2').setFontColor('#1A1B1F')
+    .setFontFamily('Montserrat').setFontSize(9).setFontWeight('bold').setHorizontalAlignment('center');
+  dashboard.getRange('V51:W51').setBackground('#EAF7F2').setFontColor('#1A1B1F')
     .setFontFamily('Montserrat').setFontSize(9).setFontWeight('bold').setHorizontalAlignment('center');
   dashboard.getRange(11, 22, Math.max(1, yearRows.length), 3).setFontFamily('Montserrat')
     .setFontSize(10).setHorizontalAlignment('center');
   dashboard.getRange('X48').setBackground('#EAF7F2').setFontColor('#1A1B1F').setFontFamily('Montserrat')
     .setFontSize(11).setFontWeight('bold').setHorizontalAlignment('center');
+  dashboard.getRange('X51').setBackground('#EAF7F2').setFontColor('#1A1B1F').setFontFamily('Montserrat')
+    .setFontSize(10).setFontWeight('bold').setHorizontalAlignment('center');
 }
 
 const DASHBOARD_YEAR_COLOR_PALETTE = Object.freeze([
@@ -945,9 +967,8 @@ function getDashboardDataSpecifications_(transactionsName, dashboardName, locali
     "&\") group by C pivot K label sum(G) ''\",1)";
   const annualCategoryValues = 'CHOOSECOLS(data,SEQUENCE(1,COLUMNS(data)-1,2))';
   const annualChartRows = 'LET(years,INDEX(data,,1),values,' + annualCategoryValues +
-    ',HSTACK(years,values))';
-  const annualChartTotals = 'LET(years,INDEX(data,,1),values,' + annualCategoryValues +
-    ',VSTACK({"Year","Total"},HSTACK(years,BYROW(values,LAMBDA(row,SUM(row))))))';
+    ',totals,BYROW(values,LAMBDA(row,TEXT(SUM(row),"#,##0.00")&" EUR")),' +
+    'HSTACK(MAP(years,totals,LAMBDA(year,total,year&" · "&total)),values))';
   const transactionYear = "'" + transactionsName + "'!C:C";
   const transactionMonth = "'" + transactionsName + "'!D:D";
   const transactionAmount = "'" + transactionsName + "'!G:G";
@@ -957,6 +978,10 @@ function getDashboardDataSpecifications_(transactionsName, dashboardName, locali
     localization.headers.merchant : 'Merchant / supplier';
   const amountHeader = localization && localization.headers && localization.headers.amount ?
     localization.headers.amount : 'Amount';
+  const alphabeticalMerchantSort = String(dashboardLabels.merchantSortAlphabetically || 'Alphabetical')
+    .replace(/"/g, '""');
+  const merchantOrderBy = 'IF(' + dashboard + '$X$51="' + alphabeticalMerchantSort +
+    '","order by M asc","order by sum(G) desc")';
   const monthlyComparison = '=IFERROR(LET(years,' + selectedYearValues +
     ',monthIndexes,SEQUENCE(12),HSTACK(VSTACK("' +
     (localization && localization.headers && localization.headers.month ? localization.headers.month : 'Month') + '\",' + monthName('monthIndexes') + '),' +
@@ -978,12 +1003,10 @@ function getDashboardDataSpecifications_(transactionsName, dashboardName, locali
       "&\") group by E pivot C order by E label sum(G) ''\",1)" },
     { anchor: 'A120', formula: '=IFERROR(LET(summary,QUERY(' + ledger +
       ",\"select M,sum(G) where (J = 'expense' or J = 'income') and H = 'EUR' and C = \"&" + dashboard +
-        '$X$48&" and M is not null and M <> \'Unknown\' and M <> \'N/A\' group by M order by sum(G) desc limit 20 label sum(G) \'\'",0),VSTACK({"' +
+        '$X$48&" and M is not null and M <> \'Unknown\' and M <> \'N/A\' group by M "&' + merchantOrderBy +
+        '&" limit 20 label sum(G) \'\'",0),VSTACK({"' +
         String(merchantHeader).replace(/"/g, '""') + '","' + String(amountHeader).replace(/"/g, '""') +
-        '"},HSTACK(INDEX(summary,,1),INDEX(summary,,2)))),"")' },
-    { anchor: 'AA1', formula: '=IFERROR(' +
-      'LET(summary,' + annualSummary + ',data,FILTER(summary,SEQUENCE(ROWS(summary))>1),' +
-      annualChartTotals + '),"")' }
+        '"},HSTACK(INDEX(summary,,1),INDEX(summary,,2)))),"")' }
   ];
 }
 
@@ -1008,21 +1031,6 @@ function waitForDashboardChartSources_(technicalData) {
     previousWidths = widths;
     Utilities.sleep(500);
   }
-}
-
-function getDashboardAnnualChartTicks_(technicalData) {
-  return technicalData.getRange('AA2:AB25').getValues().map(function (row) {
-    const year = Number(row[0]);
-    const total = Number(row[1]);
-    if (!isFinite(year) || !isFinite(total)) {
-      return null;
-    }
-    return { v: year, f: String(year) + '\n' + formatAnnualChartTotal_(total) + ' EUR' };
-  }).filter(Boolean);
-}
-
-function formatAnnualChartTotal_(value) {
-  return Number(value).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
 function getDashboardChartSourceRange_(sheet, startRow, endRow) {
