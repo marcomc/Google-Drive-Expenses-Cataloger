@@ -26,6 +26,13 @@ const context = vm.createContext({
 vm.runInContext(fs.readFileSync('Config.gs', 'utf8'), context);
 vm.runInContext(fs.readFileSync('ExpensesCataloging.gs', 'utf8'), context);
 
+assert.deepEqual(JSON.parse(JSON.stringify(context.applyIncomeRefundClassificationToRow_(
+  ['unchanged', '', '', '', '', 'tail'],
+  { category: 1, subcategory: 2, merchant: 3, confidence: 4, rationale: 5 },
+  { category: 'Groceries', subcategory: 'General groceries', merchant: 'Conad', confidence: 0.9,
+    rationale: 'Refund from supplier' }
+))), ['unchanged', 'Groceries', 'General groceries', 'Conad', 0.9, 'Refund from supplier']);
+
 function generationResponse(finishReason, text) {
   return {
     candidates: [{

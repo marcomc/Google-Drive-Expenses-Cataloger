@@ -19,17 +19,18 @@ const context = {
 };
 vm.createContext(context);
 vm.runInContext(fs.readFileSync('Config.gs', 'utf8'), context);
+vm.runInContext(fs.readFileSync('BalanceViews.gs', 'utf8'), context);
 vm.runInContext(fs.readFileSync('Installer.gs', 'utf8'), context);
 
 const dashboardFormulas = context.getDashboardDataSpecifications_('Transazioni');
 assert.equal(dashboardFormulas.map((specification) => specification.anchor).join(','),
-  'A2,A30,A61,A90,A120');
+  'A1,A30,A60,A90,A120');
 assert.match(dashboardFormulas[0].formula, /FILTER\("C = "&'Dashboard'!\$V\$11:\$V,'Dashboard'!\$W\$11:\$W=TRUE\)/);
 assert.match(dashboardFormulas[1].formula, /monthIndexes,SEQUENCE\(12\)/);
 assert.match(dashboardFormulas[1].formula, /MAKEARRAY\(12,ROWS\(years\)/);
 assert.match(dashboardFormulas[1].formula, /SUMIFS\('Transazioni'!G:G,'Transazioni'!C:C,INDEX\(years,yearIndex\)/);
 assert.match(dashboardFormulas[1].formula,
-  /VSTACK\("Month",MAP\(monthIndexes,LAMBDA\(month,CHOOSE\(month,"January"/);
+  /VSTACK\("Month",ARRAYFORMULA\(CHOOSE\(monthIndexes,"January"/);
 assert.match(dashboardFormulas[2].formula, /C = "&'Dashboard'!\$X\$48/);
 assert.match(dashboardFormulas[3].formula,
   /select E,sum\(G\).*FILTER\("C = "&'Dashboard'!\$V\$11:\$V,'Dashboard'!\$W\$11:\$W=TRUE\).*group by E pivot C order by E/);
@@ -66,6 +67,37 @@ assert.match(installerSource, /const DASHBOARD_TOP_MERCHANT_COLORS = \[/,
   'Top 20 chart must define a distinct colour for each merchant');
 assert.match(installerSource, /styleOverrides = DASHBOARD_TOP_MERCHANT_COLORS/,
   'Top 20 chart must apply colours to individual bar data points');
+const topMerchantDashboard = {
+  getParent: () => ({ getId: () => 'spreadsheet-id' }),
+  getSheetId: () => 42
+};
+context.SpreadsheetApp = { flush: () => {} };
+context.ScriptApp = { getOAuthToken: () => 'token' };
+context.UrlFetchApp = {
+  fetch: () => ({ getResponseCode: () => 503, getContentText: () => '{}' })
+};
+assert.match(context.applyDashboardTopMerchantPointColors_(topMerchantDashboard, 'Top 20', 2).reason,
+  /Could not read/,
+  'optional Top 20 point styling must not make a durable import fail');
+const chartUpdates = [];
+context.UrlFetchApp.fetch = (url, options) => {
+  if (url.endsWith(':batchUpdate')) {
+    chartUpdates.push(JSON.parse(options.payload));
+    return { getResponseCode: () => 200, getContentText: () => '{}' };
+  }
+  return {
+    getResponseCode: () => 200,
+    getContentText: () => JSON.stringify({
+      sheets: [{ properties: { sheetId: 42 }, charts: [{
+        chartId: 7, spec: { title: 'Top 20', basicChart: { series: [{}] } }
+      }] }]
+    })
+  };
+};
+assert.deepEqual(JSON.parse(JSON.stringify(
+  context.applyDashboardTopMerchantPointColors_(topMerchantDashboard, 'Top 20', 2)
+)), { status: 'APPLIED', merchantCount: 2 });
+assert.equal(chartUpdates[0].requests[0].updateChartSpec.spec.basicChart.series[0].styleOverrides.length, 2);
 assert.match(installerSource, /dashboard\.getRange\('Q3:X100'\)\.removeCheckboxes\(\)/,
   'dashboard refreshes must remove checkbox artifacts from superseded control locations');
 assert.match(installerSource, /dashboard\.getRange\('Q3:X100'\)\.clearDataValidations\(\)/,
@@ -76,7 +108,7 @@ assert.match(installerSource, /function captureDashboardChartLayouts_\(dashboard
 assert.match(installerSource, /showTextEvery: 1/);
 assert.match(installerSource,
   /'monthlyComparison'\), labels\.monthlyComparison, 'line', false, \{\s+hAxis: \{ showTextEvery: 1 \}/);
-assert.match(installerSource, /const sourceRows = \[2, 30, 61, 90, 120\]/);
+assert.match(installerSource, /const sourceRows = \[1, 30, 60, 90, 120\]/);
 assert.match(installerSource, /late-arriving payer or category/);
 const annualChartBlock = Array.from({ length: 25 }, () => ['', '', '']);
 annualChartBlock[0] = ['Anno', 'Casa', 'Viaggi'];
@@ -146,6 +178,61 @@ assert.equal(dashboardControlRanges.get('V10:X10').values[0].length, 3,
   'the comparison-year panel must reserve three horizontal cells');
 assert.equal(dashboardControlRanges.get('V47:X47').value, 'Detail year',
   'the detail-year panel must use the dashboard position selected by the user');
+function createGridSheet(initialRows) {
+  const grid = Array.from({ length: 40 }, () => Array(10).fill(''));
+  initialRows.forEach((row, rowIndex) => row.forEach((value, columnIndex) => {
+    grid[rowIndex][columnIndex] = value;
+  }));
+  return {
+    grid,
+    getMaxRows: () => grid.length,
+    getLastRow: () => grid.reduce((last, row, index) => row.some((value) => value !== '') ? index + 1 : last, 0),
+    getLastColumn: () => grid.reduce((last, row) => Math.max(last,
+      row.reduce((column, value, index) => value !== '' ? index + 1 : column, 0)), 0),
+    getRange: (row, column, rowCount = 1, columnCount = 1) => {
+      const range = {
+        getValues: () => Array.from({ length: rowCount }, (_, rowOffset) =>
+          grid[row - 1 + rowOffset].slice(column - 1, column - 1 + columnCount)),
+        getDisplayValues: () => range.getValues().map((values) => values.map(String)),
+        setValues: (values) => {
+          values.forEach((valuesRow, rowOffset) => valuesRow.forEach((value, columnOffset) => {
+            grid[row - 1 + rowOffset][column - 1 + columnOffset] = value;
+          }));
+          return range;
+        },
+        clearContent: () => {
+          for (let rowOffset = 0; rowOffset < rowCount; rowOffset += 1) {
+            for (let columnOffset = 0; columnOffset < columnCount; columnOffset += 1) {
+              grid[row - 1 + rowOffset][column - 1 + columnOffset] = '';
+            }
+          }
+          return range;
+        },
+        clearDataValidations: () => range,
+        clearFormat: () => range,
+        setBorder: () => range
+      };
+      return range;
+    }
+  };
+}
+const balanceHeaders = ['Date', 'Currency', 'Participant', 'Balance', 'Origin', 'Active', 'Notes'];
+const configurationSheet = createGridSheet([
+  ['Category', 'Subcategory'], ['Old', 'One'], ['Old', 'Two'], [], [], balanceHeaders,
+  ['2026-01-01', 'EUR', 'Laura', 25, 'Manual', true, 'Keep me']
+]);
+context.SpreadsheetApp.BorderStyle = { SOLID_MEDIUM: 'solid' };
+context.writeConfigurationTaxonomy_(configurationSheet, {
+  One: ['A', 'B', 'C'], Two: ['D', 'E', 'F']
+}, { initialBalanceConfiguration: { headers: balanceHeaders } });
+assert.deepEqual(configurationSheet.grid[10].slice(0, 7),
+  ['2026-01-01', 'EUR', 'Laura', 25, 'Manual', true, 'Keep me'],
+  'taxonomy growth must move rather than overwrite a manual initial balance');
+context.writeConfigurationTaxonomy_(configurationSheet, { One: ['A'] },
+  { initialBalanceConfiguration: { headers: balanceHeaders } });
+assert.deepEqual(configurationSheet.grid[5].slice(0, 7),
+  ['2026-01-01', 'EUR', 'Laura', 25, 'Manual', true, 'Keep me'],
+  'taxonomy shrink and repeated refresh must preserve a manual initial balance');
 const yearColorOptions = context.getDashboardYearColorOptions_({
   yearColors: { green: 'Green', blue: 'Blue', orange: 'Orange', purple: 'Purple' }
 });
@@ -183,28 +270,84 @@ assert.deepEqual(JSON.parse(JSON.stringify(context.applyDashboardYearChartColors
 assert.deepEqual(JSON.parse(JSON.stringify(chartColorUpdates.map((chart) => chart.value))), [
   ['#20B486', '#4F7CAC'], ['#20B486', '#4F7CAC']
 ]);
+let yearControlEditCalls = 0;
+context.getLocalization_ = () => ({
+  sheetNames: { dashboard: 'Dashboard' }, dashboard: { monthlyComparison: 'Monthly comparison' }
+});
+context.applyDashboardYearChartColors_ = () => {
+  yearControlEditCalls += 1;
+  return { status: 'UPDATED' };
+};
+function createDashboardEditEvent(row, column, sheetName = 'Dashboard') {
+  const sheet = {
+    getName: () => sheetName,
+    getRange: (firstRow, firstColumn, rowCount) => ({
+      getValues: () => Array.from({ length: rowCount }, (_, index) => [
+        firstColumn === 22 && firstRow + index === 11 ? 2023 : ''
+      ])
+    })
+  };
+  return {
+    range: {
+      getSheet: () => sheet,
+      getRow: () => row,
+      getColumn: () => column,
+      getNumRows: () => 1,
+      getNumColumns: () => 1
+    }
+  };
+}
+assert.equal(context.applyDashboardYearColorsOnEdit(createDashboardEditEvent(11, 23)).status, 'UPDATED');
+assert.equal(context.applyDashboardYearColorsOnEdit(createDashboardEditEvent(11, 24)).status, 'UPDATED');
+assert.equal(context.applyDashboardYearColorsOnEdit(createDashboardEditEvent(48, 24)).status, 'IGNORED');
+assert.equal(context.applyDashboardYearColorsOnEdit(createDashboardEditEvent(10, 24)).status, 'IGNORED');
+assert.equal(context.applyDashboardYearColorsOnEdit(createDashboardEditEvent(11, 22)).status, 'IGNORED');
+assert.equal(context.applyDashboardYearColorsOnEdit(createDashboardEditEvent(11, 23, 'Other')).status, 'IGNORED');
+assert.equal(yearControlEditCalls, 2);
 const legacyDashboardSelection = context.getDashboardSelectionState_({
   getRange: (reference) => {
-    if (reference === 'V11:X100' || reference === 'W11:Y100' || reference === 'W51:X100' || reference === 'Q51:R100') {
+    if (reference === 'V11:X100' || reference === 'W11:Y100' || reference === 'W51:Y100' ||
+      reference === 'Q51:S100') {
       return { getValues: () => [] };
     }
-    if (reference === 'Q3:R100') {
-      return { getValues: () => [[2023, true], [2024, true]] };
+    if (reference === 'Q3:S100') {
+      return { getValues: () => [[2023, true, ''], [2024, true, '']] };
     }
     return { getValue: () => reference === 'V3' ? 2024 : '' };
   }
 });
 assert.equal(legacyDashboardSelection.detailYear, 2024,
   'dashboard refreshes must preserve a detail year stored in the legacy V3 cell');
+const intermediateDashboardSelection = context.getDashboardSelectionState_({
+  getMaxColumns: () => 27,
+  getRange: (reference) => {
+    if (reference === 'W11:Y100') {
+      return { getValues: () => [[2024, true, 'Blue'], [2025, false, 'Orange']] };
+    }
+    if (['V11:X100', 'W51:Y100', 'Q51:S100', 'Q3:S100'].includes(reference)) {
+      return { getValues: () => [] };
+    }
+    return { getValue: () => reference === 'AA50' ? 2025 : '' };
+  }
+});
+assert.deepEqual(JSON.parse(JSON.stringify(intermediateDashboardSelection)), {
+  selectedYears: [2024], detailYear: 2025, yearColors: { 2024: 'Blue', 2025: 'Orange' }
+});
 const italianDashboardFormulas = context.getDashboardDataSpecifications_('Transazioni', 'Dashboard', {
   headers: { month: 'Mese' },
+  categoryLabels: { Dogs: 'Cani' },
   dashboard: {
     monthNames: ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
       'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre']
   }
 });
-assert.match(italianDashboardFormulas[1].formula, /VSTACK\("Mese",MAP\(monthIndexes,LAMBDA\(month,CHOOSE\(month,"Gennaio"/);
-assert.match(italianDashboardFormulas[2].formula, /CHOOSE\(month,"Gennaio","Febbraio"/);
+assert.match(italianDashboardFormulas[1].formula,
+  /VSTACK\("Mese",ARRAYFORMULA\(CHOOSE\(monthIndexes,"Gennaio"/);
+assert.match(italianDashboardFormulas[2].formula, /ARRAYFORMULA\(CHOOSE\(INDEX\(data,,1\),"Gennaio","Febbraio"/);
+assert.match(italianDashboardFormulas[0].formula, /SWITCH\(TRIM\(header\),"Dogs","Cani"/,
+  'known category headers must use the selected locale');
+assert.match(italianDashboardFormulas[0].formula, /,TRIM\(header\)\)\)\)/,
+  'custom category headers must retain their configured name');
 assert.match(italianDashboardFormulas[0].formula, /\$V\$11:\$V/);
 assert.match(italianDashboardFormulas[1].formula, /\$V\$11:\$V/);
 assert.match(italianDashboardFormulas[2].formula, /\$X\$48/);
@@ -235,6 +378,11 @@ const options = {
   }
 };
 
+assert.throws(() => context.validateAutomationConfig_({
+  ...options.automationConfig,
+  categories: Object.fromEntries(Array.from({ length: 26 }, (_, index) => ['Category ' + index, ['One']]))
+}), /at most 25 dashboard series/);
+
 assert.throws(
   () => context.validateInstallerGeminiAccess_(context.validateInstallerOptions_(options)),
   /geminiSecretVersion is required/
@@ -260,7 +408,7 @@ assert.ok(italianOptions.automationConfig.excluded_root_folder_names.includes('I
 const dashboardData = context.getDashboardDataSpecifications_('Transazioni', 'Dashboard');
 assert.deepEqual(
   JSON.parse(JSON.stringify(dashboardData.map((specification) => specification.anchor))),
-  ['A2', 'A30', 'A61', 'A90', 'A120']
+  ['A1', 'A30', 'A60', 'A90', 'A120']
 );
 assert.ok(dashboardData.filter((specification) => specification.anchor !== 'A30')
   .every((specification) => specification.formula.includes("'Transazioni'!A:AD")));

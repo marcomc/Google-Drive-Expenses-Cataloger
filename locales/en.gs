@@ -33,6 +33,12 @@ function getEnglishLocalization_() {
       automaticNotePrefix: 'Detected from the earliest available import: ',
       assumedZeroNote: 'No initial balance detected: the calculation explicitly starts at zero.'
     },
+    balanceDescriptions: {
+      initialBalance: 'Initial balance', configurationSource: 'Configuration',
+      roundingAdjustment: 'Tricount checkpoint rounding alignment', checkpointSource: 'Tricount checkpoint',
+      allocationNote: 'Calculated from exact participant allocations preserved in the Tricount JSON source.',
+      monthlyNote: 'Calculated from exact allocations; declared carry-overs are independent monthly controls.'
+    },
     dashboard: {
       title: 'HoStello expenses', subtitle: 'Dynamic summary based on imported transactions',
       totalSpend: 'Total spending', expenseCount: 'Expense transactions',

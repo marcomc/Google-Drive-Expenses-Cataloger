@@ -33,6 +33,12 @@ function getItalianLocalization_() {
       automaticNotePrefix: 'Rilevato dalla prima importazione disponibile: ',
       assumedZeroNote: 'Nessun saldo iniziale rilevato: il calcolo parte esplicitamente da zero.'
     },
+    balanceDescriptions: {
+      initialBalance: 'Saldo iniziale', configurationSource: 'Configurazione',
+      roundingAdjustment: 'Allineamento arrotondamento checkpoint Tricount', checkpointSource: 'Checkpoint Tricount',
+      allocationNote: 'Calcolato dalle quote esatte dei partecipanti conservate nel JSON Tricount.',
+      monthlyNote: 'Calcolato dalle quote esatte; i riporti dichiarati sono controlli mensili indipendenti.'
+    },
     dashboard: {
       title: 'Spese di HoStello', subtitle: 'Riepilogo dinamico basato sulle transazioni importate',
       totalSpend: 'Spesa complessiva', expenseCount: 'Transazioni di spesa',

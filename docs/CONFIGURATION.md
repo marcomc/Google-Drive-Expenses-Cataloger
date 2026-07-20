@@ -54,7 +54,9 @@ schema concerns documented in [Spreadsheet lifecycle and schema](SPREADSHEET.md)
 Each expense has one category and one subcategory. `Health` is human-only;
 veterinary bills and dog medicines belong to `Dogs`. Merchant/supplier remains
 a separate normalized field so a Lidl/Conad comparison does not consume the
-subcategory dimension. Tags are intentionally absent in the first release.
+subcategory dimension. The dashboard supports at most 25 category series;
+known default categories use localized chart labels and custom categories retain
+their configured names. Tags are intentionally absent in the first release.
 
 ## Related documentation
 

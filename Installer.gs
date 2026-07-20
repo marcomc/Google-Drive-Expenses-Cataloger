@@ -36,7 +36,6 @@ function bootstrapCatalogerInstallation(options) {
   getOrCreateChildFolder_(root, validated.automationConfig.test_fixture_folder_name);
   getOrCreateChildFolder_(root, validated.automationConfig.archive_folder_name);
   installAutomationTriggers();
-  installDashboardYearColorEditTrigger();
   return {
     installed: true,
     rootFolderUrl: root.getUrl(),
@@ -54,14 +53,17 @@ function validateCatalogerInstallation() {
   const spreadsheet = SpreadsheetApp.openById(getSpreadsheetId_());
   const layout = getExpenseSheetLayout_(spreadsheet);
   const triggerStatus = getAutomationTriggerStatus_();
+  const dashboardYearColorEditTriggerCount = getDashboardYearColorEditTriggerCount_();
   return {
     installed: Boolean(layout.transactions && layout.imports &&
       triggerStatus.missingTriggerHandlers.length === 0 &&
-      triggerStatus.duplicateTriggerHandlers.length === 0),
+      triggerStatus.duplicateTriggerHandlers.length === 0 &&
+      dashboardYearColorEditTriggerCount === 1),
     automaticProcessingEnabled: isAutomaticProcessingEnabled_(),
     missingTriggerHandlers: triggerStatus.missingTriggerHandlers,
     duplicateTriggerHandlers: triggerStatus.duplicateTriggerHandlers,
     triggerCounts: triggerStatus.triggerCounts,
+    dashboardYearColorEditTriggerCount: dashboardYearColorEditTriggerCount,
     spreadsheetUrl: spreadsheet.getUrl()
   };
 }
@@ -556,12 +558,26 @@ function writeConfigurationTaxonomy_(sheet, categories, localization) {
   const values = Object.keys(categories).flatMap(function (category) {
     return categories[category].map(function (subcategory) { return [category, subcategory]; });
   });
-  const balanceLayout = getInitialBalanceConfigurationLayout_(sheet,
-    getInitialBalanceConfigurationHeaders_(localization));
-  const clearUntil = balanceLayout ? balanceLayout.headerRow - 1 : sheet.getMaxRows();
-  sheet.getRange(2, 1, Math.max(1, clearUntil - 1), 2).clearContent();
+  const balanceHeaders = getInitialBalanceConfigurationHeaders_(localization);
+  const balanceLayout = getInitialBalanceConfigurationLayout_(sheet, balanceHeaders);
+  const balanceRowCount = balanceLayout ? getInitialBalanceConfigurationDataRowCount_(sheet, balanceLayout) : 0;
+  const balanceRows = balanceRowCount ? sheet.getRange(balanceLayout.dataRow, balanceLayout.startColumn,
+    balanceRowCount, balanceHeaders.length).getValues() : [];
+  if (balanceLayout) {
+    sheet.getRange(balanceLayout.headerRow, balanceLayout.startColumn,
+      Math.max(1, sheet.getMaxRows() - balanceLayout.headerRow + 1), balanceHeaders.length)
+      .clearContent().clearDataValidations().clearFormat();
+  }
+  sheet.getRange(2, 1, Math.max(1, sheet.getMaxRows() - 1), 2).clearContent();
   if (values.length > 0) {
     sheet.getRange(2, 1, values.length, 2).setValues(values);
+  }
+  if (balanceLayout) {
+    const headerRow = values.length + 4;
+    sheet.getRange(headerRow, 1, 1, balanceHeaders.length).setValues([balanceHeaders]);
+    if (balanceRows.length > 0) {
+      sheet.getRange(headerRow + 1, 1, balanceRows.length, balanceHeaders.length).setValues(balanceRows);
+    }
   }
   applyConfigurationTableBorder_(sheet, 1, 1, values.length + 1, 2);
 }
@@ -631,23 +647,12 @@ function buildDashboard_(dashboard, transactions, localization) {
 function writeDashboardTechnicalData_(technicalData, transactionsName, dashboardName, localization) {
   technicalData.getRange('A1:Z145').clearContent();
   technicalData.getRange('A200:B220').clearContent();
-  writeDashboardStaticCategoryHeaders_(technicalData, localization);
   getDashboardDataSpecifications_(transactionsName, dashboardName, localization)
     .forEach(function (specification) {
     technicalData.getRange(specification.anchor).setFormula(specification.formula);
     technicalData.getRange(specification.anchor).setFontWeight('bold');
   });
   technicalData.setFrozenRows(1);
-}
-
-function writeDashboardStaticCategoryHeaders_(technicalData, localization) {
-  const labels = localization.categoryLabels || {};
-  const categories = Object.keys(labels).sort();
-  const categoryHeaders = categories.map(function (category) { return labels[category]; });
-  technicalData.getRange(1, 1, 1, categoryHeaders.length + 1)
-    .setValues([[localization.dashboard.year].concat(categoryHeaders)]);
-  technicalData.getRange(60, 1, 1, categoryHeaders.length + 1)
-    .setValues([[localization.headers.month].concat(categoryHeaders)]);
 }
 
 function getDashboardSelectionState_(dashboard) {
@@ -660,13 +665,20 @@ function getDashboardSelectionState_(dashboard) {
       return years;
     }, []);
   };
-  const currentRows = dashboard.getRange('V11:X100').getValues();
-  const hasCurrentRows = currentRows.some(function (row) { return Number(row[0]); });
-  const previousRows = dashboard.getRange('Q51:R100').getValues();
-  const hasPreviousRows = previousRows.some(function (row) { return Number(row[0]); });
-  const selectedYears = extractSelectedYears(hasCurrentRows ? currentRows :
-    (hasPreviousRows ? previousRows : dashboard.getRange('Q3:R100').getValues()));
+  const maxColumns = dashboard.getMaxColumns ? dashboard.getMaxColumns() : 27;
+  const layouts = [dashboard.getRange('V11:X100').getValues()];
+  if (maxColumns >= 25) {
+    layouts.push(dashboard.getRange('W11:Y100').getValues());
+    layouts.push(dashboard.getRange('W51:Y100').getValues());
+  }
+  layouts.push(dashboard.getRange('Q51:S100').getValues());
+  layouts.push(dashboard.getRange('Q3:S100').getValues());
+  const currentRows = layouts.find(function (rows) {
+    return rows.some(function (row) { return Number(row[0]); });
+  }) || [];
+  const selectedYears = extractSelectedYears(currentRows);
   const detailYear = Number(dashboard.getRange('X48').getValue()) || Number(dashboard.getRange('X50').getValue()) ||
+    (maxColumns >= 27 ? Number(dashboard.getRange('AA50').getValue()) : 0) ||
     Number(dashboard.getRange('V30').getValue()) ||
     Number(dashboard.getRange('V2').getValue()) || Number(dashboard.getRange('V3').getValue());
   const yearColors = currentRows.reduce(function (colors, row) {
@@ -752,8 +764,17 @@ const DASHBOARD_TOP_MERCHANT_COLORS = [
 
 function applyDashboardTopMerchantPointColors_(dashboard, title, merchantCount) {
   if (merchantCount < 1) {
-    return;
+    return { status: 'SKIPPED', reason: 'NO_MERCHANTS' };
   }
+  try {
+    applyDashboardTopMerchantPointColorsUnsafe_(dashboard, title, merchantCount);
+    return { status: 'APPLIED', merchantCount: merchantCount };
+  } catch (error) {
+    return { status: 'SKIPPED', reason: String(error && error.message ? error.message : error) };
+  }
+}
+
+function applyDashboardTopMerchantPointColorsUnsafe_(dashboard, title, merchantCount) {
   SpreadsheetApp.flush();
   const token = ScriptApp.getOAuthToken();
   const endpoint = 'https://sheets.googleapis.com/v4/spreadsheets/' + dashboard.getParent().getId();
@@ -830,10 +851,17 @@ function applyDashboardYearColorsOnEdit(event) {
   const range = event.range;
   const sheet = range.getSheet();
   const localization = getLocalization_();
-  const isColorEdit = sheet.getName() === localization.sheetNames.dashboard &&
-    range.getRow() + range.getNumRows() - 1 >= 11 &&
-    range.getColumn() <= 24 && range.getColumn() + range.getNumColumns() - 1 >= 24;
-  if (!isColorEdit) {
+  const lastRow = range.getRow() + range.getNumRows() - 1;
+  const lastColumn = range.getColumn() + range.getNumColumns() - 1;
+  const intersectsYearControls = sheet.getName() === localization.sheetNames.dashboard &&
+    range.getRow() <= 100 && lastRow >= 11 &&
+    range.getColumn() <= 24 && lastColumn >= 23;
+  const firstManagedRow = Math.max(11, range.getRow());
+  const lastManagedRow = Math.min(100, lastRow);
+  const isYearControlEdit = intersectsYearControls && sheet
+    .getRange(firstManagedRow, 22, lastManagedRow - firstManagedRow + 1, 1)
+    .getValues().some(function (row) { return Number(row[0]); });
+  if (!isYearControlEdit) {
     return { status: 'IGNORED' };
   }
   return applyDashboardYearChartColors_(sheet, localization.dashboard);
@@ -878,19 +906,30 @@ function getDashboardDataSpecifications_(transactionsName, dashboardName, locali
     return '"' + String(name).replace(/"/g, '""') + '"';
   }).join(',');
   const monthName = function (monthIndex) {
-    return 'MAP(' + monthIndex + ',LAMBDA(month,CHOOSE(month,' + monthChoices + ')))';
+    return 'ARRAYFORMULA(CHOOSE(' + monthIndex + ',' + monthChoices + '))';
+  };
+  const categoryLabels = localization && localization.categoryLabels ? localization.categoryLabels : {};
+  const categorySwitch = Object.keys(categoryLabels).reduce(function (parts, category) {
+    parts.push('"' + String(category).replace(/"/g, '""') + '"');
+    parts.push('"' + String(categoryLabels[category]).replace(/"/g, '""') + '"');
+    return parts;
+  }, []).join(',');
+  const localizedHeaders = function (summary) {
+    return categorySwitch ? 'MAP(INDEX(' + summary + ',1,),LAMBDA(header,SWITCH(TRIM(header),' +
+      categorySwitch + ',TRIM(header))))' : 'ARRAYFORMULA(TRIM(INDEX(' + summary + ',1,)))';
   };
   const monthLabels = function (query) {
-    return '=IFERROR(LET(summary,' + query + ',labels,' + monthName('INDEX(summary,,1)') +
-      ',values,CHOOSECOLS(summary,SEQUENCE(1,COLUMNS(summary)-1,2)),totals,' +
-      'BYROW(values,LAMBDA(row,TEXT(SUM(row),"#,##0.00")&" EUR")),HSTACK(' +
-      'MAP(labels,totals,LAMBDA(label,total,label&" · "&total)),values)),"")';
+    return '=IFERROR(LET(summary,' + query + ',data,FILTER(summary,SEQUENCE(ROWS(summary))>1),labels,' +
+      monthName('INDEX(data,,1)') + ',values,CHOOSECOLS(data,SEQUENCE(1,COLUMNS(data)-1,2)),totals,' +
+      'BYROW(values,LAMBDA(row,TEXT(SUM(row),"#,##0.00")&" EUR")),VSTACK(' +
+      localizedHeaders('summary') + ',HSTACK(MAP(labels,totals,LAMBDA(label,total,label&" · "&total)),' +
+      'values))),"")';
   };
-  const annualSummary = withoutPivotHeaders('QUERY(' + ledger +
+  const annualSummary = 'QUERY(' + ledger +
     ",\"select C,sum(G) where (J = 'expense' or J = 'income') and H = 'EUR' and (\"&" + selectedYears +
-    "&\") group by C pivot K label sum(G) ''\",0)");
-  const annualCategoryValues = 'CHOOSECOLS(summary,SEQUENCE(1,COLUMNS(summary)-1,2))';
-  const annualChartRows = 'LET(years,INDEX(summary,,1),values,' + annualCategoryValues +
+    "&\") group by C pivot K label sum(G) ''\",1)";
+  const annualCategoryValues = 'CHOOSECOLS(data,SEQUENCE(1,COLUMNS(data)-1,2))';
+  const annualChartRows = 'LET(years,INDEX(data,,1),values,' + annualCategoryValues +
     ',totals,BYROW(values,LAMBDA(row,TEXT(SUM(row),"#,##0.00")&" EUR")),' +
     'HSTACK(MAP(years,totals,LAMBDA(year,total,year&IF(ROWS(years)=1," · ",CHAR(10))&total)),' +
     'values))';
@@ -912,12 +951,13 @@ function getDashboardDataSpecifications_(transactionsName, dashboardName, locali
     'SUMIFS(' + transactionAmount + ',' + transactionYear + ',INDEX(years,yearIndex),' +
     transactionMonth + ',monthIndex,' + transactionType + ',"income",' + transactionCurrency + ',"EUR"))))),"")))';
   return [
-    { anchor: 'A2', formula: '=IFERROR(LET(summary,' + annualSummary +
-      ',' + annualChartRows + '),"")' },
+    { anchor: 'A1', formula: '=IFERROR(LET(summary,' + annualSummary +
+      ',data,FILTER(summary,SEQUENCE(ROWS(summary))>1),VSTACK(' + localizedHeaders('summary') + ',' +
+      annualChartRows + ')),"")' },
     { anchor: 'A30', formula: monthlyComparison },
-    { anchor: 'A61', formula: monthLabels(withoutPivotHeaders('QUERY(' + ledger +
+    { anchor: 'A60', formula: monthLabels('QUERY(' + ledger +
       ",\"select D,sum(G) where (J = 'expense' or J = 'income') and H = 'EUR' and C = \"&" + dashboard +
-        '$X$48&" group by D pivot K order by D label sum(G) \'\'",0)')) },
+        '$X$48&" group by D pivot K order by D label sum(G) \'\'",1)') },
     { anchor: 'A90', formula: '=QUERY(' + ledger +
       ",\"select E,sum(G) where (J = 'expense' or J = 'income') and H = 'EUR' and (\"&" + selectedYears +
       "&\") group by E pivot C order by E label sum(G) ''\",1)" },
@@ -930,7 +970,7 @@ function getDashboardDataSpecifications_(transactionsName, dashboardName, locali
 }
 
 function waitForDashboardChartSources_(technicalData) {
-  const sourceRows = [2, 30, 61, 90, 120];
+  const sourceRows = [1, 30, 60, 90, 120];
   let previousWidths = null;
   for (let attempt = 0; attempt < 12; attempt += 1) {
     SpreadsheetApp.flush();

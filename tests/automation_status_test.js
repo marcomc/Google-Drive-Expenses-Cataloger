@@ -15,22 +15,28 @@ const properties = new Map([
   ['AUTO_PROCESSING', 'true']
 ]);
 const events = [];
+const dashboardTriggerSpreadsheetIds = [];
 let activeTriggers = [];
 let failCreationFor = '';
+let failDeletionFor = '';
 let triggerLockAvailable = true;
 let triggerLockAcquisitions = 0;
 let triggerLockReleases = 0;
 const triggerLockTimeouts = [];
 
 function makeTrigger(handler, id) {
-  return {
+  const trigger = {
     getHandlerFunction: () => handler,
     getUniqueId: () => id,
     deleteTrigger: () => {
       events.push(`delete:${id}`);
-      activeTriggers = activeTriggers.filter((trigger) => trigger.getUniqueId() !== id);
+      if (id === failDeletionFor) {
+        throw new Error(`cannot delete ${id}`);
+      }
+      activeTriggers = activeTriggers.filter((candidate) => candidate !== trigger);
     }
   };
+  return trigger;
 }
 
 const context = {
@@ -44,9 +50,12 @@ const context = {
     getProjectTriggers: () => activeTriggers.slice(),
     deleteTrigger: (trigger) => trigger.deleteTrigger(),
     newTrigger: (handler) => ({
-      forSpreadsheet: () => ({
+      forSpreadsheet: (spreadsheetId) => ({
         onEdit: () => ({
-          create: () => createTrigger(handler)
+          create: () => {
+            dashboardTriggerSpreadsheetIds.push(spreadsheetId);
+            return createTrigger(handler);
+          }
         })
       }),
       timeBased: () => ({
@@ -107,7 +116,8 @@ properties.delete('AUTO_PROCESSING');
 assert.equal(context.getSetupStatus().automaticProcessingEnabled, false);
 activeTriggers = [
   makeTrigger('processDriveEventQueue', 'existing-polling'),
-  makeTrigger('runDailyExpenseCataloging', 'existing-daily')
+  makeTrigger('runDailyExpenseCataloging', 'existing-daily'),
+  makeTrigger('applyDashboardYearColorsOnEdit', 'existing-dashboard-edit')
 ];
 assert.equal(context.validateCatalogerInstallation().installed, true);
 assert.equal(context.enableExpenseCataloging().status, 'ENABLED');
@@ -125,6 +135,7 @@ assert.deepEqual(JSON.parse(JSON.stringify(context.validateCatalogerInstallation
     processDriveEventQueue: 0,
     runDailyExpenseCataloging: 1
   },
+  dashboardYearColorEditTriggerCount: 0,
   spreadsheetUrl: 'https://example.test/spreadsheet'
 });
 assert.throws(() => context.enableExpenseCataloging(), /Managed automation triggers are not healthy/);
@@ -147,16 +158,24 @@ triggerLockReleases = 0;
 triggerLockTimeouts.length = 0;
 activeTriggers = [
   makeTrigger('processDriveEventQueue', 'existing-polling'),
-  makeTrigger('runDailyExpenseCataloging', 'existing-daily')
+  makeTrigger('runDailyExpenseCataloging', 'existing-daily'),
+  makeTrigger('applyDashboardYearColorsOnEdit', 'existing-dashboard-edit')
 ];
-context.installAutomationTriggers();
+assert.deepEqual(JSON.parse(JSON.stringify(context.installAutomationTriggers())), {
+  triggerCounts: { processDriveEventQueue: 1, runDailyExpenseCataloging: 1 },
+  missingTriggerHandlers: [], duplicateTriggerHandlers: [],
+  dashboardYearColorEditTriggerCount: 1
+});
 assert.deepEqual(events, [
   'create:processDriveEventQueue',
   'create:runDailyExpenseCataloging',
+  'create:applyDashboardYearColorsOnEdit',
+  'delete:existing-dashboard-edit',
   'delete:existing-polling',
   'delete:existing-daily'
 ]);
 assert.deepEqual(activeTriggers.map((trigger) => trigger.getHandlerFunction()).sort(), [
+  'applyDashboardYearColorsOnEdit',
   'processDriveEventQueue',
   'runDailyExpenseCataloging'
 ]);
@@ -173,6 +192,24 @@ assert.deepEqual(events, ['create:applyDashboardYearColorsOnEdit']);
 assert.deepEqual(activeTriggers.map((trigger) => trigger.getHandlerFunction()), [
   'applyDashboardYearColorsOnEdit'
 ]);
+
+events.length = 0;
+activeTriggers = [
+  makeTrigger('applyDashboardYearColorsOnEdit', 'old-dashboard-edit'),
+  makeTrigger('applyDashboardYearColorsOnEdit', 'duplicate-dashboard-edit')
+];
+context.installDashboardYearColorEditTrigger();
+assert.deepEqual(events, [
+  'create:applyDashboardYearColorsOnEdit',
+  'delete:old-dashboard-edit',
+  'delete:duplicate-dashboard-edit'
+]);
+assert.equal(context.getDashboardYearColorEditTriggerCount_(), 1);
+properties.set('SPREADSHEET_ID', 'replacement-spreadsheet');
+context.installDashboardYearColorEditTrigger();
+assert.equal(dashboardTriggerSpreadsheetIds.at(-1), 'replacement-spreadsheet',
+  'trigger reconciliation must bind a replacement to the configured spreadsheet');
+properties.set('SPREADSHEET_ID', 'spreadsheet-id');
 
 triggerLockAvailable = false;
 assert.throws(() => context.installAutomationTriggers(), /Could not acquire the automation trigger lock/);
@@ -211,3 +248,42 @@ assert.deepEqual(activeTriggers.map((trigger) => trigger.getUniqueId()).sort(), 
   'existing-daily',
   'existing-polling'
 ]);
+
+events.length = 0;
+activeTriggers = [
+  makeTrigger('processDriveEventQueue', 'existing-polling'),
+  makeTrigger('runDailyExpenseCataloging', 'existing-daily'),
+  makeTrigger('applyDashboardYearColorsOnEdit', 'existing-dashboard-edit')
+];
+failCreationFor = 'applyDashboardYearColorsOnEdit';
+assert.throws(() => context.installAutomationTriggers(), /cannot create applyDashboardYearColorsOnEdit/);
+assert.deepEqual(events, [
+  'create:processDriveEventQueue',
+  'create:runDailyExpenseCataloging',
+  'create:applyDashboardYearColorsOnEdit',
+  'delete:new-processDriveEventQueue',
+  'delete:new-runDailyExpenseCataloging'
+]);
+assert.deepEqual(activeTriggers.map((trigger) => trigger.getUniqueId()).sort(), [
+  'existing-daily', 'existing-dashboard-edit', 'existing-polling'
+]);
+failCreationFor = '';
+
+events.length = 0;
+activeTriggers = [
+  makeTrigger('processDriveEventQueue', 'existing-polling'),
+  makeTrigger('runDailyExpenseCataloging', 'existing-daily'),
+  makeTrigger('applyDashboardYearColorsOnEdit', 'existing-dashboard-edit')
+];
+failDeletionFor = 'existing-dashboard-edit';
+assert.throws(() => context.installAutomationTriggers(), /cannot delete existing-dashboard-edit/);
+assert.equal(context.getDashboardYearColorEditTriggerCount_(), 2,
+  'a failed stale-trigger deletion must retain both old and replacement coverage');
+failDeletionFor = '';
+assert.deepEqual(JSON.parse(JSON.stringify(context.installAutomationTriggers())), {
+  triggerCounts: { processDriveEventQueue: 1, runDailyExpenseCataloging: 1 },
+  missingTriggerHandlers: [], duplicateTriggerHandlers: [],
+  dashboardYearColorEditTriggerCount: 1
+});
+assert.equal(context.getDashboardYearColorEditTriggerCount_(), 1,
+  'a retry after partial trigger deletion must converge to one edit trigger');

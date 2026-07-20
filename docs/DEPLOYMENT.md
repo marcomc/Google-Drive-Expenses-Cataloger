@@ -29,10 +29,10 @@ flowchart LR
   approval --> deploy["Deploy Apps Script workflow"]
   deploy --> gate["Run make check"]
   gate --> stable["Update stable deployment"]
-  stable --> triggers["Reconcile managed time triggers"]
+  stable --> triggers["Reconcile managed triggers"]
 ```
 
-Use a branch such as `release/0.2.0`; do not prepare the release directly in a
+Use a branch such as `release/X.Y.Z`; do not prepare the release directly in a
 dirty `main` worktree. The pull request validation does not deploy. Merging the
 approved PR pushes the exact merge revision to `main`, which triggers
 `.github/workflows/deploy-apps-script.yml`. The workflow runs the repository
@@ -56,9 +56,10 @@ The stable deployment ID and its owner-only API-executable entry point are
 verified before source upload. The workflow uses the Apps Script Deployments API
 to update only the immutable version and description, retaining the entry-point
 access configuration. It then calls the Apps Script Execution API against that
-exact deployment ID in non-development mode to recreate only the two managed
-time triggers. Replacement triggers are created before old ones are removed,
-and the job fails if their handler counts are not exactly one each. If `main`
+exact deployment ID in non-development mode to recreate the two managed time
+triggers and the dashboard year-color edit trigger. Replacement triggers are
+created before old ones are removed, and the job fails if their handler counts
+are not exactly one each. If `main`
 advances after the stable update, the running job still completes this trigger
 repair; the newer revision's deploy will supersede it. Script Properties, Drive
 sources, spreadsheet data, and Gemini credentials are not changed by deployment.

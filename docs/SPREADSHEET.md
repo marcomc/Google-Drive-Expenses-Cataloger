@@ -84,7 +84,7 @@ use localized names but the same roles.
 | `Movimenti saldi` | Per-participant derived balance movements | Rebuilt from the ledger |
 | `Saldi mensili` | Derived monthly balance controls | Rebuilt from the ledger and audit controls |
 | `Dashboard` | Managed KPI cards, dynamic queries, and charts | Rebuilt by managed dashboard operations |
-| `Analisi personali` | User-owned analysis area | Never cleared or reordered by normal processing |
+| `Analisi personali` | User-owned analysis area | Contents are never cleared; its tab position is restored to the managed order |
 
 The Apps Script functions `getInstallerTransactionHeaders_`,
 `getInstallerImportAuditHeaders_`, and the localization files define the
@@ -164,8 +164,9 @@ spending for a month, year, category, payer, or supplier.
 | Top 20 esercenti / fornitori | Largest suppliers for the detail year. Each supplier is a chart row with one differently coloured horizontal bar; the legend is hidden and the chart has the same height as `Andamento mensile per categoria`. |
 
 Both control panels occupy three cells and end at column X, matching the right
-edge of the dashboard. Changing a checkbox or the detail-year dropdown updates the dependent formulas
-and charts without an import or Apps Script execution. The last chart replaces
+edge of the dashboard. Changing a checkbox or the detail-year dropdown updates
+the dependent formulas immediately; a managed edit trigger reapplies the chosen
+year colors after checkbox or color changes. The last chart replaces
 the former dog-subcategory chart, while the former monthly-balance chart is no
 longer shown on the dashboard because its accounting-control purpose was not
 clear in a spending view. The underlying `Saldi mensili` tab remains available
@@ -195,11 +196,12 @@ financial data.
 Normal imports write `Transazioni`, `Importazioni`, and `Riconciliazioni
 sorgenti`, then rebuild the two balance views. The dashboard's KPI cards and
 chart sources are `QUERY` formulas over the full ledger columns. Their technical
-source ranges are hidden from the visible dashboard and separated horizontally,
+source ranges are hidden from the visible dashboard and separated into reserved
+row blocks,
 so an expanding result for a new month, year, or category cannot overlap another
-summary block. Existing charts therefore update without rebuilding the dashboard
-between imports. Each successful import then rebuilds the managed dashboard so
-newly present years are added to the controls. The year controls preserve their
+summary block. Control changes update the formula sources without rebuilding the
+dashboard. Each successful import then rebuilds the managed dashboard so newly
+present years are added to the controls. The year controls preserve their
 selected values when a managed dashboard rebuild occurs, provided those years
 are still present in the ledger.
 
@@ -207,7 +209,9 @@ The following operations rebuild the full managed dashboard, clearing its cells
 and removing its charts before recreating them:
 
 - installation bootstrap;
+- every successful normal import;
 - explicit `refreshBalanceViews()`;
+- `categorizeIncomeRefunds()` when it changes legacy rows;
 - `rebuildTransactionsFromTricountJson` after its final ledger replacement.
 
 ```mermaid
@@ -216,9 +220,10 @@ flowchart LR
   accDescr: Shows the normal import path and the operations that rebuild managed views and the dashboard.
   import["Normal import"] --> ledger["Write ledger and audits"]
   ledger --> balances["Rebuild balance views"]
-  balances --> live["Dashboard formulas update live"]
+  balances --> dashboard["Clear and recreate Dashboard"]
   bootstrap["Bootstrap"] --> dashboard["Clear and recreate Dashboard"]
   refresh["Explicit balance refresh"] --> dashboard
+  refunds["Income refund migration"] --> dashboard
   rebuild["Historical JSON rebuild"] --> dashboard
 ```
 
@@ -243,10 +248,10 @@ idempotent migrations with these rules:
 4. Limit dashboard resets to explicitly project-managed ranges and charts.
 
 This allows a new installation to receive the complete default layout while an
-existing installation receives only safe additive improvements. The dashboard
-and derived balance tabs are managed content; category taxonomy and automatic
-balance rows are managed too, while `Configurazione` rows marked `Manuale` are
-preserved.
+existing installation receives safe additive changes to durable ledger and
+audit schemas. The dashboard and derived balance tabs are rebuilt managed
+content; category taxonomy and automatic balance rows are managed too, while
+`Configurazione` rows marked `Manuale` are preserved.
 
 For operational effects of imports and rebuilds, see the
 [operations guide](OPERATIONS.md).

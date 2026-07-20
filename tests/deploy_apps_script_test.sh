@@ -7,6 +7,16 @@ TEST_ROOT="$(mktemp -d)"
 trap 'rm -rf "${TEST_ROOT}"' EXIT
 FAKE_BIN="${TEST_ROOT}/bin"
 mkdir -p "${FAKE_BIN}"
+KERNEL_NAME=''
+KERNEL_NAME="$(uname -s)"
+
+file_mode() {
+  if [[ "${KERNEL_NAME}" == 'Darwin' ]]; then
+    stat -f '%Lp' "$1"
+  else
+    stat -c '%a' "$1"
+  fi
+}
 
 cat >"${FAKE_BIN}/git" <<'FAKE_GIT'
 #!/usr/bin/env bash
@@ -68,6 +78,9 @@ case "${command_name}" in
     ;;
   push)
     jq -e '.timeZone == "Europe/Rome" and .executionApi.access == "MYSELF"' appsscript.json >/dev/null
+    if [[ "${TEST_FAIL_PUSH}" == 'true' ]]; then
+      exit 11
+    fi
     printf '%s\n' push >>"${TEST_COMMAND_LOG}"
     ;;
   version)
@@ -135,7 +148,7 @@ if [[ "${url}" == "${execution_url}" ]]; then
     printf '%s\n' '{"done":true,"response":{"result":{"triggerCounts":{}}}}'
     exit 0
   fi
-  printf '%s\n' '{"done":true,"response":{"@type":"type.googleapis.com/google.apps.script.v1.ExecutionResponse","result":{"triggerCounts":{"processDriveEventQueue":1,"runDailyExpenseCataloging":1},"missingTriggerHandlers":[],"duplicateTriggerHandlers":[]}}}'
+  printf '%s\n' '{"done":true,"response":{"@type":"type.googleapis.com/google.apps.script.v1.ExecutionResponse","result":{"triggerCounts":{"processDriveEventQueue":1,"runDailyExpenseCataloging":1},"dashboardYearColorEditTriggerCount":1,"missingTriggerHandlers":[],"duplicateTriggerHandlers":[]}}}'
   exit 0
 fi
 test "${url}" = "${deployment_url}"
@@ -178,6 +191,7 @@ run_fixture() {
   local main_sha_sequence="${8:-${current_sha},${current_sha},${current_sha}}"
   local trigger_result_valid="${9:-true}"
   local fail_deployments_after="${10:-99}"
+  local fail_push="${11:-false}"
 
   mkdir -p "${fixture_dir}/runner/clasp-auth"
   printf '%s\n' \
@@ -185,6 +199,7 @@ run_fixture() {
     >"${fixture_dir}/runner/clasp-auth/.clasprc.json"
   printf '%s\n' '{"scriptId":"test-script","rootDir":"."}' >"${fixture_dir}/.clasp.json"
   printf '%s\n' '{"timeZone":"Etc/UTC"}' >"${fixture_dir}/appsscript.json"
+  cp "${fixture_dir}/appsscript.json" "${fixture_dir}/appsscript.original.json"
   : >"${fixture_dir}/commands.log"
   printf '%s\n' 0 >"${fixture_dir}/git-call-count"
   printf '%s\n' 0 >"${fixture_dir}/clasp-deployments-count"
@@ -203,6 +218,7 @@ run_fixture() {
       TEST_TRIGGER_RESULT_VALID="${trigger_result_valid}" \
       TEST_CLASP_DEPLOYMENTS_COUNT_FILE="${fixture_dir}/clasp-deployments-count" \
       TEST_FAIL_DEPLOYMENTS_AFTER="${fail_deployments_after}" \
+      TEST_FAIL_PUSH="${fail_push}" \
       TEST_COMMAND_LOG="${fixture_dir}/commands.log" \
       "${PROJECT_ROOT}/scripts/deploy-apps-script.sh"
   )
@@ -215,12 +231,33 @@ success_dir="${TEST_ROOT}/success"
 mkdir -p "${success_dir}"
 run_fixture "${success_dir}" "${CURRENT_SHA}" "${CURRENT_SHA}" \
   'deployment-1' 'deployment-1' true
-actual_time_zone="$(jq -r '.timeZone' "${success_dir}/appsscript.json")"
-test "${actual_time_zone}" = 'Europe/Rome'
-actual_execution_api_access="$(jq -r '.executionApi.access' "${success_dir}/appsscript.json")"
-test "${actual_execution_api_access}" = 'MYSELF'
+cmp "${success_dir}/appsscript.original.json" "${success_dir}/appsscript.json"
+success_manifest_mode=''
+success_manifest_mode="$(file_mode "${success_dir}/appsscript.json")"
+test "${success_manifest_mode}" = '644'
 actual_commands="$(tr '\n' ' ' <"${success_dir}/commands.log")"
 test "${actual_commands}" = 'push version update triggers '
+
+failed_push_dir="${TEST_ROOT}/failed-push"
+mkdir -p "${failed_push_dir}"
+set +e
+(
+  set -e
+  run_fixture "${failed_push_dir}" "${CURRENT_SHA}" "${CURRENT_SHA}" \
+    'deployment-1' 'deployment-1' true false \
+    "${CURRENT_SHA},${CURRENT_SHA},${CURRENT_SHA}" true 99 true
+) >/dev/null 2>&1
+failed_push_status=$?
+set -e
+if [[ "${failed_push_status}" -eq 0 ]]; then
+  printf '%s\n' 'A failed Apps Script push was accepted.' >&2
+  exit 1
+fi
+cmp "${failed_push_dir}/appsscript.original.json" "${failed_push_dir}/appsscript.json"
+failed_push_manifest_mode=''
+failed_push_manifest_mode="$(file_mode "${failed_push_dir}/appsscript.json")"
+test "${failed_push_manifest_mode}" = '644'
+test ! -s "${failed_push_dir}/commands.log"
 
 stale_dir="${TEST_ROOT}/stale"
 mkdir -p "${stale_dir}"

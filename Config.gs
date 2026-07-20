@@ -122,6 +122,9 @@ function validateAutomationConfig_(config) {
     Array.isArray(config.categories)) {
     throw new Error('categories must be an object.');
   }
+  if (Object.keys(config.categories).length > 25) {
+    throw new Error('categories supports at most 25 dashboard series.');
+  }
   Object.keys(config.categories).forEach(function (category) {
     if (!Array.isArray(config.categories[category]) ||
       config.categories[category].length === 0) {

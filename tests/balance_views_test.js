@@ -8,7 +8,12 @@ const vm = require('node:vm');
 const context = {};
 vm.createContext(context);
 vm.runInContext(fs.readFileSync('ExpenseCore.gs', 'utf8'), context);
-vm.runInContext(fs.readFileSync('BalanceViews.gs', 'utf8'), context);
+const balanceViewsSource = fs.readFileSync('BalanceViews.gs', 'utf8');
+vm.runInContext(balanceViewsSource, context);
+assert.doesNotMatch(balanceViewsSource, /file\.getMimeType\(\) !== 'application\/json'/,
+  'allocation restoration must use the filename and JSON structure contract, not Drive MIME metadata');
+assert.match(balanceViewsSource, /const archivedIndex = unresolved \? buildArchivedTricountAllocationIndex_\(\) : \{\}/,
+  'a complete direct allocation restoration must not scan the full archive');
 
 const ledger = [{
   id: 'expense-1', date: '2026-01-10', year: 2026, month: 1, currency: 'EUR',
@@ -82,6 +87,16 @@ assert.deepEqual(JSON.parse(JSON.stringify(declaredControls)), [
   [2026, 1, 'EUR', 'Laura', 30], [2026, 1, 'EUR', 'Marco', -10], [2026, 1, 'EUR', 'Sara', -20]
 ]);
 
+const initialOpeningGroups = context.getInitialOpeningBalanceGroupKeys_([
+  initialCheckpoint, laterCheckpoint
+], ledger);
+assert.deepEqual(JSON.parse(JSON.stringify(initialOpeningGroups)), { '2026-01-01|EUR': true });
+assert.deepEqual(JSON.parse(JSON.stringify(context.buildDeclaredMonthlyBalanceControls_([
+  initialCheckpoint, laterCheckpoint
+], initialOpeningGroups))), [
+  [2026, 1, 'EUR', 'Laura', -60], [2026, 1, 'EUR', 'Marco', 60]
+]);
+
 const effective = context.mergeInitialBalances_([{ date: '2026-01-02', currency: 'EUR',
   participant: 'Marco', amount: 75, origin: 'Manuale' }], automatic);
 assert.equal(effective.find((entry) => entry.participant === 'Marco').amount, 75);
@@ -93,6 +108,11 @@ assert.deepEqual(JSON.parse(JSON.stringify(movementRows.map((row) => [row[1], ro
   ['2026-01-10', 'Laura', -60],
   ['2026-01-10', 'Marco', 60]
 ]);
+const monthlyWithoutOpeningMismatch = context.buildMonthlyBalanceRows_(
+  context.buildBalanceMovementRows_(ledger, automatic), [initialCheckpoint, laterCheckpoint], initialOpeningGroups
+).rows;
+assert.equal(monthlyWithoutOpeningMismatch.some((row) => row[0] === 2025 && row[1] === 12), false,
+  'the opening vector must not be rendered as a checkpoint in the previous month');
 
 const roundingLedger = [{
   id: 'shared-expense', date: '2026-01-10', year: 2026, month: 1, currency: 'EUR',
@@ -109,5 +129,64 @@ assert.deepEqual(JSON.parse(JSON.stringify(roundingAdjustments.map((record) => [
 ]))), [
   ['2026-01-31', 'Laura', 0.05], ['2026-01-31', 'Marco', -0.05]
 ]);
+
+const carriedMovements = context.buildBalanceMovementRows_([{
+  id: 'opening', date: '2026-01-10', year: 2026, month: 1, currency: 'EUR',
+  transactionType: 'opening_balance', description: 'Opening', sourceFile: 'test', sourceRow: 1,
+  initialBalanceDelta: { key: 'laura', name: 'Laura', amount: 10 }
+}], []);
+const marchCheckpoint = [{ records: [{
+  date: '2026-04-01', currency: 'EUR', payer: 'Laura', amount: 10,
+  allocations: []
+}] }];
+const carriedRows = context.buildMonthlyBalanceRows_(carriedMovements, marchCheckpoint).rows;
+assert.deepEqual(JSON.parse(JSON.stringify(carriedRows.map((row) => [row[0], row[1], row[3], row[4], row[5]]))), [
+  [2026, 1, 'Laura', 10, ''],
+  [2026, 2, 'Laura', 10, ''],
+  [2026, 3, 'Laura', 10, 10]
+]);
+
+const controlOnlyRounding = context.buildCheckpointRoundingAdjustments_([{
+  id: 'opening', date: '2026-01-10', year: 2026, month: 1, currency: 'EUR',
+  transactionType: 'expense', description: 'Opening', sourceFile: 'test', sourceRow: 1,
+  payer: 'Laura', amount: 10, allocations: [{ participant: 'Marco', amount: 10 }]
+}], [], [{ records: [{
+  date: '2026-04-01', currency: 'EUR', payer: 'Laura', amount: 10.05,
+  allocations: [{ participant: 'Marco', amount: 10.05 }]
+}] }]);
+assert.deepEqual(JSON.parse(JSON.stringify(controlOnlyRounding.map((record) => [
+  record.date, record.initialBalanceDelta.name, record.initialBalanceDelta.amount
+]))), [
+  ['2026-03-31', 'Laura', 0.05], ['2026-03-31', 'Marco', -0.05]
+]);
+
+let derivedSheetRows = 1000;
+let insertedRows = 0;
+let writtenRowCount = 0;
+const derivedSheet = {
+  getMaxRows: () => derivedSheetRows,
+  insertRowsAfter: (_afterRow, count) => {
+    insertedRows += count;
+    derivedSheetRows += count;
+  },
+  clearContents: () => {},
+  getRange: (_row, _column, rowCount) => {
+    const range = {
+      setValues: () => {
+        writtenRowCount = Math.max(writtenRowCount, rowCount);
+        return range;
+      },
+      setFontWeight: () => range,
+      setNote: () => range
+    };
+    return range;
+  },
+  setFrozenRows: () => {}
+};
+context.writeDerivedBalanceSheet_(derivedSheet, ['Value'],
+  Array.from({ length: 1005 }, (_, index) => [index]), 'Derived test');
+assert.equal(insertedRows, 6);
+assert.equal(derivedSheetRows, 1006);
+assert.equal(writtenRowCount, 1005);
 
 console.log('balance view tests passed');

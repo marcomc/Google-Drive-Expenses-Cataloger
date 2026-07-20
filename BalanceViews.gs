@@ -21,7 +21,6 @@ function refreshBalanceViews_(spreadsheet) {
     getBalanceMovementHeaders_(localization));
   const monthlySheet = ensureInstallerSheet_(spreadsheet, localization.sheetNames.monthlyBalances,
     getMonthlyBalanceHeaders_(localization));
-  const technicalData = ensureInstallerSheet_(spreadsheet, localization.sheetNames.technicalData, []);
   const configuration = ensureInstallerSheet_(spreadsheet, localization.sheetNames.configuration,
     ['Category', 'Subcategory']);
   const headers = transactions.getRange(1, 1, 1, transactions.getLastColumn()).getValues()[0];
@@ -34,11 +33,16 @@ function refreshBalanceViews_(spreadsheet) {
   const ledgerRecords = readLedgerBalanceViewRecords_(transactions, headers, localization);
   const initialBalances = synchronizeInitialBalanceConfiguration_(configuration, localization, checks,
     ledgerRecords);
-  const checkpointAdjustments = buildCheckpointRoundingAdjustments_(ledgerRecords, initialBalances, checks);
-  const movements = buildBalanceMovementRows_(ledgerRecords.concat(checkpointAdjustments), initialBalances);
-  writeDerivedBalanceSheet_(movementsSheet, getBalanceMovementHeaders_(localization), movements.rows);
-  writeDynamicMonthlyBalanceSheet_(monthlySheet, technicalData, localization,
-    buildMonthlyBalanceControlRows_(movements, checks));
+  const initialOpeningGroups = getInitialOpeningBalanceGroupKeys_(checks, ledgerRecords);
+  const checkpointAdjustments = buildCheckpointRoundingAdjustments_(ledgerRecords, initialBalances, checks,
+    localization, initialOpeningGroups);
+  const movements = buildBalanceMovementRows_(ledgerRecords.concat(checkpointAdjustments), initialBalances,
+    localization);
+  writeDerivedBalanceSheet_(movementsSheet, getBalanceMovementHeaders_(localization), movements.rows,
+    localization.balanceDescriptions.allocationNote);
+  writeDerivedBalanceSheet_(monthlySheet, getMonthlyBalanceHeaders_(localization),
+    buildMonthlyBalanceRows_(movements, checks, initialOpeningGroups).rows,
+    localization.balanceDescriptions.monthlyNote);
   refreshTransactionBalanceImpactLabels_(transactions, headers, ledgerRecords, localization);
 }
 
@@ -156,7 +160,7 @@ function backfillMissingLedgerAllocations_(sheet, headers, localization) {
   Object.keys(pendingByFile).forEach(function (sourceFileId) {
     try {
       const file = DriveApp.getFileById(sourceFileId);
-      if (file.getMimeType() !== 'application/json') {
+      if (!isTricountJsonFileName_(file.getName())) {
         return;
       }
       const records = parseTricountJsonExport_(JSON.parse(file.getBlob().getDataAsString()), {
@@ -180,7 +184,12 @@ function backfillMissingLedgerAllocations_(sheet, headers, localization) {
       console.warn('Cannot restore Tricount allocations from ' + sourceFileId + ': ' + error.message);
     }
   });
-  const archivedIndex = buildArchivedTricountAllocationIndex_();
+  const unresolved = Object.keys(pendingByFile).some(function (sourceFileId) {
+    return pendingByFile[sourceFileId].some(function (pending) {
+      return !allocationValues[pending.index][0];
+    });
+  });
+  const archivedIndex = unresolved ? buildArchivedTricountAllocationIndex_() : {};
   Object.keys(pendingByFile).forEach(function (sourceFileId) {
     pendingByFile[sourceFileId].forEach(function (pending) {
       if (allocationValues[pending.index][0]) {
@@ -336,10 +345,11 @@ function sortBalanceRecords_(records) {
   });
 }
 
-function buildBalanceMovementRows_(records, initialBalances) {
+function buildBalanceMovementRows_(records, initialBalances, localization) {
   const balances = {};
   const participantNames = {};
-  const sorted = sortBalanceRecords_((records || []).concat(buildInitialBalanceRecords_(initialBalances)));
+  const sorted = sortBalanceRecords_((records || []).concat(buildInitialBalanceRecords_(initialBalances,
+    localization)));
   const rows = [];
   sorted.forEach(function (record) {
     buildParticipantBalanceDeltas_(record).forEach(function (delta) {
@@ -360,10 +370,10 @@ function buildBalanceMovementRows_(records, initialBalances) {
  * zero-sum rounding residual; a material discrepancy remains visible as a
  * mismatch in the monthly balance sheet.
  */
-function buildCheckpointRoundingAdjustments_(records, initialBalances, checks) {
+function buildCheckpointRoundingAdjustments_(records, initialBalances, checks, localization, excludedOpeningGroups) {
   const tolerance = 0.25;
   const controlsByMonth = {};
-  buildDeclaredMonthlyBalanceControls_(checks).forEach(function (control) {
+  buildDeclaredMonthlyBalanceControls_(checks, excludedOpeningGroups).forEach(function (control) {
     const monthKey = String(control[0]) + '-' + String(control[1]).padStart(2, '0');
     const currency = String(control[2]).toUpperCase();
     const groupKey = monthKey + '|' + currency;
@@ -376,10 +386,16 @@ function buildCheckpointRoundingAdjustments_(records, initialBalances, checks) {
   });
   const balances = {};
   const adjustments = [];
-  const sorted = sortBalanceRecords_((records || []).concat(buildInitialBalanceRecords_(initialBalances)));
+  const descriptions = localization && localization.balanceDescriptions ? localization.balanceDescriptions : {
+    roundingAdjustment: 'Tricount checkpoint rounding alignment', checkpointSource: 'Tricount checkpoint'
+  };
+  const sorted = sortBalanceRecords_((records || []).concat(buildInitialBalanceRecords_(initialBalances,
+    localization)));
+  const monthKeys = sorted.map(function (record) { return String(record.date).slice(0, 7); })
+    .concat(Object.keys(controlsByMonth).map(function (key) { return key.slice(0, 7); }))
+    .filter(function (value, position, values) { return values.indexOf(value) === position; }).sort();
   let index = 0;
-  while (index < sorted.length) {
-    const monthKey = String(sorted[index].date).slice(0, 7);
+  monthKeys.forEach(function (monthKey) {
     while (index < sorted.length && String(sorted[index].date).slice(0, 7) === monthKey) {
       const record = sorted[index];
       buildParticipantBalanceDeltas_(record).forEach(function (delta) {
@@ -416,12 +432,12 @@ function buildCheckpointRoundingAdjustments_(records, initialBalances, checks) {
           id: 'rounding-adjustment-' + monthKey + '-' + currency + '-' + delta.key,
           date: getMonthEndDate_(monthKey), year: Number(monthKey.slice(0, 4)), month: Number(monthKey.slice(5, 7)),
           currency: currency, transactionType: 'rounding_adjustment',
-          description: 'Allineamento arrotondamento checkpoint Tricount', sourceFile: 'Tricount checkpoint', sourceRow: 0,
+          description: descriptions.roundingAdjustment, sourceFile: descriptions.checkpointSource, sourceRow: 0,
           initialBalanceDelta: { key: delta.key, name: delta.participant, amount: delta.amount }
         });
       });
     });
-  }
+  });
   return adjustments;
 }
 
@@ -676,8 +692,8 @@ function getInitialBalanceConfigurationDataRowCount_(sheet, layout) {
   }
   const values = sheet.getRange(layout.dataRow, layout.startColumn,
     sheet.getLastRow() - layout.dataRow + 1, 7).getDisplayValues();
-  return values.reduce(function (count, row) {
-    return row.some(function (value) { return value !== ''; }) ? count + 1 : count;
+  return values.reduce(function (lastRow, row, index) {
+    return row.some(function (value) { return value !== ''; }) ? index + 1 : lastRow;
   }, 0);
 }
 
@@ -719,14 +735,17 @@ function mergeInitialBalances_(manualBalances, automaticBalances) {
   return Object.keys(selected).sort().map(function (key) { return selected[key]; });
 }
 
-function buildInitialBalanceRecords_(balances) {
+function buildInitialBalanceRecords_(balances, localization) {
+  const descriptions = localization && localization.balanceDescriptions ? localization.balanceDescriptions : {
+    initialBalance: 'Initial balance', configurationSource: 'Configuration'
+  };
   return (balances || []).map(function (balance) {
     return {
       id: 'initial-balance-' + balance.currency + '-' + normalizeParticipantName_(balance.participant),
       date: balance.date, year: Number(String(balance.date).slice(0, 4)),
       month: Number(String(balance.date).slice(5, 7)), currency: balance.currency,
-      transactionType: 'opening_balance', description: 'Initial balance (' + balance.origin + ')',
-      sourceFile: 'Configuration', sourceRow: 0,
+      transactionType: 'opening_balance', description: descriptions.initialBalance + ' (' + balance.origin + ')',
+      sourceFile: descriptions.configurationSource, sourceRow: 0,
       initialBalanceDelta: {
         key: normalizeParticipantName_(balance.participant), name: balance.participant,
         amount: roundBalanceAmount_(balance.amount)
@@ -735,20 +754,26 @@ function buildInitialBalanceRecords_(balances) {
   });
 }
 
-function buildMonthlyBalanceRows_(movements, checks) {
+function buildMonthlyBalanceRows_(movements, checks, excludedOpeningGroups) {
   const records = movements.sortedRecords;
-  if (records.length === 0) {
-    return { rows: [] };
-  }
-  const participantNames = movements.participantNames;
+  const participantNames = Object.assign({}, movements.participantNames);
   const checkByMonth = {};
-  buildDeclaredMonthlyBalanceControls_(checks).forEach(function (control) {
+  const controls = buildDeclaredMonthlyBalanceControls_(checks, excludedOpeningGroups);
+  controls.forEach(function (control) {
     const key = String(control[0]) + '-' + String(control[1]).padStart(2, '0') + '|' + control[2] + '|' +
       normalizeParticipantName_(control[3]);
     checkByMonth[key] = { declared: Number(control[4]) };
+    participantNames[control[2] + '|' + normalizeParticipantName_(control[3])] = String(control[3]);
   });
-  const firstMonth = String(records[0].date).slice(0, 7);
-  const lastMonth = String(records[records.length - 1].date).slice(0, 7);
+  const months = records.map(function (record) { return String(record.date).slice(0, 7); })
+    .concat(controls.map(function (control) {
+      return String(control[0]) + '-' + String(control[1]).padStart(2, '0');
+    })).sort();
+  if (months.length === 0) {
+    return { rows: [] };
+  }
+  const firstMonth = months[0];
+  const lastMonth = months[months.length - 1];
   const balances = {};
   const rows = [];
   let recordIndex = 0;
@@ -774,13 +799,11 @@ function buildMonthlyBalanceRows_(movements, checks) {
   return { rows: rows };
 }
 
-function buildMonthlyBalanceControlRows_(movements, checks) {
-  return buildDeclaredMonthlyBalanceControls_(checks);
-}
-
-function buildDeclaredMonthlyBalanceControls_(checks) {
+function buildDeclaredMonthlyBalanceControls_(checks, excludedOpeningGroups) {
   return groupOpeningBalanceRecords_(uniqueOpeningBalanceRecords_((checks || [])
-    .flatMap(getOpeningBalanceRecordsFromCheck_))).flatMap(function (group) {
+    .flatMap(getOpeningBalanceRecordsFromCheck_))).filter(function (group) {
+    return !(excludedOpeningGroups && excludedOpeningGroups[group.date + '|' + group.currency]);
+  }).flatMap(function (group) {
     const previousMonth = previousMonthKey_(group.date);
     const vector = buildOpeningBalanceVector_(group.records, group.currency);
     return Object.keys(vector.balances).sort().map(function (participant) {
@@ -789,6 +812,32 @@ function buildDeclaredMonthlyBalanceControls_(checks) {
         entry.name, roundBalanceAmount_(entry.amount)];
     });
   });
+}
+
+function getInitialOpeningBalanceGroupKeys_(checks, ledgerRecords) {
+  const firstLedgerDateByCurrency = {};
+  (ledgerRecords || []).forEach(function (record) {
+    const currency = String(record.currency || '').toUpperCase();
+    const date = String(record.date || '');
+    if (currency && date && (!firstLedgerDateByCurrency[currency] ||
+      date < firstLedgerDateByCurrency[currency])) {
+      firstLedgerDateByCurrency[currency] = date;
+    }
+  });
+  const firstGroupByCurrency = {};
+  groupOpeningBalanceRecords_(uniqueOpeningBalanceRecords_((checks || [])
+    .flatMap(getOpeningBalanceRecordsFromCheck_))).forEach(function (group) {
+    if (!firstGroupByCurrency[group.currency]) {
+      firstGroupByCurrency[group.currency] = group;
+    }
+  });
+  return Object.keys(firstGroupByCurrency).reduce(function (result, currency) {
+    const group = firstGroupByCurrency[currency];
+    if (!firstLedgerDateByCurrency[currency] || group.date <= firstLedgerDateByCurrency[currency]) {
+      result[group.date + '|' + currency] = true;
+    }
+    return result;
+  }, {});
 }
 
 function previousMonthKey_(date) {
@@ -807,71 +856,19 @@ function nextMonthKey_(monthKey) {
   return (month === 12 ? year + 1 : year) + '-' + String(month === 12 ? 1 : month + 1).padStart(2, '0');
 }
 
-function writeDerivedBalanceSheet_(sheet, headers, rows) {
+function writeDerivedBalanceSheet_(sheet, headers, rows, note) {
+  const requiredRows = rows.length + 1;
+  if (sheet.getMaxRows() < requiredRows) {
+    sheet.insertRowsAfter(sheet.getMaxRows(), requiredRows - sheet.getMaxRows());
+  }
   sheet.clearContents();
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
-  sheet.getRange(1, 1, 1, headers.length).setNote(
-    'Calculated from the exact participant allocations preserved in the Tricount JSON source.'
-  );
+  sheet.getRange(1, 1, 1, headers.length).setNote(note ||
+    'Calculated from the exact participant allocations preserved in the Tricount JSON source.');
   if (rows.length > 0) {
     sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
   }
   sheet.setFrozenRows(1);
-}
-
-function writeDynamicMonthlyBalanceSheet_(sheet, technicalData, localization, controls) {
-  const headers = getMonthlyBalanceHeaders_(localization);
-  const movementName = localization.sheetNames.balanceMovements.replace(/'/g, "''");
-  const controlRange = writeMonthlyBalanceControls_(technicalData, localization, controls);
-  const technicalName = technicalData.getName().replace(/'/g, "''");
-  const keyFormula = '=SORT(UNIQUE(FILTER(HSTACK(\'' + movementName + '\'!C2:C,\'' + movementName +
-    '\'!D2:D,\'' + movementName + '\'!E2:E,\'' + movementName + '\'!F2:F),\'' + movementName +
-    '\'!A2:A<>"")),1,TRUE,2,TRUE,3,TRUE,4,TRUE)';
-  const lastRow = sheet.getMaxRows();
-  sheet.clearContents();
-  sheet.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
-  sheet.getRange(1, 1, 1, headers.length).setNote(
-    'Calculated from exact Tricount allocations. Declared carry-overs are independent monthly controls.'
-  );
-  sheet.showColumns(10, 5);
-  sheet.getRange(1, 10, lastRow, 5).clearContent();
-  sheet.getRange('A2').setFormula(keyFormula);
-  sheet.getRange(2, 5, lastRow - 1, 4).setFormulas(Array.from({ length: lastRow - 1 }, function (_, index) {
-    const row = index + 2;
-    const criteria = "'" + movementName + "'!$C$2:$C$" + lastRow + '=$A' + row + ',' +
-      "'" + movementName + "'!$D$2:$D$" + lastRow + '=$B' + row + ',' +
-      "'" + movementName + "'!$E$2:$E$" + lastRow + '=$C' + row + ',' +
-      "'" + movementName + "'!$F$2:$F$" + lastRow + '=$D' + row;
-    const values = "'" + movementName + "'!$H$2:$H$" + lastRow;
-    const matches = 'FILTER(' + values + ',' + criteria + ')';
-    const closing = '=IF($A' + row + '="","",IFERROR(INDEX(' + matches + ',ROWS(' + matches + ')),""))';
-    const declared = '=IF($A' + row + '="","",IFERROR(INDEX(FILTER(\'' + technicalName +
-      '\'!$E$' + controlRange.firstRow + ':$E$' + controlRange.lastRow + ',\'' + technicalName +
-      '\'!$A$' + controlRange.firstRow + ':$A$' + controlRange.lastRow + '=$A' + row + ',\'' +
-      technicalName + '\'!$B$' + controlRange.firstRow + ':$B$' + controlRange.lastRow + '=$B' +
-      row + ',\'' + technicalName + '\'!$C$' + controlRange.firstRow + ':$C$' +
-      controlRange.lastRow + '=$C' + row + ',\'' + technicalName + '\'!$D$' +
-      controlRange.firstRow + ':$D$' + controlRange.lastRow + '=$D' + row + '),1),""))';
-    const difference = '=IF(OR($E' + row + '="",$F' + row + '=""),"",ROUND($E' + row + '-$F' + row + ',2))';
-    const verification = '=IF($G' + row + '="","",IF(ABS($G' + row + ')<=0.01,"matched","mismatch"))';
-    return [closing, declared, difference, verification];
-  }));
-  sheet.getRange('E:E').setNumberFormat('0.00');
-  sheet.getRange('F:G').setNumberFormat('0.00');
-  sheet.setFrozenRows(1);
-}
-
-function writeMonthlyBalanceControls_(technicalData, localization, controls) {
-  const headerRow = 160;
-  const firstDataRow = headerRow + 1;
-  const headers = [localization.dashboard.year, 'Month', 'Currency', 'Participant',
-    'Declared closing balance'];
-  technicalData.getRange(headerRow, 1, technicalData.getMaxRows() - headerRow + 1, 5).clearContent();
-  technicalData.getRange(headerRow, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
-  if (controls.length > 0) {
-    technicalData.getRange(firstDataRow, 1, controls.length, headers.length).setValues(controls);
-  }
-  return { firstRow: firstDataRow, lastRow: technicalData.getMaxRows() };
 }
 
 function refreshTransactionBalanceImpactLabels_(sheet, headers, records, localization) {

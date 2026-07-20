@@ -8,12 +8,16 @@ function installDashboardYearColorEditTrigger() {
   const existing = ScriptApp.getProjectTriggers().filter(function (trigger) {
     return trigger.getHandlerFunction() === DASHBOARD_YEAR_COLOR_EDIT_TRIGGER_HANDLER;
   });
-  if (existing.length === 0) {
-    ScriptApp.newTrigger(DASHBOARD_YEAR_COLOR_EDIT_TRIGGER_HANDLER)
-      .forSpreadsheet(getSpreadsheetId_()).onEdit().create();
-  }
-  existing.slice(1).forEach(function (trigger) { ScriptApp.deleteTrigger(trigger); });
-  return { triggerCount: Math.min(1, existing.length + 1) };
+  ScriptApp.newTrigger(DASHBOARD_YEAR_COLOR_EDIT_TRIGGER_HANDLER)
+    .forSpreadsheet(getSpreadsheetId_()).onEdit().create();
+  deleteTriggersBestEffort_(existing);
+  return { triggerCount: getDashboardYearColorEditTriggerCount_() };
+}
+
+function getDashboardYearColorEditTriggerCount_() {
+  return ScriptApp.getProjectTriggers().filter(function (trigger) {
+    return trigger.getHandlerFunction() === DASHBOARD_YEAR_COLOR_EDIT_TRIGGER_HANDLER;
+  }).length;
 }
 
 /**
@@ -26,17 +30,35 @@ function installAutomationTriggers() {
   return withAutomationTriggerLock_(function () {
     const existing = getManagedAutomationTriggers_();
     const created = [];
+    let dashboardTriggerStatus;
     try {
       created.push(ScriptApp.newTrigger('processDriveEventQueue').timeBased().everyMinutes(15).create());
       created.push(ScriptApp.newTrigger('runDailyExpenseCataloging').timeBased()
         .atHour(CONFIG.DAILY_TRIGGER_HOUR).everyDays(1).create());
+      dashboardTriggerStatus = installDashboardYearColorEditTrigger();
     } catch (error) {
       created.forEach(function (trigger) { ScriptApp.deleteTrigger(trigger); });
       throw error;
     }
-    existing.forEach(function (trigger) { ScriptApp.deleteTrigger(trigger); });
-    return getAutomationTriggerStatus_();
+    deleteTriggersBestEffort_(existing);
+    const status = getAutomationTriggerStatus_();
+    status.dashboardYearColorEditTriggerCount = dashboardTriggerStatus.triggerCount;
+    return status;
   });
+}
+
+function deleteTriggersBestEffort_(triggers) {
+  let firstError = null;
+  (triggers || []).forEach(function (trigger) {
+    try {
+      ScriptApp.deleteTrigger(trigger);
+    } catch (error) {
+      firstError = firstError || error;
+    }
+  });
+  if (firstError) {
+    throw firstError;
+  }
 }
 
 function removeAutomationTriggers() {

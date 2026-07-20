@@ -26,10 +26,10 @@
 - Record source links, entry coordinates and IDs, allocation details, duplicate
   decisions, confidence, and rationale for every import.
 - After promoting the stable Apps Script deployment, reconcile version-bound
-  managed time triggers through the non-development executable. Create
-  replacements before deleting stale triggers, require exactly one polling
-  handler and one daily handler, and finish that repair after promotion even if
-  a newer source revision becomes available.
+  managed triggers through the non-development executable. Create replacements
+  before deleting stale triggers, require exactly one polling handler, one daily
+  handler, and one dashboard year-color edit trigger, and finish that repair
+  after promotion even if a newer source revision becomes available.
 - Run post-promotion trigger repair under the same workload-aware lock as
   normal processing, within its configured execution budget. Invoke the
   configured stable deployment explicitly and validate the provider's actual
@@ -56,6 +56,8 @@
 - For dynamic dashboard charts, set the source header count explicitly and use
   `ARRAYFORMULA` for derived month-label arrays. Verify helper output and chart
   specifications after dashboard changes.
+- Normalize provider-generated `QUERY`/`PIVOT` headers before localization and
+  verify the localized helper headers against the live Sheets runtime.
 - Bind dynamic-array charts to their complete reserved technical-data blocks,
   rather than the rows initially populated by a formula. Generate time-series
   comparison helpers with fixed dimensions and test source-range expansion.

@@ -99,10 +99,8 @@ function categorizeIncomeRefunds() {
       response.records.forEach(function (classification, index) {
         const record = applyJsonExpenseClassification_(classification, records[index], config);
         const targetRow = batch[index].ledgerRow;
-        layout.transactions.getRange(targetRow, columns.category + 1, 1, 3)
-          .setValues([[record.category, record.subcategory, record.merchant]]);
-        layout.transactions.getRange(targetRow, columns.confidence + 1, 1, 2)
-          .setValues([[record.confidence, record.rationale]]);
+        const updatedRow = applyIncomeRefundClassificationToRow_(batch[index].row, columns, record);
+        layout.transactions.getRange(targetRow, 1, 1, headers.length).setValues([updatedRow]);
         categorized += 1;
       });
     }
@@ -114,6 +112,16 @@ function categorizeIncomeRefunds() {
     }
     return { status: categorized ? 'CATEGORIZED' : 'UP_TO_DATE', categorized: categorized };
   });
+}
+
+function applyIncomeRefundClassificationToRow_(row, columns, record) {
+  const updatedRow = row.slice();
+  updatedRow[columns.category] = record.category;
+  updatedRow[columns.subcategory] = record.subcategory;
+  updatedRow[columns.merchant] = record.merchant;
+  updatedRow[columns.confidence] = record.confidence;
+  updatedRow[columns.rationale] = record.rationale;
+  return updatedRow;
 }
 
 function isConfiguredIncomeRefundCategory_(category, config) {

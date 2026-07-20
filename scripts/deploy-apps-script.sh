@@ -97,15 +97,23 @@ mkdir -m 700 "${snapshot_dir}"
 cp .clasp.json "${snapshot_dir}/.clasp.json"
 (cd "${snapshot_dir}" && clasp -A "${auth_file}" pull)
 time_zone="$(jq -er '.timeZone | select(type == "string" and length > 0)' "${snapshot_dir}/appsscript.json")"
-jq --arg time_zone "${time_zone}" --argjson execution_api "${execution_api}" '
-  .timeZone = $time_zone |
-  .executionApi = $execution_api
-' appsscript.json >"${RUNNER_TEMP}/appsscript.json"
-mv "${RUNNER_TEMP}/appsscript.json" appsscript.json
-
 label="main-${DEPLOY_COMMIT_SHA::12}"
+push_apps_script_source() (
+  local original_manifest
+  local generated_manifest
+  original_manifest="$(mktemp "${RUNNER_TEMP}/appsscript-original.XXXXXX")"
+  generated_manifest="$(mktemp "${RUNNER_TEMP}/appsscript-generated.XXXXXX")"
+  cp appsscript.json "${original_manifest}"
+  trap 'cp "${original_manifest}" appsscript.json; rm -f "${original_manifest}" "${generated_manifest}"' EXIT
+  jq --arg time_zone "${time_zone}" --argjson execution_api "${execution_api}" '
+    .timeZone = $time_zone |
+    .executionApi = $execution_api
+  ' appsscript.json >"${generated_manifest}"
+  cp "${generated_manifest}" appsscript.json
+  clasp -A "${auth_file}" push --force
+)
 ensure_current_main
-clasp -A "${auth_file}" push --force
+push_apps_script_source
 version="$(clasp -A "${auth_file}" --json version "${label}" | jq -er '.versionNumber | select(type == "number")')"
 deployment_config="$(jq -ce --argjson version "${version}" --arg description "${label}" '
   .deploymentConfig |
@@ -124,7 +132,8 @@ jq -e --arg id "${APPS_SCRIPT_DEPLOYMENT_ID}" --argjson version "${version}" \
   ' <<<"${updated_deployment}" >/dev/null
 
 # Time-driven triggers are bound to the deployment that creates them. Recreate
-# them through the exact stable API executable after it is updated. Do not
+# them through the exact stable API executable after it is updated, and install
+# the dashboard edit trigger required by year-series color controls. Do not
 # stale-skip this recovery after a successful update: leaving old triggers
 # would recreate the precise version mismatch this step repairs.
 trigger_status="$(apps_script_request POST \
@@ -137,6 +146,7 @@ jq -e '
     "type.googleapis.com/google.apps.script.v1.ExecutionResponse" and
   .response.result.triggerCounts.processDriveEventQueue == 1 and
   .response.result.triggerCounts.runDailyExpenseCataloging == 1 and
+  .response.result.dashboardYearColorEditTriggerCount == 1 and
   .response.result.missingTriggerHandlers == [] and
   .response.result.duplicateTriggerHandlers == []
 ' <<<"${trigger_status}" >/dev/null
