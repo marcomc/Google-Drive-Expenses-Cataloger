@@ -204,6 +204,10 @@ assert.deepEqual(JSON.parse(JSON.stringify(resetRows.filter((row) => row[0] === 
   ['Laura', -50, -50, 0, 'matched'], ['Marco', 50, 50, 0, 'matched']
 ]);
 
+assert.equal(context.getOpeningBalanceMonthKey_({ date: '2025-05-31',
+  sourceFileName: 'transactions-hostello-202506.json' }), '2025-06',
+  'a month-opening marker dated on the prior month end uses its Tricount month');
+
 const controlOnlyRounding = context.buildCheckpointRoundingAdjustments_([{
   id: 'opening', date: '2026-01-10', year: 2026, month: 1, currency: 'EUR',
   transactionType: 'expense', description: 'Opening', sourceFile: 'test', sourceRow: 1,

@@ -97,11 +97,14 @@ Neither balance marker is a spending transaction or is inserted into
 `Transazioni`. `Bilancio inizio mese` is the only balance marker used as a
 checkpoint. For each currency, all opening records on the earliest usable date
 form one multi-participant opening-balance vector. It is applied once to the
-cumulative calculation; subsequent opening records are checkpoints in
-`Saldi mensili`. `Bilancio fine mese` is recognized and ignored entirely by
-the spending and balance calculations because its following opening marker is
-the authoritative checkpoint. If a subsequent checkpoint differs only by a
-zero-sum cent-level rounding residual (at most 0.25 EUR per participant), the derived
+the cumulative calculation; subsequent opening records are checkpoints in
+`Saldi mensili`. The cumulative trajectory must reproduce each following
+opening vector when all real transactions are included and balance markers are
+excluded. `Bilancio fine mese` is recognized and ignored entirely by the
+spending and balance calculations because its following opening marker is the
+authoritative checkpoint. Other Tricount `BALANCE` entries remain participant
+transfers unless they are explicit month-end markers. If a subsequent checkpoint differs only by a zero-sum
+rounding residual (at most 0.25 EUR per participant), the derived
 `Movimenti saldi` view adds a visible checkpoint-rounding alignment row. It
 never changes `Transazioni`; larger or non-zero-sum discrepancies remain
 `mismatch` values for investigation.

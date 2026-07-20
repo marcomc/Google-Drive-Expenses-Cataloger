@@ -119,11 +119,41 @@ assert.deepEqual(JSON.parse(JSON.stringify(jsonRecords[0])), {
 assert.equal(jsonRecords[1].transactionType, 'opening_balance');
 assert.equal(context.mapTricountTransactionType_('BALANCE', 'Bilancio fine mese', 'Bilancio ⚖️'),
   'closing_balance');
+assert.equal(context.mapTricountTransactionType_('NORMAL', 'Bilancio inizio mese', ''),
+  'opening_balance');
+assert.equal(context.mapTricountTransactionType_('NORMAL', 'Bilancio in io mese', ''),
+  'opening_balance');
+assert.equal(context.mapTricountTransactionType_('NORMAL', 'Bilancio fine mese', ''),
+  'closing_balance');
 assert.equal(context.mapTricountTransactionType_('BALANCE', 'Bilancio generico', 'Bilancio ⚖️'),
   'transfer');
 assert.equal(context.mapTricountTransactionType_('NORMAL', 'Marco - contanti', 'Contanti 💶'),
   'transfer');
 assert.equal(context.mapTricountTransactionType_('NORMAL', 'Spesa al supermercato', 'Spesa'), 'expense');
+const legacyAuditBalanceCheck = context.getOpeningBalanceRecordsFromCheck_({ records: [
+  { date: '2023-09-30', currency: 'EUR', transactionType: 'opening_balance',
+    sourceNativeType: 'BALANCE', sourceCustomCategory: 'Bilancio ⚖️',
+    description: 'Bilancio fine mese' },
+  { date: '2023-10-01', currency: 'EUR', transactionType: 'opening_balance',
+    sourceNativeType: 'BALANCE', sourceCustomCategory: 'Bilancio ⚖️',
+    description: 'Bilancio inizio mese' }
+] });
+assert.deepEqual(JSON.parse(JSON.stringify(legacyAuditBalanceCheck.map((record) => [
+  record.date, record.transactionType
+]))), [['2023-10-01', 'opening_balance']],
+  'legacy audit checks must ignore stored month-end markers');
+const historicalBalanceTransfers = context.getHistoricalBalanceTransferCandidates_([{ records: [
+  { sourceFingerprint: 'tricount:vacanze', sourceNativeType: 'BALANCE',
+    sourceCustomCategory: 'Bilancio ⚖️', description: 'Bilancio Vacanze Pasqua',
+    transactionType: 'opening_balance' },
+  { sourceFingerprint: 'tricount:opening', sourceNativeType: 'BALANCE',
+    sourceCustomCategory: 'Bilancio ⚖️', description: 'Bilancio inizio mese',
+    transactionType: 'opening_balance' }
+] }]);
+assert.deepEqual(JSON.parse(JSON.stringify(historicalBalanceTransfers.map((record) => [
+  record.sourceFingerprint, record.transactionType
+]))), [['tricount:vacanze', 'transfer']],
+  'historical non-monthly BALANCE settlements must be recoverable as transfers');
 assert.equal(context.mapTricountTransactionType_('INCOME', 'Rimborso acquisto', ''), 'income');
 const sameValueOpeningRecords = context.uniqueOpeningBalanceRecords_([
   { date: '2026-04-01', currency: 'EUR', payer: 'Laura', amount: 50,

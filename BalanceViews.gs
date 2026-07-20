@@ -23,13 +23,15 @@ function refreshBalanceViews_(spreadsheet) {
     getMonthlyBalanceHeaders_(localization));
   const configuration = ensureInstallerSheet_(spreadsheet, localization.sheetNames.configuration,
     ['Category', 'Subcategory']);
-  const headers = transactions.getRange(1, 1, 1, transactions.getLastColumn()).getValues()[0];
+  let headers = transactions.getRange(1, 1, 1, transactions.getLastColumn()).getValues()[0];
   const imports = spreadsheet.getSheetByName(localization.sheetNames.imports);
   backfillOpeningBalanceAuditDetails_(imports);
   const checks = getRecordedOpeningBalanceChecks_(imports);
   normalizeExistingLedgerMerchants_(transactions, headers, localization);
   normalizeExistingLedgerTransactionTypes_(transactions, headers, localization);
   backfillMissingLedgerAllocations_(transactions, headers, localization);
+  recoverHistoricalBalanceTransfers_({ transactions: transactions, headers: headers }, imports);
+  headers = transactions.getRange(1, 1, 1, transactions.getLastColumn()).getValues()[0];
   const ledgerRecords = readLedgerBalanceViewRecords_(transactions, headers, localization);
   const initialBalances = synchronizeInitialBalanceConfiguration_(configuration, localization, checks,
     ledgerRecords);
@@ -44,6 +46,22 @@ function refreshBalanceViews_(spreadsheet) {
     buildMonthlyBalanceRows_(movements, checks, initialOpeningGroups).rows,
     localization.balanceDescriptions.monthlyNote);
   refreshTransactionBalanceImpactLabels_(transactions, headers, ledgerRecords, localization);
+}
+
+function recoverHistoricalBalanceTransfers_(layout, imports) {
+  const candidates = getHistoricalBalanceTransferCandidates_(getRecordedOpeningBalanceChecks_(imports));
+  if (candidates.length === 0) {
+    return 0;
+  }
+  const partition = partitionIncomingRows_(candidates, getExistingLedgerFingerprints_(layout.transactions,
+    layout.headers));
+  if (partition.unique.length === 0) {
+    return 0;
+  }
+  const imported = writeLedgerRows_(layout, partition.unique, 'balance-marker-recovery');
+  verifyLedgerWrite_(layout.transactions, imported);
+  sortLedgerTransactions_(layout);
+  return imported.length;
 }
 
 function normalizeExistingLedgerMerchants_(sheet, headers, localization) {
@@ -858,7 +876,7 @@ function buildDeclaredMonthlyBalanceControls_(checks, excludedOpeningGroups) {
     .flatMap(getOpeningBalanceRecordsFromCheck_))).filter(function (group) {
     return !(excludedOpeningGroups && excludedOpeningGroups[group.date + '|' + group.currency]);
   }).flatMap(function (group) {
-    const previousMonth = previousMonthKey_(group.date);
+    const previousMonth = previousMonthKey_(getOpeningBalanceMonthKey_(group.records[0]) + '-01');
     const vector = buildOpeningBalanceVector_(group.records, group.currency);
     return Object.keys(vector.balances).sort().map(function (participant) {
       const entry = vector.balances[participant];
@@ -866,6 +884,18 @@ function buildDeclaredMonthlyBalanceControls_(checks, excludedOpeningGroups) {
         entry.name, roundBalanceAmount_(entry.amount)];
     });
   });
+}
+
+function getOpeningBalanceMonthKey_(record) {
+  const date = String(record && record.date || '');
+  const dateMonth = date.slice(0, 7);
+  const sourceFileName = String(record && record.sourceFileName || '');
+  const sourceMonthMatches = sourceFileName.match(/(\d{4})(\d{2})(?=\.json$|[-_])/g) || [];
+  const sourceMonth = sourceMonthMatches.length > 0 ? sourceMonthMatches[sourceMonthMatches.length - 1] : '';
+  if (sourceMonth && sourceMonth !== date.slice(0, 6) && Number(date.slice(8, 10)) > 7) {
+    return sourceMonth.slice(0, 4) + '-' + sourceMonth.slice(4, 6);
+  }
+  return dateMonth;
 }
 
 function getInitialOpeningBalanceGroupKeys_(checks, ledgerRecords) {

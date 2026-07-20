@@ -63,6 +63,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
   cent-level checkpoint residuals through explicit balancing adjustments.
 - Backfill missing allocation details, normalize historic transaction types,
   and exclude transfers and opening-balance controls from spending aggregates.
+- Recover historic non-monthly Tricount `BALANCE` settlements that an older
+  import misclassified as opening-balance controls before rebuilding balances.
 - Classify historic income refunds before rebuilding dashboard formulas, so
   existing negative rows immediately reduce their appropriate reporting
   categories without a destructive JSON re-import.

@@ -274,10 +274,10 @@ function normalizeTricountExchangeRate_(value) {
 function mapTricountTransactionType_(sourceNativeType, description, customCategory) {
   const nativeType = String(sourceNativeType || '').toUpperCase();
   const marker = String(description || '') + ' ' + String(customCategory || '');
-  if (nativeType === 'BALANCE' && /\bbilancio\s+inizio\s+mese\b/i.test(marker)) {
+  if (/\bbilancio\s+in(?:izio|\s+io)\s+mese\b/i.test(marker)) {
     return 'opening_balance';
   }
-  if (nativeType === 'BALANCE' && /\bbilancio\s+fine\s+mese\b/i.test(marker)) {
+  if (/\bbilancio\s+fine\s+mese\b/i.test(marker)) {
     return 'closing_balance';
   }
   if (nativeType === 'INCOME') {
@@ -289,6 +289,9 @@ function mapTricountTransactionType_(sourceNativeType, description, customCatego
   // never treat them as household spending.
   if (nativeType === 'BALANCE' || isTricountCashSettlementCategory_(customCategory)) {
     return 'transfer';
+  }
+  if (nativeType === 'INCOME') {
+    return 'income';
   }
   return 'expense';
 }
@@ -617,9 +620,37 @@ function buildLegacyBalanceDeltas_(record) {
 
 function getOpeningBalanceRecordsFromCheck_(check) {
   const records = Array.isArray(check && check.records) ? check.records : [check && check.record];
-  return records.filter(function (record) {
-    return record && record.date && record.currency;
+  return records.map(normalizeStoredBalanceControlRecord_).filter(function (record) {
+    return record && record.date && record.currency &&
+      (!record.transactionType || isOpeningBalanceRecord_(record));
   });
+}
+
+function normalizeStoredBalanceControlRecord_(record) {
+  if (!record || (!record.sourceNativeType && !record.sourceCustomCategory)) {
+    return record;
+  }
+  const transactionType = mapTricountTransactionType_(record.sourceNativeType, record.description,
+    record.sourceCustomCategory);
+  return Object.assign({}, record, { transactionType: transactionType });
+}
+
+function getHistoricalBalanceTransferCandidates_(checks) {
+  const selected = {};
+  (checks || []).flatMap(function (check) {
+    const records = Array.isArray(check && check.records) ? check.records : [check && check.record];
+    return records || [];
+  }).map(normalizeStoredBalanceControlRecord_).filter(function (record) {
+    return record && String(record.sourceNativeType || '').toUpperCase() === 'BALANCE' &&
+      String(record.transactionType || '') === 'transfer';
+  }).forEach(function (record) {
+    const key = String(record.sourceFingerprint || '') ||
+      [record.sourceFileId, record.sourceRow].join('|');
+    if (key && !selected[key]) {
+      selected[key] = record;
+    }
+  });
+  return Object.keys(selected).sort().map(function (key) { return selected[key]; });
 }
 
 function uniqueOpeningBalanceRecords_(records) {

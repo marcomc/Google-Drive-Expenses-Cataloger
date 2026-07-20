@@ -74,7 +74,8 @@ spending and are not imported into the ledger. They validate that the prior
 month's calculated balance reproduces the declared carry-over. `Bilancio fine
 mese` entries are recognized closing markers and are also not imported: the
 historical workflow uses the following opening marker as the authoritative
-checkpoint. Both marker types remain accounted for in source reconciliation.
+checkpoint. Other Tricount `BALANCE` entries remain participant transfers.
+All marker rows remain accounted for in source reconciliation.
 
 Cash settlements between participants (including the Tricount custom category
 `Contanti`) remain `transfer` rows in `Transazioni`. They update the individual
@@ -91,17 +92,18 @@ The import audit writes a readable `Opening balance details` value for every
 detected `Bilancio inizio mese`: date, currency, participant, amount, and
 checkpoint status. `Bilancio fine mese` markers remain visible in the
 source-row decisions as `closing_balance`, but do not create a monthly
-checkpoint or affect the calculated balance. The same information remains
+checkpoint or affect the calculated balance. Other `BALANCE` transfers remain
+in the ledger and affect the calculated balance. The same information remains
 available in the structured audit field for the runtime.
 
 `Configurazione` contains one editable initial-balance table per participant
 and currency. For a currency, the automatic rows are the complete net vector
 from the oldest usable `Bilancio inizio mese`; that vector is applied once in
-the cumulative balance calculation. Set `Origine` to `Manuale` to make
-an active row override the automatic value. Later monthly `Bilancio inizio mese`
-values do not reset the running balance: `Saldi mensili` compares them with the
-calculated month-end position so a mismatch is visible as a checkpoint
-discrepancy. `Bilancio fine mese` does not participate in that calculation.
+the cumulative `Movimenti saldi` calculation. Set `Origine` to `Manuale` to
+make an active row override the automatic value. Later monthly `Bilancio inizio
+mese` values do not reset the running balance: `Saldi mensili` compares them
+with the cumulative month-end position. `Bilancio fine mese` does not
+participate in that calculation.
 
 During a balance refresh, ledger rows from the pre-allocation schema that have
 an empty `Quote partecipanti` field are restored from the linked Tricount JSON
