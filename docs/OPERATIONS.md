@@ -77,6 +77,13 @@ historical workflow uses the following opening marker as the authoritative
 checkpoint. Other Tricount `BALANCE` entries remain participant transfers.
 All marker rows remain accounted for in source reconciliation.
 
+The Tricount JSON has no separate participant-balance summary. The balance is
+reconstructed from each entry's payer, amount, and exact participant
+allocations. Monthly balance reconciliation follows the Tricount source order,
+not only the transaction date: a row in a strict monthly JSON remains inside
+that source period even when its date falls just before or after the month.
+The original date remains unchanged in `Transazioni` and all spending reports.
+
 Cash settlements between participants (including the Tricount custom category
 `Contanti`) remain `transfer` rows in `Transazioni`. They update the individual
 balance trajectory but are excluded from household-spending KPIs, summaries,
@@ -103,7 +110,10 @@ the cumulative `Movimenti saldi` calculation. Set `Origine` to `Manuale` to
 make an active row override the automatic value. Later monthly `Bilancio inizio
 mese` values do not reset the running balance: `Saldi mensili` compares them
 with the cumulative month-end position. `Bilancio fine mese` does not
-participate in that calculation.
+participate in that calculation. Legacy opening markers previously imported as
+ordinary `NORMAL` rows are recovered as controls. A material mismatch blocks
+later checkpoints from being rounded or labelled as matched, preserving the
+chronological audit chain.
 
 During a balance refresh, ledger rows from the pre-allocation schema that have
 an empty `Quote partecipanti` field are restored from the linked Tricount JSON

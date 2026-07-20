@@ -93,21 +93,35 @@ tab; the other tabs are audit, configuration, or derived reporting surfaces.
 
 ## Initial-balance model
 
-Neither balance marker is a spending transaction or is inserted into
-`Transazioni`. `Bilancio inizio mese` is the only balance marker used as a
+Normal intake treats neither balance marker as spending and inserts neither
+into `Transazioni`. `Bilancio inizio mese` is the only balance marker used as a
 checkpoint. For each currency, all opening records on the earliest usable date
 form one multi-participant opening-balance vector. It is applied once to the
-the cumulative calculation; subsequent opening records are checkpoints in
+cumulative calculation; subsequent opening records are checkpoints in
 `Saldi mensili`. The cumulative trajectory must reproduce each following
 opening vector when all real transactions are included and balance markers are
 excluded. `Bilancio fine mese` is recognized and ignored entirely by the
 spending and balance calculations because its following opening marker is the
-authoritative checkpoint. Other Tricount `BALANCE` entries remain participant
-transfers unless they are explicit month-end markers. If a subsequent checkpoint differs only by a zero-sum
-rounding residual (at most 0.25 EUR per participant), the derived
+authoritative checkpoint. Legacy opening markers that were originally exported
+as `NORMAL` and imported into `Transazioni` are normalized back into controls
+and excluded from the cumulative movement.
+
+Spending reports always use the original transaction date. Balance
+reconciliation instead assigns rows from a strict monthly
+`transactions-hostello-YYYYMM.json` source to that Tricount period. This keeps
+a backdated or forward-dated row on the correct side of its source's opening
+checkpoint. Combined multi-month sources continue to use their transaction
+dates. A materially mistyped filename period can be corrected by the opening
+marker date. Other Tricount `BALANCE` entries remain participant transfers
+unless they are explicit month-end markers.
+
+If a subsequent checkpoint differs only by a zero-sum rounding residual (at
+most 0.25 EUR per participant), the derived
 `Movimenti saldi` view adds a visible checkpoint-rounding alignment row. It
 never changes `Transazioni`; larger or non-zero-sum discrepancies remain
-`mismatch` values for investigation.
+`mismatch` values for investigation. Once a currency has a material mismatch,
+later checkpoints cannot be rounded or reported as matched until the earlier
+divergence is resolved.
 
 The editable table is below the category taxonomy in `Configurazione` and has
 these fields:

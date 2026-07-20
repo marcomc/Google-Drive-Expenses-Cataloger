@@ -25,14 +25,22 @@ function refreshBalanceViews_(spreadsheet) {
     ['Category', 'Subcategory']);
   let headers = transactions.getRange(1, 1, 1, transactions.getLastColumn()).getValues()[0];
   const imports = spreadsheet.getSheetByName(localization.sheetNames.imports);
+  const sourceReconciliations = spreadsheet.getSheetByName(localization.sheetNames.sourceReconciliations);
   backfillOpeningBalanceAuditDetails_(imports);
-  const checks = getRecordedOpeningBalanceChecks_(imports);
+  const recordedChecks = getRecordedOpeningBalanceChecks_(imports);
   normalizeExistingLedgerMerchants_(transactions, headers, localization);
   normalizeExistingLedgerTransactionTypes_(transactions, headers, localization);
   backfillMissingLedgerAllocations_(transactions, headers, localization);
   recoverHistoricalBalanceTransfers_({ transactions: transactions, headers: headers }, imports);
   headers = transactions.getRange(1, 1, 1, transactions.getLastColumn()).getValues()[0];
-  const ledgerRecords = readLedgerBalanceViewRecords_(transactions, headers, localization);
+  const allLedgerRecords = readAllLedgerBalanceViewRecords_(transactions, headers, localization);
+  const sourceFiles = getReconciledSourceFiles_(sourceReconciliations, localization);
+  enrichLedgerBalanceSourceMetadata_(allLedgerRecords, sourceFiles);
+  const checks = mergeLedgerOpeningBalanceChecks_(recordedChecks, allLedgerRecords);
+  applyLedgerBalancePeriods_(allLedgerRecords, buildLedgerBalanceSourcePeriods_(sourceFiles, checks));
+  const ledgerRecords = allLedgerRecords.filter(function (record) {
+    return !isBalanceControlRecord_(record);
+  });
   const initialBalances = synchronizeInitialBalanceConfiguration_(configuration, localization, checks,
     ledgerRecords);
   const initialOpeningGroups = getInitialOpeningBalanceGroupKeys_(checks, ledgerRecords);
@@ -45,7 +53,7 @@ function refreshBalanceViews_(spreadsheet) {
   writeDerivedBalanceSheet_(monthlySheet, getMonthlyBalanceHeaders_(localization),
     buildMonthlyBalanceRows_(movements, checks, initialOpeningGroups).rows,
     localization.balanceDescriptions.monthlyNote);
-  refreshTransactionBalanceImpactLabels_(transactions, headers, ledgerRecords, localization);
+  refreshTransactionBalanceImpactLabels_(transactions, headers, allLedgerRecords, localization);
 }
 
 function recoverHistoricalBalanceTransfers_(layout, imports) {
@@ -350,7 +358,7 @@ function isMatchingLedgerSourceRecord_(ledgerRow, sourceRecord, columns, names) 
     normalizeParticipantName_(ledgerRow[columns[names.payer]]) === normalizeParticipantName_(sourceRecord.payer);
 }
 
-function readLedgerBalanceViewRecords_(sheet, headers, localization) {
+function readAllLedgerBalanceViewRecords_(sheet, headers, localization) {
   const names = localization.headers;
   const required = [names.transactionId, names.date, names.year, names.month, names.currency,
     names.payer, names.beneficiaries, names.amount, names.description, names.transactionType,
@@ -378,9 +386,108 @@ function readLedgerBalanceViewRecords_(sheet, headers, localization) {
       allocations: parseStoredAllocations_(row[columns[names.allocationDetails]])
     };
   }).filter(function (record) {
-    return record.date && record.currency && isFinite(record.amount) &&
-      !isBalanceControlRecord_(record);
+    return record.date && record.currency && isFinite(record.amount);
   });
+}
+
+function readLedgerBalanceViewRecords_(sheet, headers, localization) {
+  return readAllLedgerBalanceViewRecords_(sheet, headers, localization).filter(function (record) {
+    return !isBalanceControlRecord_(record);
+  });
+}
+
+function getReconciledSourceFiles_(sheet, localization) {
+  if (!sheet || sheet.getLastRow() < 2) {
+    return [];
+  }
+  const names = localization.headers;
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const fileNameColumn = headers.indexOf(names.sourceFile);
+  const fileIdColumn = headers.indexOf(names.sourceFileId);
+  if (fileNameColumn < 0 || fileIdColumn < 0) {
+    return [];
+  }
+  const selected = {};
+  sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues().forEach(function (row) {
+    const id = String(row[fileIdColumn] || '').trim();
+    const name = String(row[fileNameColumn] || '').trim();
+    if (id && name) {
+      selected[id] = { id: id, name: name };
+    }
+  });
+  return Object.keys(selected).sort().map(function (id) { return selected[id]; });
+}
+
+function enrichLedgerBalanceSourceMetadata_(records, sourceFiles) {
+  const sourcesById = (sourceFiles || []).reduce(function (result, source) {
+    result[String(source.id || '')] = source;
+    return result;
+  }, {});
+  (records || []).forEach(function (record) {
+    const sourceFileId = String(record.sourceFileId || getDriveFileIdFromUrl_(record.sourceFile));
+    const source = sourcesById[sourceFileId];
+    record.sourceFileId = sourceFileId;
+    if (source) {
+      record.sourceFileName = source.name;
+    }
+  });
+  return records || [];
+}
+
+function mergeLedgerOpeningBalanceChecks_(checks, records) {
+  const openingRecords = (checks || []).flatMap(getOpeningBalanceRecordsFromCheck_).concat(
+    (records || []).filter(isOpeningBalanceRecord_)
+  );
+  return uniqueOpeningBalanceRecords_(openingRecords).map(function (record) {
+    return { record: record };
+  });
+}
+
+function buildLedgerBalanceSourcePeriods_(sourceFiles, checks) {
+  const openingRecordsByFile = {};
+  (checks || []).flatMap(getOpeningBalanceRecordsFromCheck_).forEach(function (record) {
+    const sourceFileId = String(record.sourceFileId || getDriveFileIdFromUrl_(record.sourceFile));
+    if (sourceFileId && !openingRecordsByFile[sourceFileId]) {
+      openingRecordsByFile[sourceFileId] = [];
+    }
+    if (sourceFileId) {
+      openingRecordsByFile[sourceFileId].push(record);
+    }
+  });
+  return (sourceFiles || []).reduce(function (result, source) {
+    const match = String(source.name || '').match(/^transactions-hostello-(\d{4})(\d{2})\.json$/i);
+    if (!match) {
+      return result;
+    }
+    let period = match[1] + '-' + match[2];
+    const openingRecords = (openingRecordsByFile[String(source.id || '')] || []).sort(function (left, right) {
+      return String(left.date || '').localeCompare(String(right.date || ''));
+    });
+    if (openingRecords.length > 0) {
+      const openingPeriod = String(openingRecords[0].date || '').slice(0, 7);
+      const fileMonthIndex = Number(match[1]) * 12 + Number(match[2]);
+      const openingMonthIndex = Number(openingPeriod.slice(0, 4)) * 12 + Number(openingPeriod.slice(5, 7));
+      if (/^\d{4}-\d{2}$/.test(openingPeriod) && Math.abs(openingMonthIndex - fileMonthIndex) > 1) {
+        period = openingPeriod;
+      }
+    }
+    result[String(source.id || '')] = { name: source.name, period: period };
+    return result;
+  }, {});
+}
+
+function applyLedgerBalancePeriods_(records, sourcePeriods) {
+  (records || []).forEach(function (record) {
+    const source = sourcePeriods && sourcePeriods[String(record.sourceFileId || '')];
+    if (source && /^\d{4}-\d{2}$/.test(String(source.period || ''))) {
+      record.balanceMonth = source.period;
+    }
+  });
+  return records || [];
+}
+
+function getBalanceMonthKey_(record) {
+  return String(record && record.balanceMonth || String(record && record.date || '').slice(0, 7));
 }
 
 function buildParticipantBalanceDeltas_(record) {
@@ -405,7 +512,8 @@ function buildBalanceImpactLabel_(record) {
 
 function sortBalanceRecords_(records) {
   return (records || []).slice().sort(function (left, right) {
-    return String(left.date).localeCompare(String(right.date)) ||
+    return getBalanceMonthKey_(left).localeCompare(getBalanceMonthKey_(right)) ||
+      String(left.date).localeCompare(String(right.date)) ||
       String(left.sourceFile || '').localeCompare(String(right.sourceFile || '')) ||
       Number(left.sourceRow || 0) - Number(right.sourceRow || 0) || String(left.id).localeCompare(String(right.id));
   });
@@ -425,7 +533,9 @@ function buildBalanceMovementRows_(records, initialBalances, localization) {
       const balanceKey = record.currency + '|' + delta.key;
       balances[balanceKey] = Number(balances[balanceKey] || 0) + delta.amount;
       participantNames[balanceKey] = delta.name;
-      rows.push([record.id, record.date, Number(record.year), Number(record.month), record.currency,
+      const balanceMonth = getBalanceMonthKey_(record);
+      rows.push([record.id, record.date, Number(balanceMonth.slice(0, 4)), Number(balanceMonth.slice(5, 7)),
+        record.currency,
         delta.name, delta.amount, roundBalanceAmount_(balances[balanceKey]), record.transactionType,
         record.description, record.sourceFile, record.sourceRow]);
     });
@@ -463,12 +573,13 @@ function buildCheckpointRoundingAdjustments_(records, initialBalances, checks, l
   });
   const sorted = sortBalanceRecords_(movementRecords.concat(buildInitialBalanceRecords_(initialBalances,
     localization)));
-  const monthKeys = sorted.map(function (record) { return String(record.date).slice(0, 7); })
+  const monthKeys = sorted.map(getBalanceMonthKey_)
     .concat(Object.keys(controlsByMonth).map(function (key) { return key.slice(0, 7); }))
     .filter(function (value, position, values) { return values.indexOf(value) === position; }).sort();
+  const blockedCurrencies = {};
   let index = 0;
   monthKeys.forEach(function (monthKey) {
-    while (index < sorted.length && String(sorted[index].date).slice(0, 7) === monthKey) {
+    while (index < sorted.length && getBalanceMonthKey_(sorted[index]) === monthKey) {
       const record = sorted[index];
       buildParticipantBalanceDeltas_(record).forEach(function (delta) {
         const key = String(record.currency).toUpperCase() + '|' + delta.key;
@@ -481,6 +592,9 @@ function buildCheckpointRoundingAdjustments_(records, initialBalances, checks, l
     }).forEach(function (groupKey) {
       const controls = controlsByMonth[groupKey];
       const currency = groupKey.split('|')[1];
+      if (blockedCurrencies[currency]) {
+        return;
+      }
       const deltas = controls.map(function (control) {
         return {
           participant: control.participant,
@@ -493,6 +607,9 @@ function buildCheckpointRoundingAdjustments_(records, initialBalances, checks, l
         deltas.every(function (delta) { return Math.abs(delta.amount) <= tolerance; }) &&
         Math.abs(total) <= 0.000001;
       if (!isCentLevelResidual) {
+        if (deltas.some(function (delta) { return Math.abs(delta.amount) > 0.01; })) {
+          blockedCurrencies[currency] = true;
+        }
         return;
       }
       deltas.forEach(function (delta) {
@@ -837,7 +954,7 @@ function buildMonthlyBalanceRows_(movements, checks, excludedOpeningGroups) {
     checkByMonth[key] = { declared: Number(control[4]) };
     participantNames[control[2] + '|' + normalizeParticipantName_(control[3])] = String(control[3]);
   });
-  const months = records.map(function (record) { return String(record.date).slice(0, 7); })
+  const months = records.map(getBalanceMonthKey_)
     .concat(controls.map(function (control) {
       return String(control[0]) + '-' + String(control[1]).padStart(2, '0');
     })).sort();
@@ -848,9 +965,10 @@ function buildMonthlyBalanceRows_(movements, checks, excludedOpeningGroups) {
   const lastMonth = months[months.length - 1];
   const balances = {};
   const rows = [];
+  const blockedCurrencies = {};
   let recordIndex = 0;
   for (let monthKey = firstMonth; monthKey <= lastMonth; monthKey = nextMonthKey_(monthKey)) {
-    while (recordIndex < records.length && String(records[recordIndex].date).slice(0, 7) === monthKey) {
+    while (recordIndex < records.length && getBalanceMonthKey_(records[recordIndex]) === monthKey) {
       const record = records[recordIndex];
       buildParticipantBalanceDeltas_(record).forEach(function (delta) {
         const key = record.currency + '|' + delta.key;
@@ -858,6 +976,25 @@ function buildMonthlyBalanceRows_(movements, checks, excludedOpeningGroups) {
       });
       recordIndex += 1;
     }
+    const controlCurrencies = {};
+    Object.keys(checkByMonth).filter(function (key) {
+      return key.indexOf(monthKey + '|') === 0;
+    }).forEach(function (key) {
+      const split = key.split('|');
+      controlCurrencies[split[1]] = true;
+    });
+    Object.keys(controlCurrencies).forEach(function (currency) {
+      const hasMismatch = Object.keys(checkByMonth).filter(function (key) {
+        return key.indexOf(monthKey + '|' + currency + '|') === 0;
+      }).some(function (key) {
+        const participantKey = key.split('|').slice(1).join('|');
+        const closingBalance = roundBalanceAmount_(balances[participantKey] || 0);
+        return Math.abs(roundBalanceAmount_(closingBalance - checkByMonth[key].declared)) > 0.01;
+      });
+      if (hasMismatch) {
+        blockedCurrencies[currency] = true;
+      }
+    });
     Object.keys(participantNames).sort().forEach(function (key) {
       const split = key.split('|');
       const check = checkByMonth[monthKey + '|' + key];
@@ -865,7 +1002,7 @@ function buildMonthlyBalanceRows_(movements, checks, excludedOpeningGroups) {
       const difference = check ? roundBalanceAmount_(closingBalance - check.declared) : '';
       rows.push([Number(monthKey.slice(0, 4)), Number(monthKey.slice(5, 7)), split[0], participantNames[key],
         closingBalance, check ? check.declared : '', difference,
-        check ? (Math.abs(difference) <= 0.01 ? 'matched' : 'mismatch') : '']);
+        check ? (blockedCurrencies[split[0]] ? 'mismatch' : 'matched') : '']);
     });
   }
   return { rows: rows };

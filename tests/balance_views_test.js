@@ -208,6 +208,111 @@ assert.equal(context.getOpeningBalanceMonthKey_({ date: '2025-05-31',
   sourceFileName: 'transactions-hostello-202506.json' }), '2025-06',
   'a month-opening marker dated on the prior month end uses its Tricount month');
 
+const sourceFiles = [
+  { id: 'december', name: 'transactions-hostello-202312.json' },
+  { id: 'combined', name: 'transactions-hostello-202305-202308.json' },
+  { id: 'mistyped-april', name: 'transactions-hostello-202304.json' }
+];
+const sourceLedgerRecords = [{
+  id: 'december-opening', date: '2023-12-01', year: 2023, month: 12, currency: 'EUR',
+  payer: 'Laura', amount: 68.16, transactionType: 'opening_balance',
+  sourceFile: 'https://drive.google.com/open?id=december', sourceRow: 35,
+  allocations: [{ participant: 'Marco', amount: 68.16 }]
+}, {
+  id: 'backdated-december-expense', date: '2023-11-26', year: 2023, month: 11, currency: 'EUR',
+  payer: 'Laura', amount: 3.8, transactionType: 'expense',
+  sourceFile: 'https://drive.google.com/open?id=december', sourceRow: 31,
+  allocations: [{ participant: 'Laura', amount: 1.9 }, { participant: 'Marco', amount: 1.9 }]
+}, {
+  id: 'combined-august-expense', date: '2023-08-20', year: 2023, month: 8, currency: 'EUR',
+  payer: 'Laura', amount: 10, transactionType: 'expense',
+  sourceFile: 'https://drive.google.com/open?id=combined', sourceRow: 1,
+  allocations: [{ participant: 'Marco', amount: 10 }]
+}, {
+  id: 'mistyped-april-expense', date: '2025-05-02', year: 2025, month: 5, currency: 'EUR',
+  payer: 'Laura', amount: 10, transactionType: 'expense',
+  sourceFile: 'https://drive.google.com/open?id=mistyped-april', sourceRow: 1,
+  allocations: [{ participant: 'Marco', amount: 10 }]
+}];
+context.enrichLedgerBalanceSourceMetadata_(sourceLedgerRecords, sourceFiles);
+const sourceChecks = context.mergeLedgerOpeningBalanceChecks_([{
+  record: {
+    date: '2025-04-01', currency: 'EUR', payer: 'Marco', amount: 0.78,
+    sourceFileId: 'mistyped-april', sourceFileName: 'transactions-hostello-202304.json',
+    transactionType: 'opening_balance', allocations: [{ participant: 'Laura', amount: 0.78 }]
+  }
+}], sourceLedgerRecords);
+const sourcePeriods = context.buildLedgerBalanceSourcePeriods_(sourceFiles, sourceChecks);
+context.applyLedgerBalancePeriods_(sourceLedgerRecords, sourcePeriods);
+assert.equal(sourceLedgerRecords[0].sourceFileName, 'transactions-hostello-202312.json');
+assert.equal(context.getBalanceMonthKey_(sourceLedgerRecords[1]), '2023-12',
+  'a backdated transaction belongs to the monthly Tricount balance period');
+assert.equal(context.getBalanceMonthKey_(sourceLedgerRecords[2]), '2023-08',
+  'a combined multi-month source retains the transaction calendar month');
+assert.equal(context.getBalanceMonthKey_(sourceLedgerRecords[3]), '2025-04',
+  'an opening marker corrects a materially mistyped source filename period');
+
+const sourceOrderedLedger = [{
+  id: 'november-movement', date: '2023-11-15', year: 2023, month: 11, currency: 'EUR',
+  payer: 'Laura', amount: 791.48, transactionType: 'expense', sourceFile: 'november.json', sourceRow: 1,
+  allocations: [{ participant: 'Marco', amount: 791.48 }]
+}, {
+  id: 'december-backdated', date: '2023-11-26', year: 2023, month: 11, balanceMonth: '2023-12',
+  currency: 'EUR', payer: 'Laura', amount: 1.9, transactionType: 'expense',
+  sourceFile: 'december.json', sourceRow: 1, allocations: [{ participant: 'Marco', amount: 1.9 }]
+}, {
+  id: 'december-movement', date: '2023-12-15', year: 2023, month: 12, currency: 'EUR',
+  payer: 'Laura', amount: 215.23, transactionType: 'expense', sourceFile: 'december.json', sourceRow: 2,
+  allocations: [{ participant: 'Marco', amount: 215.23 }]
+}];
+const sourceOrderedInitial = [
+  { date: '2023-10-31', currency: 'EUR', participant: 'Laura', amount: -723.24 },
+  { date: '2023-10-31', currency: 'EUR', participant: 'Marco', amount: 723.24 }
+];
+const sourceOrderedChecks = [{ records: [{
+  date: '2023-12-01', currency: 'EUR', payer: 'Laura', amount: 68.16,
+  allocations: [{ participant: 'Marco', amount: 68.16 }]
+}] }, { records: [{
+  date: '2024-01-01', currency: 'EUR', payer: 'Laura', amount: 285.25,
+  allocations: [{ participant: 'Marco', amount: 285.25 }]
+}] }];
+const sourceOrderedAdjustments = context.buildCheckpointRoundingAdjustments_(
+  sourceOrderedLedger, sourceOrderedInitial, sourceOrderedChecks
+);
+const sourceOrderedMonthly = context.buildMonthlyBalanceRows_(
+  context.buildBalanceMovementRows_(sourceOrderedLedger.concat(sourceOrderedAdjustments), sourceOrderedInitial),
+  sourceOrderedChecks
+).rows;
+assert.deepEqual(JSON.parse(JSON.stringify(sourceOrderedMonthly.filter((row) => row[3] === 'Laura' &&
+  row[0] === 2023 && row[1] >= 11).map((row) => [row[1], row[4], row[5], row[7]]))), [
+  [11, 68.16, 68.16, 'matched'], [12, 285.25, 285.25, 'matched']
+]);
+
+const brokenChainLedger = [{
+  id: 'january-error', date: '2026-01-10', year: 2026, month: 1, currency: 'EUR',
+  payer: 'Laura', amount: 10, transactionType: 'expense', sourceFile: 'january.json', sourceRow: 1,
+  allocations: [{ participant: 'Marco', amount: 10 }]
+}, {
+  id: 'february-cancellation', date: '2026-02-10', year: 2026, month: 2, currency: 'EUR',
+  payer: 'Marco', amount: 2, transactionType: 'expense', sourceFile: 'february.json', sourceRow: 1,
+  allocations: [{ participant: 'Laura', amount: 2 }]
+}];
+const brokenChainChecks = [{ records: [{
+  date: '2026-02-01', currency: 'EUR', payer: 'Laura', amount: 8,
+  allocations: [{ participant: 'Marco', amount: 8 }]
+}] }, { records: [{
+  date: '2026-03-01', currency: 'EUR', payer: 'Laura', amount: 8.05,
+  allocations: [{ participant: 'Marco', amount: 8.05 }]
+}] }];
+assert.equal(context.buildCheckpointRoundingAdjustments_(brokenChainLedger, [], brokenChainChecks).length, 0,
+  'a later checkpoint cannot hide or round away an earlier material mismatch');
+const brokenChainRows = context.buildMonthlyBalanceRows_(
+  context.buildBalanceMovementRows_(brokenChainLedger, []), brokenChainChecks
+).rows.filter((row) => row[3] === 'Laura' && row[7]);
+assert.deepEqual(JSON.parse(JSON.stringify(brokenChainRows.map((row) => [row[1], row[6], row[7]]))), [
+  [1, 2, 'mismatch'], [2, -0.05, 'mismatch']
+]);
+
 const controlOnlyRounding = context.buildCheckpointRoundingAdjustments_([{
   id: 'opening', date: '2026-01-10', year: 2026, month: 1, currency: 'EUR',
   transactionType: 'expense', description: 'Opening', sourceFile: 'test', sourceRow: 1,

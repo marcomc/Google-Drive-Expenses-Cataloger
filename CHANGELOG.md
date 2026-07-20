@@ -65,6 +65,10 @@ and the project uses [Semantic Versioning](https://semver.org/).
   and exclude transfers and opening-balance controls from spending aggregates.
 - Recover historic non-monthly Tricount `BALANCE` settlements that an older
   import misclassified as opening-balance controls before rebuilding balances.
+- Reconcile balances in monthly Tricount source order while retaining original
+  transaction dates for spending reports, so backdated or forward-dated rows
+  cannot cross a carry-over checkpoint; recover legacy `NORMAL` opening markers
+  as checkpoints and prevent later checks from hiding an earlier mismatch.
 - Classify historic income refunds before rebuilding dashboard formulas, so
   existing negative rows immediately reduce their appropriate reporting
   categories without a destructive JSON re-import.
