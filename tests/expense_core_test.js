@@ -117,6 +117,10 @@ assert.deepEqual(JSON.parse(JSON.stringify(jsonRecords[0])), {
   sourceFingerprint: 'tricount:brasserie-uuid'
 });
 assert.equal(jsonRecords[1].transactionType, 'opening_balance');
+assert.equal(context.mapTricountTransactionType_('BALANCE', 'Bilancio fine mese', 'Bilancio ⚖️'),
+  'closing_balance');
+assert.equal(context.mapTricountTransactionType_('BALANCE', 'Bilancio generico', 'Bilancio ⚖️'),
+  'transfer');
 assert.equal(context.mapTricountTransactionType_('NORMAL', 'Marco - contanti', 'Contanti 💶'),
   'transfer');
 assert.equal(context.mapTricountTransactionType_('NORMAL', 'Spesa al supermercato', 'Spesa'), 'expense');
@@ -290,12 +294,14 @@ const reconciliationRecords = [
     currency: 'EUR', transactionType: 'expense' },
   { sourceFileId: 'march', sourceFileName: 'march.json', sourceRow: 3, amount: 20,
     currency: 'EUR', transactionType: 'opening_balance' },
+  { sourceFileId: 'march', sourceFileName: 'march.json', sourceRow: 4, amount: 20,
+    currency: 'EUR', transactionType: 'closing_balance' },
   { sourceFileId: 'april', sourceFileName: 'april.json', sourceRow: 2, amount: 25,
     currency: 'EUR', transactionType: 'expense' }
 ];
 const reconciliation = context.buildSourceReconciliations_(reconciliationRecords, {
   unique: [reconciliationRecords[0], reconciliationRecords[1]],
-  duplicates: [{ row: reconciliationRecords[2], reason: 'existing_fingerprint' }]
+  duplicates: [{ row: reconciliationRecords[3], reason: 'existing_fingerprint' }]
 }, [reconciliationRecords[0]], [
   { id: 'march', name: 'march.json', contentHash: 'march-hash' },
   { id: 'april', name: 'april.json', contentHash: 'april-hash' }
@@ -310,10 +316,11 @@ assert.deepEqual(JSON.parse(JSON.stringify(reconciliation[0])), {
 });
 assert.deepEqual(JSON.parse(JSON.stringify(reconciliation[1])), {
   sourceFileId: 'march', sourceFileName: 'march.json', sourceContentHash: 'march-hash',
-  sourceRows: 2, importedRows: 1, duplicateRows: 0, openingBalanceRows: 1, unaccountedRows: 0,
-  sourceTotals: { EUR: 56 }, accountedTotals: { EUR: 56 }, status: 'OK', decisions: [
+  sourceRows: 3, importedRows: 1, duplicateRows: 0, openingBalanceRows: 1, unaccountedRows: 0,
+  sourceTotals: { EUR: 76 }, accountedTotals: { EUR: 76 }, status: 'OK', decisions: [
     { sourceRow: 2, status: 'imported', amount: 36, currency: 'EUR', reason: '' },
-    { sourceRow: 3, status: 'opening_balance', amount: 20, currency: 'EUR', reason: '' }
+    { sourceRow: 3, status: 'opening_balance', amount: 20, currency: 'EUR', reason: '' },
+    { sourceRow: 4, status: 'closing_balance', amount: 20, currency: 'EUR', reason: '' }
   ]
 });
 const unreconciled = context.buildSourceReconciliations_([reconciliationRecords[0]], {

@@ -274,8 +274,11 @@ function normalizeTricountExchangeRate_(value) {
 function mapTricountTransactionType_(sourceNativeType, description, customCategory) {
   const nativeType = String(sourceNativeType || '').toUpperCase();
   const marker = String(description || '') + ' ' + String(customCategory || '');
-  if (nativeType === 'BALANCE' && /\bbilancio\b/i.test(marker)) {
+  if (nativeType === 'BALANCE' && /\bbilancio\s+inizio\s+mese\b/i.test(marker)) {
     return 'opening_balance';
+  }
+  if (nativeType === 'BALANCE' && /\bbilancio\s+fine\s+mese\b/i.test(marker)) {
+    return 'closing_balance';
   }
   if (nativeType === 'INCOME') {
     return 'income';
@@ -468,6 +471,8 @@ function buildSourceReconciliations_(sourceRecords, partition, imported, sourceF
       let reason = '';
       if (isOpeningBalanceRecord_(record)) {
         status = 'opening_balance';
+      } else if (isClosingBalanceRecord_(record)) {
+        status = 'closing_balance';
       } else if (duplicates[key]) {
         status = 'duplicate';
         reason = duplicates[key];
@@ -483,6 +488,9 @@ function buildSourceReconciliations_(sourceRecords, partition, imported, sourceF
         counts.duplicate += 1;
       } else if (status === 'opening_balance') {
         counts.openingBalance += 1;
+      } else if (status === 'closing_balance') {
+        // Closing-balance markers are intentionally ignored by the ledger, but
+        // they are still fully accounted for in the source reconciliation.
       } else {
         counts.unaccounted += 1;
       }
@@ -540,6 +548,14 @@ function isOpeningBalanceRecord_(record) {
   return String(record && record.transactionType || '') === 'opening_balance';
 }
 
+function isClosingBalanceRecord_(record) {
+  return String(record && record.transactionType || '') === 'closing_balance';
+}
+
+function isBalanceControlRecord_(record) {
+  return isOpeningBalanceRecord_(record) || isClosingBalanceRecord_(record);
+}
+
 function splitBeneficiaryNames_(value) {
   return String(value || '').split(/[;,]/).map(function (name) {
     return name.trim();
@@ -571,7 +587,7 @@ function buildBalanceVector_(records, options) {
   const cutoffDate = String(options.cutoffDate || '');
   const currency = String(options.currency || '').toUpperCase();
   (records || []).forEach(function (record) {
-    if (isOpeningBalanceRecord_(record) || String(record.date || '') >= cutoffDate ||
+    if (isBalanceControlRecord_(record) || String(record.date || '') >= cutoffDate ||
       String(record.currency || '').toUpperCase() !== currency) {
       return;
     }

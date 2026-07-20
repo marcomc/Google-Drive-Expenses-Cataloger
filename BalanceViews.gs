@@ -361,7 +361,7 @@ function readLedgerBalanceViewRecords_(sheet, headers, localization) {
     };
   }).filter(function (record) {
     return record.date && record.currency && isFinite(record.amount) &&
-      !isOpeningBalanceRecord_(record);
+      !isBalanceControlRecord_(record);
   });
 }
 
@@ -396,7 +396,10 @@ function sortBalanceRecords_(records) {
 function buildBalanceMovementRows_(records, initialBalances, localization) {
   const balances = {};
   const participantNames = {};
-  const sorted = sortBalanceRecords_((records || []).concat(buildInitialBalanceRecords_(initialBalances,
+  const movementRecords = (records || []).filter(function (record) {
+    return !isBalanceControlRecord_(record);
+  });
+  const sorted = sortBalanceRecords_(movementRecords.concat(buildInitialBalanceRecords_(initialBalances,
     localization)));
   const rows = [];
   sorted.forEach(function (record) {
@@ -437,7 +440,10 @@ function buildCheckpointRoundingAdjustments_(records, initialBalances, checks, l
   const descriptions = localization && localization.balanceDescriptions ? localization.balanceDescriptions : {
     roundingAdjustment: 'Tricount checkpoint rounding alignment', checkpointSource: 'Tricount checkpoint'
   };
-  const sorted = sortBalanceRecords_((records || []).concat(buildInitialBalanceRecords_(initialBalances,
+  const movementRecords = (records || []).filter(function (record) {
+    return !isBalanceControlRecord_(record);
+  });
+  const sorted = sortBalanceRecords_(movementRecords.concat(buildInitialBalanceRecords_(initialBalances,
     localization)));
   const monthKeys = sorted.map(function (record) { return String(record.date).slice(0, 7); })
     .concat(Object.keys(controlsByMonth).map(function (key) { return key.slice(0, 7); }))

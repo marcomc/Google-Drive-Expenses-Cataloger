@@ -40,12 +40,15 @@ immutable duplicate fingerprint. Transfers are excluded from spending totals.
 Tricount `INCOME` records retain their negative canonical sign and are
 categorized as refunds: they reduce the corresponding category, month, and
 year spending totals while also affecting participant balances.
-Tricount `Bilancio` entries are opening-balance controls rather than ledger
-rows. `Source reconciliations` proves that every JSON entry and amount has an
-explicit durable outcome (imported, duplicate, or opening-balance marker).
+Tricount `Bilancio inizio mese` entries are opening-balance controls rather
+than ledger rows. `Bilancio fine mese` entries are recognized closing markers
+and are ignored by spending and balance calculations. `Source reconciliations`
+proves that every JSON entry and amount has an explicit durable outcome
+(imported, duplicate, opening-balance marker, or closing-balance marker).
 The editable initial-balance table in `Configurazione` supplies the earliest
-usable multi-participant baseline once per currency; later `Bilancio` entries
-remain reconciliation checks. See the [spreadsheet lifecycle and schema](docs/SPREADSHEET.md).
+usable multi-participant baseline once per currency; later `Bilancio inizio
+mese` entries remain reconciliation checks. See the [spreadsheet lifecycle and
+schema](docs/SPREADSHEET.md).
 
 ## Setup
 
@@ -64,7 +67,8 @@ Before the first live import, move candidate source files and folders to
 `_Test-fixtures`. Return one or a few untouched source units to the root for
 each controlled test.
 Tests cover a new import, an exact re-import, a partially overlapping JSON
-source, exact custom allocations, and opening-balance classification.
+source, exact custom allocations, and opening- and closing-balance
+classification.
 No source folder is deleted.
 
 ## Documentation

@@ -31,8 +31,10 @@ These rules govern imports from this Drive root. Do not include credentials.
 - Derive calendar year and month from the transaction date, never the file or
   folder name.
 - Keep `transfer` records in the ledger but exclude them from spending totals
-  and spending charts. Treat Tricount `Bilancio` records as opening-balance
-  controls rather than ledger rows. Exact participant allocations in the JSON
+  and spending charts. Treat Tricount `Bilancio inizio mese` records as
+  opening-balance controls rather than ledger rows. Ignore `Bilancio fine mese`
+  records in spending and balance calculations; their following opening marker
+  is the checkpoint source of truth. Exact participant allocations in the JSON
   are the balance-control source of truth.
 - Treat Tricount `INCOME` rows as categorized refunds: retain their negative
   sign and include them in spending totals so they reduce the relevant category.

@@ -25,6 +25,9 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Distinguish `Bilancio inizio mese` checkpoints from `Bilancio fine mese`
+  markers; ignore month-end markers in ledger and monthly-balance calculations
+  while keeping them accounted for in source reconciliation.
 - Make `Transazioni` the sole canonical ledger and derive all summaries,
   balances, dashboard tables, and charts dynamically from it.
 - Refresh the dashboard visual design, chart legends, localized Italian labels,

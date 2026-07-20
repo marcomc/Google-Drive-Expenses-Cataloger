@@ -166,7 +166,7 @@ const carriedMovements = context.buildBalanceMovementRows_([{
   id: 'opening', date: '2026-01-10', year: 2026, month: 1, currency: 'EUR',
   transactionType: 'opening_balance', description: 'Opening', sourceFile: 'test', sourceRow: 1,
   initialBalanceDelta: { key: 'laura', name: 'Laura', amount: 10 }
-}], []);
+}], [{ date: '2026-01-01', currency: 'EUR', participant: 'Laura', amount: 10 }]);
 const marchCheckpoint = [{ records: [{
   date: '2026-04-01', currency: 'EUR', payer: 'Laura', amount: 10,
   allocations: []
@@ -176,6 +176,32 @@ assert.deepEqual(JSON.parse(JSON.stringify(carriedRows.map((row) => [row[0], row
   [2026, 1, 'Laura', 10, ''],
   [2026, 2, 'Laura', 10, ''],
   [2026, 3, 'Laura', 10, 10]
+]);
+
+const closingSettlement = {
+  id: 'closing-settlement', date: '2026-01-31', year: 2026, month: 1, currency: 'EUR',
+  payer: 'Laura', beneficiaries: 'Marco', amount: 50, transactionType: 'closing_balance',
+  description: 'Bilancio fine mese', sourceFile: 'january.json', sourceRow: 2,
+  allocations: [{ participant: 'Marco', amount: 50 }]
+};
+const preClosingExpense = {
+  id: 'pre-closing-expense', date: '2026-01-10', year: 2026, month: 1, currency: 'EUR',
+  payer: 'Marco', beneficiaries: 'Laura', amount: 50, transactionType: 'expense',
+  description: 'Shared expense', sourceFile: 'january.json', sourceRow: 1,
+  allocations: [{ participant: 'Laura', amount: 50 }]
+};
+const openingAfterClosing = [{ records: [{
+  date: '2026-02-01', currency: 'EUR', payer: 'Marco', amount: 50,
+  allocations: [{ participant: 'Laura', amount: 50 }]
+}] }];
+const resetMovements = context.buildBalanceMovementRows_([preClosingExpense, closingSettlement], []);
+const resetRows = context.buildMonthlyBalanceRows_(resetMovements, openingAfterClosing).rows;
+assert.equal(resetRows.filter((row) => row[0] === 2026 && row[1] === 1)
+  .every((row) => row[7] === 'matched'), true,
+  'a closing balance must not change the month-end checkpoint calculation');
+assert.deepEqual(JSON.parse(JSON.stringify(resetRows.filter((row) => row[0] === 2026 && row[1] === 1)
+  .map((row) => [row[3], row[4], row[5], row[6], row[7]]))), [
+  ['Laura', -50, -50, 0, 'matched'], ['Marco', 50, 50, 0, 'matched']
 ]);
 
 const controlOnlyRounding = context.buildCheckpointRoundingAdjustments_([{

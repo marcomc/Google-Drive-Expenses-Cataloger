@@ -327,7 +327,7 @@ function commitJsonRebuild_(root, state) {
       throw new Error('The JSON rebuild contains duplicate source transaction fingerprints.');
     }
     const importable = partition.unique.filter(function (record) {
-      return !isOpeningBalanceRecord_(record);
+      return !isBalanceControlRecord_(record);
     });
     const openingBalances = evaluateOpeningBalanceGroups_(records.filter(isOpeningBalanceRecord_), importable,
       0.01, []);
@@ -551,7 +551,7 @@ function processExpenseSource_(source, root, policy, triggerSource) {
     .concat(getExistingLedgerOpeningBalanceRecords_(layout.transactions, layout.headers));
   const partition = partitionIncomingRows_(records, existing);
   const importable = partition.unique.filter(function (record) {
-    return !isOpeningBalanceRecord_(record);
+    return !isBalanceControlRecord_(record);
   });
   const balanceRecords = historicalRecords.concat(importable);
   const openingBalances = evaluateOpeningBalanceGroups_(records.filter(isOpeningBalanceRecord_), balanceRecords,

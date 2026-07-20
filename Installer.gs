@@ -307,6 +307,13 @@ function getInstallerLegacyManagedPolicyBlocks_() {
         'successful archival.'
     },
     {
+      heading: '## Import',
+      text: '- Keep `transfer` records in the ledger but exclude them from spending totals\n' +
+        'and spending charts. Treat Tricount `Bilancio` records as opening-balance\n' +
+        'controls rather than ledger rows. Exact participant allocations in the JSON\n' +
+        'are the balance-control source of truth.'
+    },
+    {
       heading: '## Review and archive',
       text: '- Archive a successfully processed source folder only after ledger and audit\n' +
         'verification. Never delete the source folder or its attachments.'

@@ -93,12 +93,15 @@ tab; the other tabs are audit, configuration, or derived reporting surfaces.
 
 ## Initial-balance model
 
-`Bilancio` is not a spending transaction and is never inserted into
-`Transazioni`. For each currency, all `Bilancio` records on the earliest usable
-date form one multi-participant opening-balance vector. It is applied once to
-the cumulative calculation; subsequent `Bilancio` records are checkpoints in
-`Saldi mensili`. If a subsequent checkpoint differs only by a zero-sum
-cent-level rounding residual (at most 0.25 EUR per participant), the derived
+Neither balance marker is a spending transaction or is inserted into
+`Transazioni`. `Bilancio inizio mese` is the only balance marker used as a
+checkpoint. For each currency, all opening records on the earliest usable date
+form one multi-participant opening-balance vector. It is applied once to the
+cumulative calculation; subsequent opening records are checkpoints in
+`Saldi mensili`. `Bilancio fine mese` is recognized and ignored entirely by
+the spending and balance calculations because its following opening marker is
+the authoritative checkpoint. If a subsequent checkpoint differs only by a
+zero-sum cent-level rounding residual (at most 0.25 EUR per participant), the derived
 `Movimenti saldi` view adds a visible checkpoint-rounding alignment row. It
 never changes `Transazioni`; larger or non-zero-sum discrepancies remain
 `mismatch` values for investigation.
@@ -122,8 +125,8 @@ not.
 flowchart LR
   accTitle: Initial balance selection
   accDescr: Shows how the balance configuration chooses one complete multi-participant baseline without treating later checkpoints as transactions.
-  audit["Import audit: Bilancio details"] --> candidate{"On or before first ledger movement for the currency?"}
-  candidate -->|Yes| vector["Aggregate all same-date Bilancio records"]
+  audit["Import audit: Bilancio inizio mese details"] --> candidate{"On or before first ledger movement for the currency?"}
+  candidate -->|Yes| vector["Aggregate all same-date opening records"]
   vector --> automatic["Automatic initial-balance vector"]
   candidate -->|No| checkpoint["Monthly checkpoint only"]
   manual["Configurazione: Manuale"] --> chosen["Effective initial balance"]
