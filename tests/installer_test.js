@@ -39,6 +39,8 @@ assert.match(dashboardFormulas[2].formula,
 assert.match(installerSource, /const DASHBOARD_CHART_LAYOUT_DEFAULTS = \{/);
 assert.match(installerSource, /function captureDashboardChartLayouts_\(dashboard, labels\)/);
 assert.match(installerSource, /showTextEvery: 1/);
+assert.match(installerSource, /const sourceRows = \[2, 30, 61, 90, 120\]/);
+assert.match(installerSource, /late-arriving payer or category/);
 const italianDashboardFormulas = context.getDashboardDataSpecifications_('Transazioni', 'Dashboard', {
   headers: { month: 'Mese' },
   dashboard: {

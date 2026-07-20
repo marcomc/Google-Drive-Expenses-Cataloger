@@ -587,9 +587,9 @@ function buildDashboard_(dashboard, transactions, localization) {
   writeDashboardKpiCard_(dashboard, 'M4:O4', 'M5:O7', labels.latestMonthSpend,
     getDashboardLatestMonthSpendFormula_(transactionsName), true);
   writeDashboardYearControls_(dashboard, years, selectionState, labels);
-  // Charts capture their source range at creation time.  Wait until the two
-  // category pivots have actually calculated, otherwise Sheets creates a
-  // permanently empty chart even though the formulas populate moments later.
+  // Charts capture their source range at creation time. Wait until every
+  // dynamic pivot has settled, otherwise a late-arriving payer or category is
+  // permanently omitted from the newly-created chart.
   waitForDashboardChartSources_(technicalData);
   insertDashboardChart_(dashboard, getDashboardChartSourceRange_(technicalData, 1, 25),
     getDashboardChartLayout_(chartLayouts, 'annualSpend'), labels.annualSpend, 'column', false);
@@ -742,16 +742,24 @@ function getDashboardDataSpecifications_(transactionsName, dashboardName, locali
 }
 
 function waitForDashboardChartSources_(technicalData) {
-  const categorySourceRows = [2, 61];
+  const sourceRows = [2, 30, 61, 90, 120];
+  let previousWidths = null;
   for (let attempt = 0; attempt < 12; attempt += 1) {
     SpreadsheetApp.flush();
-    const ready = categorySourceRows.every(function (row) {
-      const values = technicalData.getRange(row, 1, 1, 11).getDisplayValues()[0];
-      return values.filter(function (value) { return value !== ''; }).length > 1;
+    const widths = sourceRows.map(function (row) {
+      const values = technicalData.getRange(row, 1, 1, 26).getDisplayValues()[0];
+      return values.reduce(function (width, value, index) {
+        return value !== '' ? index + 1 : width;
+      }, 0);
     });
-    if (ready) {
+    const ready = widths.every(function (width) { return width >= 2; });
+    const stable = previousWidths && widths.every(function (width, index) {
+      return width === previousWidths[index];
+    });
+    if (ready && stable) {
       return;
     }
+    previousWidths = widths;
     Utilities.sleep(500);
   }
 }

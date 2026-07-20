@@ -53,6 +53,9 @@
 - `Transazioni` is the only canonical transaction ledger. Do not create
   source-specific or yearly data tabs.
 - Derive time dimensions from the transaction date.
+- For dynamic dashboard charts, set the source header count explicitly and use
+  `ARRAYFORMULA` for derived month-label arrays. Verify helper output and chart
+  specifications after dashboard changes.
 - Keep transfers visible in the ledger but exclude them from spending aggregates.
   Treat Tricount `Bilancio` entries as opening-balance controls, not spending.
 - Use one category and one subcategory for an expense, and keep merchant or
