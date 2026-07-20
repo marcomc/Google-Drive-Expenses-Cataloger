@@ -49,11 +49,12 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - Persist normal-intake and historical-rebuild JSON stages with the supported
   `application/json` MIME string, restoring resumable imports in Apps Script.
 - Reject incomplete Gemini candidates instead of accepting truncated JSON, and
-  expose the runtime application version through setup status.
+  expose the runtime version and effective fallback backend through setup status.
 - Activate automatic Vertex fallback only for verified daily-quota or depleted
-  prepayment-credit responses; retry generic transient rate limits in place.
-- Keep OAuth credentials out of deployment command arguments and validate the
-  provider execution envelope before accepting post-promotion trigger repair.
+  prepayment-credit responses; retry transient rate limits and network failures.
+- Keep OAuth credentials out of deployment command arguments, require an exact
+  owner-only stable executable, close the pre-promotion stale-revision race, and
+  validate the provider envelope before accepting trigger repair.
 - Rebuild balance movements from opening balances and participant allocations,
   preventing systematic monthly carry-forward mismatches; tolerate only
   cent-level checkpoint residuals through explicit balancing adjustments.

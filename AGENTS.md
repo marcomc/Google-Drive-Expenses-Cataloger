@@ -30,6 +30,10 @@
   before deleting stale triggers, require exactly one polling handler, one daily
   handler, and one dashboard year-color edit trigger, and finish that repair
   after promotion even if a newer source revision becomes available.
+- Before and after promotion, require the configured stable deployment to have
+  the expected script, deployment, manifest, and version identities plus
+  exactly one owner-only Execution API entry point. Reject mixed or public
+  entry-point configurations.
 - Run post-promotion trigger repair under the same workload-aware lock as
   normal processing, within its configured execution budget. Invoke the
   configured stable deployment explicitly and validate the provider's actual

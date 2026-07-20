@@ -32,7 +32,6 @@ assert.deepEqual(JSON.parse(JSON.stringify(context.applyIncomeRefundClassificati
   { category: 'Groceries', subcategory: 'General groceries', merchant: 'Conad', confidence: 0.9,
     rationale: 'Refund from supplier' }
 ))), ['unchanged', 'Groceries', 'General groceries', 'Conad', 0.9, 'Refund from supplier']);
-
 function generationResponse(finishReason, text) {
   return {
     candidates: [{
@@ -92,6 +91,15 @@ assert.equal(
 );
 
 properties.delete('GEMINI_VERTEX_FALLBACK_UNTIL');
+properties.set('GEMINI_AUTO_VERTEX_FALLBACK', 'false');
+assert.throws(
+  () => context.parseGeminiHttpResponse_(dailyQuota, 'Gemini Developer API'),
+  /HTTP 429/
+);
+assert.equal(properties.has('GEMINI_VERTEX_FALLBACK_UNTIL'), false);
+properties.set('GEMINI_AUTO_VERTEX_FALLBACK', 'true');
+
+properties.delete('GEMINI_VERTEX_FALLBACK_UNTIL');
 const genericRateLimit = httpResponse(429, {
   error: { message: 'Too many requests. Retry shortly.' }
 });
@@ -140,4 +148,28 @@ assert.throws(
 assert.equal(fetchCount, 3);
 assert.deepEqual(sleepDelays, [500, 1500]);
 
+fetchCount = 0;
+sleepDelays.length = 0;
+const networkRetryResult = context.callGeminiWithTransientRetry_(() => {
+  fetchCount += 1;
+  if (fetchCount === 1) {
+    throw new Error('temporary transport failure');
+  }
+  return httpResponse(200, { ok: true });
+}, 'Gemini Developer API');
+assert.deepEqual(JSON.parse(JSON.stringify(networkRetryResult)), { ok: true });
+assert.equal(fetchCount, 2);
+assert.deepEqual(sleepDelays, [500]);
+
+fetchCount = 0;
+sleepDelays.length = 0;
+assert.throws(
+  () => context.callGeminiWithTransientRetry_(() => {
+    fetchCount += 1;
+    throw new Error('persistent transport failure');
+  }, 'Vertex AI'),
+  /Vertex AI network request failed after retry: persistent transport failure/
+);
+assert.equal(fetchCount, 3);
+assert.deepEqual(sleepDelays, [500, 1500]);
 console.log('Gemini response tests passed.');
