@@ -24,7 +24,7 @@ vm.runInContext(fs.readFileSync('Installer.gs', 'utf8'), context);
 
 const dashboardFormulas = context.getDashboardDataSpecifications_('Transazioni');
 assert.equal(dashboardFormulas.map((specification) => specification.anchor).join(','),
-  'A1,A30,A60,A90,A120');
+  'A1,A30,A60,A90,A120,AA1');
 assert.match(dashboardFormulas[0].formula, /FILTER\("C = "&'Dashboard'!\$V\$11:\$V,'Dashboard'!\$W\$11:\$W=TRUE\)/);
 assert.match(dashboardFormulas[1].formula, /monthIndexes,SEQUENCE\(12\)/);
 assert.match(dashboardFormulas[1].formula, /MAKEARRAY\(12,ROWS\(years\)/);
@@ -38,8 +38,11 @@ assert.match(dashboardFormulas[4].formula, /order by sum\(G\) desc limit 20/);
 assert.match(dashboardFormulas[4].formula,
   /VSTACK\(\{"Merchant \/ supplier","Amount"\},HSTACK\(INDEX\(summary,,1\),INDEX\(summary,,2\)\)\)/,
   'Top 20 chart data must use one merchant category per row');
-assert.match(dashboardFormulas[0].formula,
-  /MAP\(years,totals,LAMBDA\(year,total,year&IF\(ROWS\(years\)=1," · ",CHAR\(10\)\)&total\)\)/);
+assert.match(dashboardFormulas[0].formula, /HSTACK\(years,values\)/,
+  'annual chart data must keep raw years for tooltip domain values');
+assert.match(dashboardFormulas.find((specification) => specification.anchor === 'AA1').formula,
+  /BYROW\(values,LAMBDA\(row,SUM\(row\)\)\)/,
+  'annual chart helper data must calculate totals separately from the domain');
 const installerSource = fs.readFileSync('Installer.gs', 'utf8');
 assert.doesNotMatch(installerSource, /function getDashboardAxisTicks_/);
 assert.equal(context.getInstallerImportAuditHeaders_().indexOf('Source reconciliation status') + 1, 15);
@@ -59,6 +62,7 @@ assert.deepEqual(context.removeManagedTextFormatRules_({
 assert.match(dashboardFormulas[2].formula,
   /MAP\(labels,totals,LAMBDA\(label,total,label&" · "&total\)\)/);
 assert.match(installerSource, /const DASHBOARD_CHART_LAYOUT_DEFAULTS = \{/);
+assert.equal(context.formatAnnualChartTotal_(23322.28), '23,322.28');
 assert.match(installerSource, /'Q4:T4', 'Q5:T7', labels\.latestMonth/,
   'latest-imported-month KPI must use the same four-column card geometry');
 assert.match(installerSource, /'U4:X4', 'U5:X7', labels\.latestMonthSpend/,
@@ -422,7 +426,7 @@ assert.ok(italianOptions.automationConfig.excluded_root_folder_names.includes('I
 const dashboardData = context.getDashboardDataSpecifications_('Transazioni', 'Dashboard');
 assert.deepEqual(
   JSON.parse(JSON.stringify(dashboardData.map((specification) => specification.anchor))),
-  ['A1', 'A30', 'A60', 'A90', 'A120']
+  ['A1', 'A30', 'A60', 'A90', 'A120', 'AA1']
 );
 assert.ok(dashboardData.filter((specification) => specification.anchor !== 'A30')
   .every((specification) => specification.formula.includes("'Transazioni'!A:AD")));

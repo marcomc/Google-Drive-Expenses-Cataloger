@@ -625,8 +625,11 @@ function buildDashboard_(dashboard, transactions, localization) {
   // dynamic pivot has settled, otherwise a late-arriving payer or category is
   // permanently omitted from the newly-created chart.
   waitForDashboardChartSources_(technicalData);
+  const annualTicks = getDashboardAnnualChartTicks_(technicalData);
   insertDashboardChart_(dashboard, getDashboardChartSourceRange_(technicalData, 1, 25),
-    getDashboardChartLayout_(chartLayouts, 'annualSpend'), labels.annualSpend, 'column', false);
+    getDashboardChartLayout_(chartLayouts, 'annualSpend'), labels.annualSpend, 'column', false, {
+      focusTarget: 'datum', hAxis: { ticks: annualTicks, slantedText: false }
+    });
   insertDashboardChart_(dashboard, getDashboardChartSourceRange_(technicalData, 30, 55),
     getDashboardChartLayout_(chartLayouts, 'monthlyComparison'), labels.monthlyComparison, 'line', false, {
       hAxis: { showTextEvery: 1 }, colors: yearColors
@@ -652,13 +655,18 @@ function buildDashboard_(dashboard, transactions, localization) {
 }
 
 function writeDashboardTechnicalData_(technicalData, transactionsName, dashboardName, localization) {
+  if (technicalData.getMaxColumns() < 28) {
+    technicalData.insertColumnsAfter(technicalData.getMaxColumns(), 28 - technicalData.getMaxColumns());
+  }
   technicalData.getRange('A1:Z145').clearContent();
+  technicalData.getRange('AA1:AB25').clearContent();
   technicalData.getRange('A200:B220').clearContent();
   getDashboardDataSpecifications_(transactionsName, dashboardName, localization)
     .forEach(function (specification) {
     technicalData.getRange(specification.anchor).setFormula(specification.formula);
     technicalData.getRange(specification.anchor).setFontWeight('bold');
   });
+  technicalData.hideColumns(27, 2);
   technicalData.setFrozenRows(1);
 }
 
@@ -937,9 +945,9 @@ function getDashboardDataSpecifications_(transactionsName, dashboardName, locali
     "&\") group by C pivot K label sum(G) ''\",1)";
   const annualCategoryValues = 'CHOOSECOLS(data,SEQUENCE(1,COLUMNS(data)-1,2))';
   const annualChartRows = 'LET(years,INDEX(data,,1),values,' + annualCategoryValues +
-    ',totals,BYROW(values,LAMBDA(row,TEXT(SUM(row),"#,##0.00")&" EUR")),' +
-    'HSTACK(MAP(years,totals,LAMBDA(year,total,year&IF(ROWS(years)=1," · ",CHAR(10))&total)),' +
-    'values))';
+    ',HSTACK(years,values))';
+  const annualChartTotals = 'LET(years,INDEX(data,,1),values,' + annualCategoryValues +
+    ',VSTACK({"Year","Total"},HSTACK(years,BYROW(values,LAMBDA(row,SUM(row))))))';
   const transactionYear = "'" + transactionsName + "'!C:C";
   const transactionMonth = "'" + transactionsName + "'!D:D";
   const transactionAmount = "'" + transactionsName + "'!G:G";
@@ -972,7 +980,10 @@ function getDashboardDataSpecifications_(transactionsName, dashboardName, locali
       ",\"select M,sum(G) where (J = 'expense' or J = 'income') and H = 'EUR' and C = \"&" + dashboard +
         '$X$48&" and M is not null and M <> \'Unknown\' and M <> \'N/A\' group by M order by sum(G) desc limit 20 label sum(G) \'\'",0),VSTACK({"' +
         String(merchantHeader).replace(/"/g, '""') + '","' + String(amountHeader).replace(/"/g, '""') +
-        '"},HSTACK(INDEX(summary,,1),INDEX(summary,,2)))),"")' }
+        '"},HSTACK(INDEX(summary,,1),INDEX(summary,,2)))),"")' },
+    { anchor: 'AA1', formula: '=IFERROR(' +
+      'LET(summary,' + annualSummary + ',data,FILTER(summary,SEQUENCE(ROWS(summary))>1),' +
+      annualChartTotals + '),"")' }
   ];
 }
 
@@ -997,6 +1008,21 @@ function waitForDashboardChartSources_(technicalData) {
     previousWidths = widths;
     Utilities.sleep(500);
   }
+}
+
+function getDashboardAnnualChartTicks_(technicalData) {
+  return technicalData.getRange('AA2:AB25').getValues().map(function (row) {
+    const year = Number(row[0]);
+    const total = Number(row[1]);
+    if (!isFinite(year) || !isFinite(total)) {
+      return null;
+    }
+    return { v: year, f: String(year) + '\n' + formatAnnualChartTotal_(total) + ' EUR' };
+  }).filter(Boolean);
+}
+
+function formatAnnualChartTotal_(value) {
+  return Number(value).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
 function getDashboardChartSourceRange_(sheet, startRow, endRow) {

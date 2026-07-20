@@ -571,6 +571,49 @@ function normalizeParticipantName_(value) {
   return String(value || '').trim().toLocaleLowerCase().replace(/\s+/g, ' ');
 }
 
+/** Return a stable display name for merchants and suppliers. */
+function normalizeMerchantName_(value) {
+  const source = String(value || '').trim().replace(/\s+/g, ' ')
+    .replace(/\s*-\s*/g, '-');
+  if (!source) {
+    return '';
+  }
+  return source.split('-').map(function (hyphenPart) {
+    return hyphenPart.split(' ').map(function (word) {
+      const lower = word.toLocaleLowerCase();
+      return lower ? lower.charAt(0).toLocaleUpperCase() + lower.slice(1) : '';
+    }).join(' ');
+  }).join('-');
+}
+
+/** Normalize one-column ledger values and report case variants that collapse. */
+function normalizeMerchantValues_(values) {
+  const variants = {};
+  let changedRows = 0;
+  const normalizedValues = (values || []).map(function (row) {
+    const original = String(row && row[0] || '');
+    const normalized = normalizeMerchantName_(original);
+    if (original !== normalized) {
+      changedRows += 1;
+    }
+    if (original && normalized) {
+      variants[normalized] = variants[normalized] || [];
+      if (variants[normalized].indexOf(original) < 0) {
+        variants[normalized].push(original);
+      }
+    }
+    return [normalized];
+  });
+  return {
+    values: normalizedValues,
+    changedRows: changedRows,
+    variantGroups: Object.keys(variants).map(function (normalized) {
+      return { normalized: normalized, variants: variants[normalized].sort() };
+    }).filter(function (group) { return group.variants.length > 1; })
+      .sort(function (left, right) { return left.normalized.localeCompare(right.normalized); })
+  };
+}
+
 function addParticipantBalance_(balances, names, name, amount) {
   const normalized = normalizeParticipantName_(name);
   if (!normalized) {

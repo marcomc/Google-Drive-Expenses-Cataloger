@@ -386,6 +386,8 @@ const normalizedRecord = {
   date: '2026-11-01', confidence: 1, conflict: false, transactionType: 'expense'
 };
 context.getAutomationConfig_ = () => config;
+context.getLocalization_ = () => ({ sheetNames: { dashboard: 'Dashboard' } });
+context.buildDashboard_ = () => orchestrationEvents.push('dashboard-rebuilt');
 let orchestrationState = {};
 context.loadSourceFolderState_ = () => orchestrationState;
 context.getSpreadsheetId_ = () => 'spreadsheet';

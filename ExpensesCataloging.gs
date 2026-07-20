@@ -129,6 +129,39 @@ function isConfiguredIncomeRefundCategory_(category, config) {
   return Boolean(config.categories && config.categories[String(category || '')]);
 }
 
+/** Normalize merchant/supplier values already present in the canonical ledger. */
+function normalizeImportedMerchantNames() {
+  return withExpenseLock_('merchant-normalization', function () {
+    assertCatalogConfiguration_();
+    const spreadsheet = SpreadsheetApp.openById(getSpreadsheetId_());
+    const layout = getExpenseSheetLayout_(spreadsheet);
+    const localization = getLocalization_();
+    const merchantColumn = layout.headers.indexOf(localization.headers.merchant) + 1;
+    if (!merchantColumn) {
+      throw new Error('The ledger has no merchant/supplier column.');
+    }
+    const lastRow = layout.transactions.getLastRow();
+    if (lastRow < 2) {
+      buildDashboard_(spreadsheet.getSheetByName(localization.sheetNames.dashboard),
+        layout.transactions, localization);
+      return { status: 'NORMALIZED', rowsScanned: 0, rowsChanged: 0, variantGroups: [] };
+    }
+    const range = layout.transactions.getRange(2, merchantColumn, lastRow - 1, 1);
+    const result = normalizeMerchantValues_(range.getValues());
+    if (result.changedRows > 0) {
+      range.setValues(result.values);
+    }
+    buildDashboard_(spreadsheet.getSheetByName(localization.sheetNames.dashboard),
+      layout.transactions, localization);
+    return {
+      status: 'NORMALIZED',
+      rowsScanned: lastRow - 1,
+      rowsChanged: result.changedRows,
+      variantGroups: result.variantGroups
+    };
+  });
+}
+
 /**
  * Resumable one-source-at-a-time migration from complete Tricount JSON exports.
  * Normalized source snapshots are durable Drive staging files. The canonical
@@ -1139,7 +1172,8 @@ function applyJsonExpenseClassification_(classification, sourceRecord, config) {
   return Object.assign({}, sourceRecord, {
     category: category,
     subcategory: subcategory,
-    merchant: resolveMerchant_(classification.merchant, sourceRecord.description, category, subcategory),
+    merchant: normalizeMerchantName_(resolveMerchant_(classification.merchant, sourceRecord.description,
+      category, subcategory)),
     confidence: Math.max(0, Math.min(1, Number(classification.confidence || 0))),
     rationale: String(classification.rationale || 'Classified from Tricount JSON fields.'),
     conflict: Boolean(classification.conflict)
@@ -1451,8 +1485,8 @@ function applyAttachmentClassification_(record, enrichment, config) {
   return Object.assign({}, record, {
     category: category,
     subcategory: subcategory,
-    merchant: resolveMerchant_(enrichment.merchant || record.merchant, record.description,
-      category, subcategory),
+    merchant: normalizeMerchantName_(resolveMerchant_(enrichment.merchant || record.merchant,
+      record.description, category, subcategory)),
     confidence: Math.max(record.confidence, Math.min(1, Number(enrichment.confidence || 0))),
     rationale: record.rationale + ' Attachment fallback: ' + String(enrichment.rationale || ''),
     conflict: Boolean(record.conflict || enrichment.conflict)
@@ -1585,7 +1619,8 @@ function writeLedgerRows_(layout, rows, triggerSource) {
     return [
       Utilities.getUuid(), new Date(row.date + 'T00:00:00'), Number(row.date.slice(0, 4)),
       Number(row.date.slice(5, 7)), row.payer, row.beneficiaries, row.amount, row.currency,
-      row.description, row.transactionType, row.category, row.subcategory, row.merchant,
+      row.description, row.transactionType, row.category, row.subcategory,
+      normalizeMerchantName_(row.merchant),
       row.sourceCategory, row.confidence, row.rationale, row.fingerprint, sourceFolderUrl,
       sourceUrl, row.sourceRow, now, buildBalanceImpactLabel_(row), row.sourceTransactionId,
       row.sourceNativeType, row.sourceStatus, row.sourceCustomCategory,

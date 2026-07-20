@@ -8,6 +8,7 @@
 - [Source reconciliation](#source-reconciliation)
 - [Initial balances and monthly checks](#initial-balances-and-monthly-checks)
 - [Dashboard](#dashboard)
+- [Merchant normalization](#merchant-normalization)
 - [Full JSON rebuild](#full-json-rebuild)
 - [Archive name migration](#archive-name-migration)
 - [Recovery](#recovery)
@@ -137,6 +138,26 @@ records.
 The dashboard is a managed Apps Script surface, not a safe home for manual
 content. Its full rebuild behavior and the safe customization boundary are in
 [Spreadsheet lifecycle and schema](SPREADSHEET.md).
+
+The annual category chart uses the year as its technical horizontal value and
+displays a multiline tick with the year and that year's expense total. The
+total excludes transfers and balance controls. Hovering a column keeps the
+category amount as the data point value instead of using the annual total as
+the series value.
+
+## Merchant normalization
+
+Every imported merchant or supplier is normalized at ledger write time: words
+use an initial uppercase letter and lowercase remainder, spaces are preserved
+between words, and hyphenated names use `-` without surrounding spaces. For
+example, `LIDL`, `Lidl`, and `lIdL` all become `Lidl`; `CONAD CITY` becomes
+`Conad City`.
+
+To repair existing ledger rows after deploying this behavior, pause scheduled
+processing and run the owner-only Apps Script function
+`normalizeImportedMerchantNames`. It is idempotent and returns the changed row
+count plus groups such as `LIDL` / `Lidl` that collapse to the same canonical
+name. Re-enable scheduled processing after checking the returned groups.
 
 ## Full JSON rebuild
 

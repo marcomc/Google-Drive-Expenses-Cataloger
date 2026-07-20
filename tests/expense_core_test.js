@@ -61,6 +61,23 @@ assert.equal(context.resolveMerchant_('Specific shop', 'sigari', 'Personal purch
   'Specific shop');
 assert.equal(context.resolveMerchant_('Unknown', 'REACT-073 - rata 2 di 3', 'Other', 'Other'), '');
 
+assert.equal(context.normalizeMerchantName_('LIDL'), 'Lidl');
+assert.equal(context.normalizeMerchantName_('Conad'), 'Conad');
+assert.equal(context.normalizeMerchantName_('CONAD CITY'), 'Conad City');
+assert.equal(context.normalizeMerchantName_('  MCDONALD\'S  -  ITALIA '), "Mcdonald's-Italia");
+assert.equal(context.normalizeMerchantName_(''), '');
+const merchantNormalization = context.normalizeMerchantValues_([
+  ['LIDL'], ['Lidl'], ['CONAD'], ['Conad'], [''], ['COOP-ALLEANZA']
+]);
+assert.deepEqual(JSON.parse(JSON.stringify(merchantNormalization.values)), [
+  ['Lidl'], ['Lidl'], ['Conad'], ['Conad'], [''], ['Coop-Alleanza']
+]);
+assert.equal(merchantNormalization.changedRows, 3);
+assert.deepEqual(JSON.parse(JSON.stringify(merchantNormalization.variantGroups)), [
+  { normalized: 'Conad', variants: ['CONAD', 'Conad'] },
+  { normalized: 'Lidl', variants: ['LIDL', 'Lidl'] }
+]);
+
 const tricountJson = {
   Response: [{ Registry: { all_registry_entry: [
     { RegistryEntry: {
