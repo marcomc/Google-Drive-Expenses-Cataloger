@@ -519,20 +519,10 @@ assert.match(legacyPolicyFile.getContent(), /recursively inside each non-exclude
 
 const preMarkerPolicy = managedPolicyTemplate
   .replace('<!-- BEGIN Google Drive Expenses Cataloger managed policy -->\n\n', '')
-  .replace('\n\n<!-- END Google Drive Expenses Cataloger managed policy -->\n', '')
-  .replace(
-    'For an existing installation, replace only the instructions between the managed\n' +
-      'policy markers and keep Drive-only instructions outside them. The runtime reads\n' +
-      'that Drive copy for each import. Do not include credentials.',
-    'For an existing installation, merge new template instructions into the Drive\n' +
-      'file without removing Drive-only instructions or user customizations. The\n' +
-      'runtime reads that Drive copy for each import. Do not include credentials.'
-  );
+  .replace('\n\n<!-- END Google Drive Expenses Cataloger managed policy -->\n', '');
 const preMarkerPolicyFile = createPolicyFile(preMarkerPolicy);
 context.ensureInstallerPolicyFile_(createPolicyRoot(preMarkerPolicyFile), managedPolicyTemplate);
 assert.equal(preMarkerPolicyFile.getContent(), managedPolicyTemplate.trim());
-assert.doesNotMatch(preMarkerPolicyFile.getContent(), /merge new template instructions/);
-assert.match(preMarkerPolicyFile.getContent(), /replace only the instructions between the managed/);
 
 const customizedLegacyPolicy = [
   legacyPolicy,

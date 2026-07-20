@@ -2,10 +2,7 @@
 
 # Expense import policy
 
-Use this file as the initial `AGENTS.md` policy in the configured Drive root.
-For an existing installation, replace only the instructions between the managed
-policy markers and keep Drive-only instructions outside them. The runtime reads
-that Drive copy for each import. Do not include credentials.
+These rules govern imports from this Drive root. Do not include credentials.
 
 ## Scope
 
@@ -50,6 +47,12 @@ that Drive copy for each import. Do not include credentials.
 - Preserve the source category, custom category, description, and exact
   allocations. Prefer them and previous human corrections for classification.
   Use attachment evidence only when those are insufficient.
+- Treat a tangible item sold by a retailer or marketplace, whether new or used,
+  as a product purchase based on the item and its recipient or use, not as an
+  activity or service. Books, puzzles, games, and similar durable goods are not
+  `Leisure and travel` / `Entertainment` solely because they are recreational.
+  Use `Personal and gifts` / `Personal purchase`, or `Personal and gifts` /
+  `Gift` only when the source or prior human correction supports gifting.
 - Never import an exact duplicate. For overlapping exports, import only unique
   rows and record the duplicate decision in the import audit.
 

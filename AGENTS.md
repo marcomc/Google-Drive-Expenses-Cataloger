@@ -37,6 +37,13 @@
 
 ## Drive policy synchronization
 
+- The repository-root `AGENTS.md` instructs development-support agents only; it
+  is never the policy read during an import. `AGENTS.example.md` is the
+  template for the distinct `AGENTS.md` in the configured Google Drive root,
+  which Gemini or Vertex AI reads at runtime. When a request refers to the
+  installed import policy, update the template and synchronize its managed
+  block to Drive; do not change this repository file unless the request is
+  about development-agent instructions.
 - When `AGENTS.example.md` gains or changes instructions, update the
   `AGENTS.md` file in the configured Google Drive root during the same task.
 - Read the current Drive file before writing and build the merged version from

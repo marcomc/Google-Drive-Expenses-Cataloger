@@ -1119,6 +1119,7 @@ function buildExpenseJsonNormalizationPrompt_(records, file, folder, policy, con
     'Use exactly one category and one subcategory from: ' + JSON.stringify(config.categories),
     'Health is for humans only. Dog medical costs use Dogs / Veterinarian or Dogs / Medicines.',
     'Custom source categories are supporting evidence. Infer merchant separately from category. Attachments are fallback evidence only.',
+    'Classify a tangible good sold by a retailer or marketplace, whether new or used, as a product purchase based on the item and its recipient or use, not as an activity or service. Books, puzzles, games, and similar durable goods are not Leisure and travel / Entertainment solely because they are recreational. Use Personal and gifts / Personal purchase, or Personal and gifts / Gift only when the source or prior human correction supports gifting.',
     'Keep a specific merchant when the description supports one. If no specific merchant is stated, infer only a defensible merchant type from the description and category: tobacco, cigarettes, or cigars means Tabaccheria; metano fuel means Distributore di metano; a veterinary visit means Veterinario.',
     'Never return Unknown, N/A, or another placeholder for merchant. Return an empty merchant when neither a specific merchant nor a defensible merchant type is supported.',
     'Policy: ' + policy,
@@ -1195,10 +1196,53 @@ function parseGeminiJsonResponse_(response) {
     throw new Error('Gemini returned no JSON content.');
   }
   try {
-    return JSON.parse(text.replace(/^```json\s*|\s*```$/g, ''));
+    return JSON.parse(extractGeminiJsonValue_(text));
   } catch (error) {
     throw new Error('Gemini returned invalid JSON: ' + error.message);
   }
+}
+
+/**
+ * Gemini can occasionally append prose or a duplicate response after a complete
+ * JSON object despite responseMimeType. Keep the first complete structured
+ * value; callers still validate its expected schema before using it.
+ */
+function extractGeminiJsonValue_(text) {
+  const candidate = String(text || '').trim().replace(/^```json\s*/i, '');
+  const opening = candidate.charAt(0);
+  if (opening !== '{' && opening !== '[') {
+    throw new Error('Gemini JSON content must begin with an object or array.');
+  }
+  const closingFor = { '{': '}', '[': ']' };
+  const stack = [];
+  let inString = false;
+  let escaped = false;
+  for (let index = 0; index < candidate.length; index += 1) {
+    const character = candidate.charAt(index);
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (character === '\\') {
+        escaped = true;
+      } else if (character === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (character === '"') {
+      inString = true;
+    } else if (character === '{' || character === '[') {
+      stack.push(closingFor[character]);
+    } else if (character === '}' || character === ']') {
+      if (stack.pop() !== character) {
+        throw new Error('Gemini JSON content has mismatched delimiters.');
+      }
+      if (stack.length === 0) {
+        return candidate.slice(0, index + 1);
+      }
+    }
+  }
+  throw new Error('Gemini JSON content is incomplete.');
 }
 
 function callGeminiDeveloperApi_(parts) {
