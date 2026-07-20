@@ -44,6 +44,11 @@ const context = {
     getProjectTriggers: () => activeTriggers.slice(),
     deleteTrigger: (trigger) => trigger.deleteTrigger(),
     newTrigger: (handler) => ({
+      forSpreadsheet: () => ({
+        onEdit: () => ({
+          create: () => createTrigger(handler)
+        })
+      }),
       timeBased: () => ({
         everyMinutes: () => ({
           create: () => createTrigger(handler)
@@ -158,6 +163,16 @@ assert.deepEqual(activeTriggers.map((trigger) => trigger.getHandlerFunction()).s
 assert.equal(triggerLockAcquisitions, 1);
 assert.equal(triggerLockReleases, 1);
 assert.deepEqual(triggerLockTimeouts, [280000]);
+
+events.length = 0;
+activeTriggers = [];
+assert.deepEqual(JSON.parse(JSON.stringify(context.installDashboardYearColorEditTrigger())), {
+  triggerCount: 1
+});
+assert.deepEqual(events, ['create:applyDashboardYearColorsOnEdit']);
+assert.deepEqual(activeTriggers.map((trigger) => trigger.getHandlerFunction()), [
+  'applyDashboardYearColorsOnEdit'
+]);
 
 triggerLockAvailable = false;
 assert.throws(() => context.installAutomationTriggers(), /Could not acquire the automation trigger lock/);

@@ -144,8 +144,9 @@ refund and reduces its category total. Transfers and opening-balance controls
 remain excluded. The dashboard itself contains only user-facing controls and
 charts; no technical tables are hidden in remote columns.
 
-The top cards show the all-time and current-calendar-year spending and transaction
-counts. The current-year pair uses a distinct purple palette.
+The top area has three equally sized, horizontally aligned KPI groups: all-time,
+current-calendar-year, and latest-imported-month spending. The current-year pair
+uses a distinct purple palette; the latest-month pair uses green.
 
 Cash settlements recorded in Tricount (for example with the custom category
 `Contanti`) are classified as `transfer`: they remain visible in
@@ -154,15 +155,16 @@ spending for a month, year, category, payer, or supplier.
 
 | Visible control or chart | Behavior |
 | --- | --- |
-| `Anni da confrontare` | Checkboxes select one or more years for comparative charts. New ledger years appear automatically after their first successful import. |
-| `Anno di dettaglio` | Dropdown aligned with `Visualizza dettagli per`; selects the year used by category and merchant detail charts. |
+| `Anni da confrontare` | Three-cell control to the right of `Confronto spese mensili per anno`: year, checkbox, and editable color dropdown. The chosen color is applied to year-series charts. New ledger years appear automatically after their first successful import. |
+| `Anno di dettaglio` | Three-cell dropdown panel at `V47:X48`, to the right of `Andamento mensile per categoria`; selects the year used by category and merchant detail charts. |
 | Spesa annua per categoria | The total for every selected year is shown directly below the chart; colors and legend identify categories. |
-| Confronto spese mensili per anno | January through December on the horizontal axis; one connected, color-coded 12-point line per selected year, with zeroes for months without spending. |
+| Confronto spese mensili per anno | January through December on the horizontal axis; one connected, color-coded 12-point line per selected year, with zeroes for months without spending. Year colors come from `Anni da confrontare`. |
 | Andamento mensile per categoria | Month names on the horizontal axis; colors and legend identify categories for the detail year. |
-| Spesa per pagatore | Payers on the horizontal axis; one column per selected comparison year. |
-| Top 10 esercenti / fornitori | Largest suppliers for the detail year. |
+| Spesa per pagatore | Payers on the horizontal axis; one column per selected comparison year, using the colors from `Anni da confrontare`. |
+| Top 20 esercenti / fornitori | Largest suppliers for the detail year. Each supplier is a chart row with one differently coloured horizontal bar; the legend is hidden and the chart has the same height as `Andamento mensile per categoria`. |
 
-Changing a checkbox or the detail-year dropdown updates the dependent formulas
+Both control panels occupy three cells and end at column X, matching the right
+edge of the dashboard. Changing a checkbox or the detail-year dropdown updates the dependent formulas
 and charts without an import or Apps Script execution. The last chart replaces
 the former dog-subcategory chart, while the former monthly-balance chart is no
 longer shown on the dashboard because its accounting-control purpose was not

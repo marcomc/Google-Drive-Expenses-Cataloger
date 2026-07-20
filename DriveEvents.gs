@@ -2,6 +2,19 @@ const AUTOMATION_TRIGGER_HANDLERS = Object.freeze([
   'processDriveEventQueue',
   'runDailyExpenseCataloging'
 ]);
+const DASHBOARD_YEAR_COLOR_EDIT_TRIGGER_HANDLER = 'applyDashboardYearColorsOnEdit';
+
+function installDashboardYearColorEditTrigger() {
+  const existing = ScriptApp.getProjectTriggers().filter(function (trigger) {
+    return trigger.getHandlerFunction() === DASHBOARD_YEAR_COLOR_EDIT_TRIGGER_HANDLER;
+  });
+  if (existing.length === 0) {
+    ScriptApp.newTrigger(DASHBOARD_YEAR_COLOR_EDIT_TRIGGER_HANDLER)
+      .forSpreadsheet(getSpreadsheetId_()).onEdit().create();
+  }
+  existing.slice(1).forEach(function (trigger) { ScriptApp.deleteTrigger(trigger); });
+  return { triggerCount: Math.min(1, existing.length + 1) };
+}
 
 /**
  * Install an event-polling trigger plus an independent daily safety net.

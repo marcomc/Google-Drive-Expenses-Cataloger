@@ -24,16 +24,19 @@ vm.runInContext(fs.readFileSync('Installer.gs', 'utf8'), context);
 const dashboardFormulas = context.getDashboardDataSpecifications_('Transazioni');
 assert.equal(dashboardFormulas.map((specification) => specification.anchor).join(','),
   'A2,A30,A61,A90,A120');
-assert.match(dashboardFormulas[0].formula, /FILTER\("C = "&'Dashboard'!\$Q\$3:\$Q,'Dashboard'!\$R\$3:\$R=TRUE\)/);
+assert.match(dashboardFormulas[0].formula, /FILTER\("C = "&'Dashboard'!\$V\$11:\$V,'Dashboard'!\$W\$11:\$W=TRUE\)/);
 assert.match(dashboardFormulas[1].formula, /monthIndexes,SEQUENCE\(12\)/);
 assert.match(dashboardFormulas[1].formula, /MAKEARRAY\(12,ROWS\(years\)/);
 assert.match(dashboardFormulas[1].formula, /SUMIFS\('Transazioni'!G:G,'Transazioni'!C:C,INDEX\(years,yearIndex\)/);
 assert.match(dashboardFormulas[1].formula,
   /VSTACK\("Month",MAP\(monthIndexes,LAMBDA\(month,CHOOSE\(month,"January"/);
-assert.match(dashboardFormulas[2].formula, /C = "&'Dashboard'!\$V\$2/);
+assert.match(dashboardFormulas[2].formula, /C = "&'Dashboard'!\$X\$48/);
 assert.match(dashboardFormulas[3].formula,
-  /select E,sum\(G\).*FILTER\("C = "&'Dashboard'!\$Q\$3:\$Q,'Dashboard'!\$R\$3:\$R=TRUE\).*group by E pivot C order by E/);
-assert.match(dashboardFormulas[4].formula, /order by sum\(G\) desc limit 10/);
+  /select E,sum\(G\).*FILTER\("C = "&'Dashboard'!\$V\$11:\$V,'Dashboard'!\$W\$11:\$W=TRUE\).*group by E pivot C order by E/);
+assert.match(dashboardFormulas[4].formula, /order by sum\(G\) desc limit 20/);
+assert.match(dashboardFormulas[4].formula,
+  /VSTACK\(\{"Merchant \/ supplier","Amount"\},HSTACK\(INDEX\(summary,,1\),INDEX\(summary,,2\)\)\)/,
+  'Top 20 chart data must use one merchant category per row');
 assert.match(dashboardFormulas[0].formula,
   /MAP\(years,totals,LAMBDA\(year,total,year&IF\(ROWS\(years\)=1," · ",CHAR\(10\)\)&total\)\)/);
 const installerSource = fs.readFileSync('Installer.gs', 'utf8');
@@ -41,6 +44,34 @@ assert.doesNotMatch(installerSource, /function getDashboardAxisTicks_/);
 assert.match(dashboardFormulas[2].formula,
   /MAP\(labels,totals,LAMBDA\(label,total,label&" · "&total\)\)/);
 assert.match(installerSource, /const DASHBOARD_CHART_LAYOUT_DEFAULTS = \{/);
+assert.match(installerSource, /'Q4:T4', 'Q5:T7', labels\.latestMonth/,
+  'latest-imported-month KPI must use the same four-column card geometry');
+assert.match(installerSource, /'U4:X4', 'U5:X7', labels\.latestMonthSpend/,
+  'latest-month-spending KPI must align with the other KPI cards');
+assert.match(installerSource, /'I4:L4', 'I5:L7', labels\.currentYearSpend/,
+  'current-year KPI must use the same four-column card geometry');
+assert.equal(context.getDashboardChartLayout_({
+  topMerchants: { row: 9, column: 8, offsetX: 0, offsetY: 0, width: 684, height: 371 }
+}, 'topMerchants').height, 371,
+  'Top 20 merchants chart must match the monthly-category chart height');
+assert.equal(context.getDashboardChartLayout_({
+  topMerchants: { row: 9, column: 8, offsetX: 0, offsetY: 0, width: 684, height: 680 },
+  monthlySpend: { row: 29, column: 1, offsetX: 0, offsetY: 0, width: 1395, height: 444 }
+}, 'topMerchants').height, 444,
+  'Top 20 merchants chart must follow a user-adjusted monthly-category chart height');
+assert.match(installerSource,
+  /labels\.topMerchants, 'bar', false, \{\s+colors: \['#20B486'\], legend: \{ position: 'none' \}, bar: \{ groupWidth: '85%' \}/,
+  'Top 20 chart must avoid a redundant legend and use the available vertical space');
+assert.match(installerSource, /const DASHBOARD_TOP_MERCHANT_COLORS = \[/,
+  'Top 20 chart must define a distinct colour for each merchant');
+assert.match(installerSource, /styleOverrides = DASHBOARD_TOP_MERCHANT_COLORS/,
+  'Top 20 chart must apply colours to individual bar data points');
+assert.match(installerSource, /dashboard\.getRange\('Q3:X100'\)\.removeCheckboxes\(\)/,
+  'dashboard refreshes must remove checkbox artifacts from superseded control locations');
+assert.match(installerSource, /dashboard\.getRange\('Q3:X100'\)\.clearDataValidations\(\)/,
+  'dashboard refreshes must remove validation artifacts from superseded control locations');
+assert.match(installerSource, /dashboard\.deleteColumns\(25, dashboard\.getMaxColumns\(\) - 24\)/,
+  'dashboard refreshes must remove columns beyond X');
 assert.match(installerSource, /function captureDashboardChartLayouts_\(dashboard, labels\)/);
 assert.match(installerSource, /showTextEvery: 1/);
 assert.match(installerSource,
@@ -84,6 +115,7 @@ function getDashboardControlRange_(reference) {
       return range;
     },
     setBackground: () => range,
+    setBackgrounds: () => range,
     setFontColor: () => range,
     setFontFamily: () => range,
     setFontSize: () => range,
@@ -105,11 +137,57 @@ context.writeDashboardYearControls_({
   comparisonYears: 'Years to compare', detailYear: 'Detail year', year: 'Year',
   includeYear: 'Show', selectedYear: 'Show details for'
 });
-assert.equal(dashboardControlRanges.get('V2').value, 2024,
-  'the detail-year selection must be aligned with its label');
-assert.deepEqual(dashboardControlRanges.get('V2').validation, { type: 'year-list' });
+assert.equal(dashboardControlRanges.get('X48').value, 2024,
+  'the detail-year selection must end at the dashboard right margin in column X');
+assert.deepEqual(dashboardControlRanges.get('X48').validation, { type: 'year-list' });
+assert.equal(dashboardControlRanges.get('V9:X9').value, 'Years to compare',
+  'the comparison-year panel must end at the dashboard right margin in column X');
+assert.equal(dashboardControlRanges.get('V10:X10').values[0].length, 3,
+  'the comparison-year panel must reserve three horizontal cells');
+assert.equal(dashboardControlRanges.get('V47:X47').value, 'Detail year',
+  'the detail-year panel must use the dashboard position selected by the user');
+const yearColorOptions = context.getDashboardYearColorOptions_({
+  yearColors: { green: 'Green', blue: 'Blue', orange: 'Orange', purple: 'Purple' }
+});
+assert.deepEqual(JSON.parse(JSON.stringify(yearColorOptions.slice(0, 4))), [
+  { name: 'Green', hex: '#20B486' }, { name: 'Blue', hex: '#4F7CAC' },
+  { name: 'Orange', hex: '#F59E0B' }, { name: 'Purple', hex: '#A855F7' }
+]);
+assert.deepEqual(JSON.parse(JSON.stringify(context.getDashboardSelectedYearChartColors_({
+  getRange: () => ({ getValues: () => [[2023, true, 'Green'], [2024, false, 'Blue'], [2025, true, 'Orange']] })
+}, { yearColors: { green: 'Green', blue: 'Blue', orange: 'Orange', purple: 'Purple' } }))),
+['#20B486', '#F59E0B']);
+const chartColorUpdates = [];
+function createYearChart(title) {
+  return {
+    getOptions: () => ({ get: () => title }),
+    modify: () => ({
+      setOption: (key, value) => ({ build: () => ({ title, key, value }) })
+    })
+  };
+}
+const colorDashboard = {
+  getRange: (reference) => ({
+    getValues: () => reference === 'V11:X100' ? [[2023, true, 'Green'], [2024, true, 'Blue']] :
+      [['Green'], ['Blue']],
+    setBackgrounds: () => ({})
+  }),
+  getCharts: () => [createYearChart('Monthly comparison'), createYearChart('Spending by payer'),
+    createYearChart('Monthly spending by category')],
+  updateChart: (chart) => chartColorUpdates.push(chart)
+};
+assert.deepEqual(JSON.parse(JSON.stringify(context.applyDashboardYearChartColors_(colorDashboard, {
+  monthlyComparison: 'Monthly comparison', payerSpend: 'Spending by payer',
+  yearColors: { green: 'Green', blue: 'Blue', orange: 'Orange', purple: 'Purple' }
+}))), { status: 'UPDATED', updatedCharts: 2, colors: ['#20B486', '#4F7CAC'] });
+assert.deepEqual(JSON.parse(JSON.stringify(chartColorUpdates.map((chart) => chart.value))), [
+  ['#20B486', '#4F7CAC'], ['#20B486', '#4F7CAC']
+]);
 const legacyDashboardSelection = context.getDashboardSelectionState_({
   getRange: (reference) => {
+    if (reference === 'V11:X100' || reference === 'W11:Y100' || reference === 'W51:X100' || reference === 'Q51:R100') {
+      return { getValues: () => [] };
+    }
     if (reference === 'Q3:R100') {
       return { getValues: () => [[2023, true], [2024, true]] };
     }
@@ -127,6 +205,9 @@ const italianDashboardFormulas = context.getDashboardDataSpecifications_('Transa
 });
 assert.match(italianDashboardFormulas[1].formula, /VSTACK\("Mese",MAP\(monthIndexes,LAMBDA\(month,CHOOSE\(month,"Gennaio"/);
 assert.match(italianDashboardFormulas[2].formula, /CHOOSE\(month,"Gennaio","Febbraio"/);
+assert.match(italianDashboardFormulas[0].formula, /\$V\$11:\$V/);
+assert.match(italianDashboardFormulas[1].formula, /\$V\$11:\$V/);
+assert.match(italianDashboardFormulas[2].formula, /\$X\$48/);
 const italianLatestMonthFormula = context.getDashboardLatestMonthLabelFormula_('Transazioni', [
   'Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto',
   'Settembre', 'Ottobre', 'Novembre', 'Dicembre'
@@ -359,6 +440,7 @@ context.ensureInstallerSpreadsheet_ = () => ({
 context.assertCatalogConfiguration_ = () => {};
 context.getOrCreateChildFolder_ = () => {};
 context.installAutomationTriggers = () => {};
+context.installDashboardYearColorEditTrigger = () => {};
 context.getGeminiBackend_ = () => 'vertex_ai';
 context.DriveApp = { getFolderById: () => ({ getUrl: () => 'https://example.test/root' }) };
 properties.set('AUTO_PROCESSING', 'true');
