@@ -144,6 +144,9 @@ refund and reduces its category total. Transfers and opening-balance controls
 remain excluded. The dashboard itself contains only user-facing controls and
 charts; no technical tables are hidden in remote columns.
 
+The top cards show the all-time and current-calendar-year spending and transaction
+counts. The current-year pair uses a distinct purple palette.
+
 Cash settlements recorded in Tricount (for example with the custom category
 `Contanti`) are classified as `transfer`: they remain visible in
 `Transazioni` and affect participant balances, but never increase the reported
@@ -152,11 +155,11 @@ spending for a month, year, category, payer, or supplier.
 | Visible control or chart | Behavior |
 | --- | --- |
 | `Anni da confrontare` | Checkboxes select one or more years for comparative charts. New ledger years appear automatically after their first successful import. |
-| `Anno di dettaglio` | Dropdown selects the year used by the category-by-month and merchant detail charts. |
+| `Anno di dettaglio` | Dropdown aligned with `Visualizza dettagli per`; selects the year used by category and merchant detail charts. |
 | Spesa annua per categoria | The total for every selected year is shown directly below the chart; colors and legend identify categories. |
-| Confronto spese mensili per anno | January through December on the horizontal axis; one connected, color-coded line per selected year, with a year legend. |
+| Confronto spese mensili per anno | January through December on the horizontal axis; one connected, color-coded 12-point line per selected year, with zeroes for months without spending. |
 | Andamento mensile per categoria | Month names on the horizontal axis; colors and legend identify categories for the detail year. |
-| Spesa per pagatore | Selected years on the horizontal axis; colors and legend identify payers. |
+| Spesa per pagatore | Payers on the horizontal axis; one column per selected comparison year. |
 | Top 10 esercenti / fornitori | Largest suppliers for the detail year. |
 
 Changing a checkbox or the detail-year dropdown updates the dependent formulas

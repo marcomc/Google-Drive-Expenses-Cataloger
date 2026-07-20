@@ -35,8 +35,9 @@ function getEnglishLocalization_() {
     },
     dashboard: {
       title: 'HoStello expenses', subtitle: 'Dynamic summary based on imported transactions',
-      totalSpend: 'Total spending', latestMonth: 'Latest imported month',
-      latestMonthSpend: 'Latest-month spending', expenseCount: 'Expense transactions',
+      totalSpend: 'Total spending', expenseCount: 'Expense transactions',
+      currentYearSpend: 'Current-year spending', currentYearCount: 'Current-year transactions',
+      latestMonth: 'Latest imported month', latestMonthSpend: 'Latest-month spending',
       annualSpend: 'Annual spending by category', monthlyComparison: 'Monthly spending comparison by year',
       monthlySpend: 'Monthly spending by category', payerSpend: 'Spending by payer',
       topMerchants: 'Top 10 merchants / suppliers', comparisonYears: 'Years to compare',

@@ -25,10 +25,14 @@ const dashboardFormulas = context.getDashboardDataSpecifications_('Transazioni')
 assert.equal(dashboardFormulas.map((specification) => specification.anchor).join(','),
   'A2,A30,A61,A90,A120');
 assert.match(dashboardFormulas[0].formula, /FILTER\("C = "&'Dashboard'!\$Q\$3:\$Q,'Dashboard'!\$R\$3:\$R=TRUE\)/);
-assert.match(dashboardFormulas[1].formula, /select D,sum\(G\).*pivot C order by D/);
-assert.match(dashboardFormulas[1].formula, /VSTACK\("Month",MAP\(INDEX\(summary,,1\),LAMBDA\(month,CHOOSE\(month,"January"/);
-assert.match(dashboardFormulas[1].formula, /TRANSPOSE\(FILTER\('Dashboard'!\$Q\$3:\$Q,'Dashboard'!\$R\$3:\$R=TRUE\)\)/);
-assert.match(dashboardFormulas[2].formula, /C = "&'Dashboard'!\$V\$3/);
+assert.match(dashboardFormulas[1].formula, /monthIndexes,SEQUENCE\(12\)/);
+assert.match(dashboardFormulas[1].formula, /MAKEARRAY\(12,ROWS\(years\)/);
+assert.match(dashboardFormulas[1].formula, /SUMIFS\('Transazioni'!G:G,'Transazioni'!C:C,INDEX\(years,yearIndex\)/);
+assert.match(dashboardFormulas[1].formula,
+  /VSTACK\("Month",MAP\(monthIndexes,LAMBDA\(month,CHOOSE\(month,"January"/);
+assert.match(dashboardFormulas[2].formula, /C = "&'Dashboard'!\$V\$2/);
+assert.match(dashboardFormulas[3].formula,
+  /select E,sum\(G\).*FILTER\("C = "&'Dashboard'!\$Q\$3:\$Q,'Dashboard'!\$R\$3:\$R=TRUE\).*group by E pivot C order by E/);
 assert.match(dashboardFormulas[4].formula, /order by sum\(G\) desc limit 10/);
 assert.match(dashboardFormulas[0].formula,
   /MAP\(years,totals,LAMBDA\(year,total,year&IF\(ROWS\(years\)=1," · ",CHAR\(10\)\)&total\)\)/);
@@ -39,8 +43,81 @@ assert.match(dashboardFormulas[2].formula,
 assert.match(installerSource, /const DASHBOARD_CHART_LAYOUT_DEFAULTS = \{/);
 assert.match(installerSource, /function captureDashboardChartLayouts_\(dashboard, labels\)/);
 assert.match(installerSource, /showTextEvery: 1/);
+assert.match(installerSource,
+  /'monthlyComparison'\), labels\.monthlyComparison, 'line', false, \{\s+hAxis: \{ showTextEvery: 1 \}/);
 assert.match(installerSource, /const sourceRows = \[2, 30, 61, 90, 120\]/);
 assert.match(installerSource, /late-arriving payer or category/);
+const annualChartBlock = Array.from({ length: 25 }, () => ['', '', '']);
+annualChartBlock[0] = ['Anno', 'Casa', 'Viaggi'];
+annualChartBlock[1] = ['2023', 100, 200];
+annualChartBlock[2] = ['2024', 300, 400];
+annualChartBlock[3] = ['2025', 500, 600];
+const annualChartSource = context.getDashboardChartSourceRange_({
+  getRange: (row, column, rowCount, columnCount) => ({
+    row,
+    column,
+    rowCount,
+    columnCount,
+    getValues: () => annualChartBlock
+  })
+}, 1, 25);
+assert.equal(annualChartSource.rowCount, 25,
+  'annual chart sources must retain rows for every year later selected in the dashboard');
+const dashboardControlRanges = new Map();
+function getDashboardControlRange_(reference) {
+  if (dashboardControlRanges.has(reference)) {
+    return dashboardControlRanges.get(reference);
+  }
+  const range = {
+    merge: () => range,
+    setValue: (value) => {
+      range.value = value;
+      return range;
+    },
+    setDataValidation: (validation) => {
+      range.validation = validation;
+      return range;
+    },
+    insertCheckboxes: () => range,
+    setValues: (values) => {
+      range.values = values;
+      return range;
+    },
+    setBackground: () => range,
+    setFontColor: () => range,
+    setFontFamily: () => range,
+    setFontSize: () => range,
+    setFontWeight: () => range,
+    setHorizontalAlignment: () => range
+  };
+  dashboardControlRanges.set(reference, range);
+  return range;
+}
+const validationBuilder = {
+  requireValueInList: () => validationBuilder,
+  setAllowInvalid: () => validationBuilder,
+  build: () => ({ type: 'year-list' })
+};
+context.SpreadsheetApp = { newDataValidation: () => validationBuilder };
+context.writeDashboardYearControls_({
+  getRange: (...arguments_) => getDashboardControlRange_(arguments_.join(':'))
+}, [2023, 2024, 2025], { selectedYears: [2023, 2024], detailYear: 2024 }, {
+  comparisonYears: 'Years to compare', detailYear: 'Detail year', year: 'Year',
+  includeYear: 'Show', selectedYear: 'Show details for'
+});
+assert.equal(dashboardControlRanges.get('V2').value, 2024,
+  'the detail-year selection must be aligned with its label');
+assert.deepEqual(dashboardControlRanges.get('V2').validation, { type: 'year-list' });
+const legacyDashboardSelection = context.getDashboardSelectionState_({
+  getRange: (reference) => {
+    if (reference === 'Q3:R100') {
+      return { getValues: () => [[2023, true], [2024, true]] };
+    }
+    return { getValue: () => reference === 'V3' ? 2024 : '' };
+  }
+});
+assert.equal(legacyDashboardSelection.detailYear, 2024,
+  'dashboard refreshes must preserve a detail year stored in the legacy V3 cell');
 const italianDashboardFormulas = context.getDashboardDataSpecifications_('Transazioni', 'Dashboard', {
   headers: { month: 'Mese' },
   dashboard: {
@@ -48,7 +125,7 @@ const italianDashboardFormulas = context.getDashboardDataSpecifications_('Transa
       'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre']
   }
 });
-assert.match(italianDashboardFormulas[1].formula, /VSTACK\("Mese",MAP\(INDEX\(summary,,1\),LAMBDA\(month,CHOOSE\(month,"Gennaio"/);
+assert.match(italianDashboardFormulas[1].formula, /VSTACK\("Mese",MAP\(monthIndexes,LAMBDA\(month,CHOOSE\(month,"Gennaio"/);
 assert.match(italianDashboardFormulas[2].formula, /CHOOSE\(month,"Gennaio","Febbraio"/);
 const italianLatestMonthFormula = context.getDashboardLatestMonthLabelFormula_('Transazioni', [
   'Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto',
@@ -104,12 +181,20 @@ assert.deepEqual(
   JSON.parse(JSON.stringify(dashboardData.map((specification) => specification.anchor))),
   ['A2', 'A30', 'A61', 'A90', 'A120']
 );
-assert.ok(dashboardData.every((specification) => specification.formula.includes("'Transazioni'!A:AD")));
+assert.ok(dashboardData.filter((specification) => specification.anchor !== 'A30')
+  .every((specification) => specification.formula.includes("'Transazioni'!A:AD")));
 assert.match(context.getDashboardLatestMonthSpendFormula_('Transazioni'), /SUM\(FILTER/);
 assert.match(context.getDashboardLatestMonthSpendFormula_('Transazioni'), /expense\|income/);
 assert.match(context.getDashboardSpendingSumFormula_('Transazioni'), /SUMIFS\([^)]*"expense"[\s\S]*SUMIFS\([^)]*"income"/);
 assert.match(context.getDashboardSpendingCountFormula_('Transazioni'), /COUNTIFS\([^)]*"expense"[\s\S]*COUNTIFS\([^)]*"income"/);
-assert.ok(dashboardData.every((specification) => specification.formula.includes("J = 'income'")));
+assert.match(context.getDashboardCurrentYearSpendFormula_('Transazioni'), /YEAR\(TODAY\(\)\)/);
+assert.match(context.getDashboardCurrentYearSpendFormula_('Transazioni'), /SUMIFS\([^)]*"expense"[\s\S]*SUMIFS\([^)]*"income"/);
+assert.match(context.getDashboardCurrentYearCountFormula_('Transazioni'), /YEAR\(TODAY\(\)\)/);
+assert.match(context.getDashboardCurrentYearCountFormula_('Transazioni'), /COUNTIFS\([^)]*"expense"[\s\S]*COUNTIFS\([^)]*"income"/);
+assert.match(installerSource, /else \{\s*valueCell\.setNumberFormat\('#,##0'\);\s*\}/,
+  'count KPI cards must reset a currency format inherited from a previous layout');
+assert.ok(dashboardData.every((specification) => specification.anchor === 'A30' ?
+  specification.formula.includes('"income"') : specification.formula.includes("J = 'income'")));
 
 properties.clear();
 assert.throws(

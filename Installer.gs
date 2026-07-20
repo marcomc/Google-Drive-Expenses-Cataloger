@@ -582,10 +582,10 @@ function buildDashboard_(dashboard, transactions, localization) {
     getDashboardSpendingSumFormula_(transactionsName), true, 'cumulative');
   writeDashboardKpiCard_(dashboard, 'E4:H4', 'E5:H7', labels.expenseCount,
     getDashboardSpendingCountFormula_(transactionsName), false, 'cumulative');
-  writeDashboardKpiCard_(dashboard, 'J4:L4', 'J5:L7', labels.latestMonth,
-    getDashboardLatestMonthLabelFormula_(transactionsName, labels.monthNames), false);
-  writeDashboardKpiCard_(dashboard, 'M4:O4', 'M5:O7', labels.latestMonthSpend,
-    getDashboardLatestMonthSpendFormula_(transactionsName), true);
+  writeDashboardKpiCard_(dashboard, 'J4:L4', 'J5:L7', labels.currentYearSpend,
+    getDashboardCurrentYearSpendFormula_(transactionsName), true, 'currentYear');
+  writeDashboardKpiCard_(dashboard, 'M4:O4', 'M5:O7', labels.currentYearCount,
+    getDashboardCurrentYearCountFormula_(transactionsName), false, 'currentYear');
   writeDashboardYearControls_(dashboard, years, selectionState, labels);
   // Charts capture their source range at creation time. Wait until every
   // dynamic pivot has settled, otherwise a late-arriving payer or category is
@@ -594,7 +594,9 @@ function buildDashboard_(dashboard, transactions, localization) {
   insertDashboardChart_(dashboard, getDashboardChartSourceRange_(technicalData, 1, 25),
     getDashboardChartLayout_(chartLayouts, 'annualSpend'), labels.annualSpend, 'column', false);
   insertDashboardChart_(dashboard, getDashboardChartSourceRange_(technicalData, 30, 55),
-    getDashboardChartLayout_(chartLayouts, 'monthlyComparison'), labels.monthlyComparison, 'line', false);
+    getDashboardChartLayout_(chartLayouts, 'monthlyComparison'), labels.monthlyComparison, 'line', false, {
+      hAxis: { showTextEvery: 1 }
+    });
   insertDashboardChart_(dashboard, getDashboardChartSourceRange_(technicalData, 60, 85),
     getDashboardChartLayout_(chartLayouts, 'monthlySpend'), labels.monthlySpend, 'column', false, {
       hAxis: { showTextEvery: 1 }
@@ -639,7 +641,8 @@ function getDashboardSelectionState_(dashboard) {
     }
     return years;
   }, []);
-  const detailYear = Number(dashboard.getRange('V3').getValue());
+  const detailYear = Number(dashboard.getRange('V2').getValue()) ||
+    Number(dashboard.getRange('V3').getValue());
   return { selectedYears: selectedYears, detailYear: detailYear };
 }
 
@@ -665,8 +668,8 @@ function writeDashboardYearControls_(dashboard, years, selectionState, labels) {
   dashboard.getRange('T1:V1').merge().setValue(labels.detailYear);
   dashboard.getRange('Q2:R2').setValues([[labels.year, labels.includeYear]]);
   dashboard.getRange('T2:U2').merge().setValue(labels.selectedYear);
-  dashboard.getRange('V3').setValue(detailYear);
-  dashboard.getRange('V3').setDataValidation(SpreadsheetApp.newDataValidation()
+  dashboard.getRange('V2').setValue(detailYear);
+  dashboard.getRange('V2').setDataValidation(SpreadsheetApp.newDataValidation()
     .requireValueInList(years.map(String), true).setAllowInvalid(false).build());
   const yearRows = years.map(function (year) { return [year, selectedYears.indexOf(year) >= 0]; });
   const values = dashboard.getRange(3, 17, yearRows.length, 2);
@@ -682,7 +685,7 @@ function writeDashboardYearControls_(dashboard, years, selectionState, labels) {
     .setFontFamily('Montserrat').setFontSize(9).setFontWeight('bold').setHorizontalAlignment('center');
   dashboard.getRange(3, 17, Math.max(1, yearRows.length), 2).setFontFamily('Montserrat')
     .setFontSize(10).setHorizontalAlignment('center');
-  dashboard.getRange('V3').setBackground('#EAF7F2').setFontColor('#1A1B1F').setFontFamily('Montserrat')
+  dashboard.getRange('V2').setBackground('#EAF7F2').setFontColor('#1A1B1F').setFontFamily('Montserrat')
     .setFontSize(11).setFontWeight('bold').setHorizontalAlignment('center');
 }
 
@@ -695,6 +698,7 @@ function getDashboardDataSpecifications_(transactionsName, dashboardName, locali
       'July', 'August', 'September', 'October', 'November', 'December'];
   const selectedYears = 'TEXTJOIN(" or ",TRUE,FILTER("C = "&' + dashboard +
     '$Q$3:$Q,' + dashboard + '$R$3:$R=TRUE))';
+  const selectedYearValues = 'FILTER(' + dashboard + '$Q$3:$Q,' + dashboard + '$R$3:$R=TRUE)';
   const withoutPivotHeaders = function (query) {
     return 'FILTER(' + query + ',SEQUENCE(ROWS(' + query + '))>1)';
   };
@@ -716,28 +720,35 @@ function getDashboardDataSpecifications_(transactionsName, dashboardName, locali
   const annualCategoryValues = 'CHOOSECOLS(summary,SEQUENCE(1,COLUMNS(summary)-1,2))';
   const annualChartRows = 'LET(years,INDEX(summary,,1),values,' + annualCategoryValues +
     ',totals,BYROW(values,LAMBDA(row,TEXT(SUM(row),"#,##0.00")&" EUR")),' +
-      'HSTACK(MAP(years,totals,LAMBDA(year,total,year&IF(ROWS(years)=1," · ",CHAR(10))&total)),' +
-      'values))';
-  const monthlyComparison = '=IFERROR(LET(summary,QUERY(' + ledger +
-    ",\"select D,sum(G) where (J = 'expense' or J = 'income') and H = 'EUR' and (\"&" + selectedYears +
-    "&\") group by D pivot C order by D label sum(G) ''\",0),HSTACK(VSTACK(\"" +
-    (localization && localization.headers && localization.headers.month ? localization.headers.month : 'Month') + '\",' + monthName('INDEX(summary,,1)') + '),' +
-    'VSTACK(TRANSPOSE(FILTER(' + dashboard + '$Q$3:$Q,' + dashboard +
-      '$R$3:$R=TRUE)),CHOOSECOLS(summary,SEQUENCE(1,COLUMNS(summary)-1,2))))),"")';
+    'HSTACK(MAP(years,totals,LAMBDA(year,total,year&IF(ROWS(years)=1," · ",CHAR(10))&total)),' +
+    'values))';
+  const transactionYear = "'" + transactionsName + "'!C:C";
+  const transactionMonth = "'" + transactionsName + "'!D:D";
+  const transactionAmount = "'" + transactionsName + "'!G:G";
+  const transactionCurrency = "'" + transactionsName + "'!H:H";
+  const transactionType = "'" + transactionsName + "'!J:J";
+  const monthlyComparison = '=IFERROR(LET(years,' + selectedYearValues +
+    ',monthIndexes,SEQUENCE(12),HSTACK(VSTACK("' +
+    (localization && localization.headers && localization.headers.month ? localization.headers.month : 'Month') + '\",' + monthName('monthIndexes') + '),' +
+    'VSTACK(TRANSPOSE(years),MAKEARRAY(12,ROWS(years),LAMBDA(monthIndex,yearIndex,SUM(' +
+    'SUMIFS(' + transactionAmount + ',' + transactionYear + ',INDEX(years,yearIndex),' +
+    transactionMonth + ',monthIndex,' + transactionType + ',"expense",' + transactionCurrency + ',"EUR"),' +
+    'SUMIFS(' + transactionAmount + ',' + transactionYear + ',INDEX(years,yearIndex),' +
+    transactionMonth + ',monthIndex,' + transactionType + ',"income",' + transactionCurrency + ',"EUR"))))),"")))';
   return [
     { anchor: 'A2', formula: '=IFERROR(LET(summary,' + annualSummary +
       ',' + annualChartRows + '),"")' },
     { anchor: 'A30', formula: monthlyComparison },
     { anchor: 'A61', formula: monthLabels(withoutPivotHeaders('QUERY(' + ledger +
       ",\"select D,sum(G) where (J = 'expense' or J = 'income') and H = 'EUR' and C = \"&" + dashboard +
-        '$V$3&" group by D pivot K order by D label sum(G) \'\'",0)')) },
+        '$V$2&" group by D pivot K order by D label sum(G) \'\'",0)')) },
     { anchor: 'A90', formula: '=QUERY(' + ledger +
-      ",\"select C,sum(G) where (J = 'expense' or J = 'income') and H = 'EUR' and (\"&" + selectedYears +
-      "&\") group by C pivot E label sum(G) ''\",1)" },
+      ",\"select E,sum(G) where (J = 'expense' or J = 'income') and H = 'EUR' and (\"&" + selectedYears +
+      "&\") group by E pivot C order by E label sum(G) ''\",1)" },
     { anchor: 'A120', formula: '=IFERROR(LET(summary,QUERY(' + ledger +
       ",\"select M,sum(G) where (J = 'expense' or J = 'income') and H = 'EUR' and C = \"&" + dashboard +
-        '$V$3&" and M is not null and M <> \'Unknown\' and M <> \'N/A\' group by M order by sum(G) desc limit 10 label sum(G) \'\'",0),HSTACK(VSTACK("Year",' +
-        dashboard + '$V$3),VSTACK(TRANSPOSE(INDEX(summary,,1)),TRANSPOSE(INDEX(summary,,2))))),"")' }
+        '$V$2&" and M is not null and M <> \'Unknown\' and M <> \'N/A\' group by M order by sum(G) desc limit 10 label sum(G) \'\'",0),HSTACK(VSTACK("Year",' +
+        dashboard + '$V$2),VSTACK(TRANSPOSE(INDEX(summary,,1)),TRANSPOSE(INDEX(summary,,2))))),"")' }
   ];
 }
 
@@ -765,18 +776,10 @@ function waitForDashboardChartSources_(technicalData) {
 }
 
 function getDashboardChartSourceRange_(sheet, startRow, endRow) {
-  const values = sheet.getRange(startRow, 1, endRow - startRow + 1, 26).getValues();
-  let dataRows = 1;
-  let dataColumns = 1;
-  values.forEach(function (row, rowIndex) {
-    row.forEach(function (value, columnIndex) {
-      if (value !== '') {
-        dataRows = Math.max(dataRows, rowIndex + 1);
-        dataColumns = Math.max(dataColumns, columnIndex + 1);
-      }
-    });
-  });
-  return sheet.getRange(startRow, 1, Math.max(2, dataRows), Math.max(2, dataColumns));
+  // Charts retain the supplied range, while the formulas inside it expand and
+  // contract as dashboard controls change. Keep the full source block so a
+  // newly selected year cannot fall outside a chart created with fewer rows.
+  return sheet.getRange(startRow, 1, endRow - startRow + 1, 26);
 }
 
 function getDashboardLatestMonthSpendFormula_(transactionsName) {
@@ -805,6 +808,25 @@ function getDashboardSpendingCountFormula_(transactionsName) {
     'COUNTIFS(' + type + ',"income",' + currency + ',"EUR"))';
 }
 
+function getDashboardCurrentYearSpendFormula_(transactionsName) {
+  const amount = "'" + transactionsName + "'!G:G";
+  const year = "'" + transactionsName + "'!C:C";
+  const type = "'" + transactionsName + "'!J:J";
+  const currency = "'" + transactionsName + "'!H:H";
+  return '=SUM(SUMIFS(' + amount + ',' + type + ',"expense",' + currency + ',"EUR",' +
+    year + ',YEAR(TODAY())),SUMIFS(' + amount + ',' + type + ',"income",' + currency +
+    ',"EUR",' + year + ',YEAR(TODAY())))';
+}
+
+function getDashboardCurrentYearCountFormula_(transactionsName) {
+  const year = "'" + transactionsName + "'!C:C";
+  const type = "'" + transactionsName + "'!J:J";
+  const currency = "'" + transactionsName + "'!H:H";
+  return '=SUM(COUNTIFS(' + type + ',"expense",' + currency + ',"EUR",' + year +
+    ',YEAR(TODAY())),COUNTIFS(' + type + ',"income",' + currency + ',"EUR",' + year +
+    ',YEAR(TODAY())))';
+}
+
 function getDashboardSpendingTypeFilter_(typeRange) {
   return 'REGEXMATCH(' + typeRange + ',"^(expense|income)$")';
 }
@@ -827,6 +849,7 @@ function getDashboardLatestMonthLabelFormula_(transactionsName, monthNames) {
 function writeDashboardKpiCard_(dashboard, labelRange, valueRange, label, formula, currency, emphasis) {
   const palettes = {
     cumulative: { label: '#1E3A5F', value: '#E8F1FA' },
+    currentYear: { label: '#5B3A8C', value: '#F3E8FF' },
     monthly: { label: '#1A1B1F', value: '#EAF7F2' }
   };
   const palette = palettes[emphasis] || palettes.monthly;
@@ -841,6 +864,8 @@ function writeDashboardKpiCard_(dashboard, labelRange, valueRange, label, formul
     .setVerticalAlignment('middle');
   if (currency) {
     valueCell.setNumberFormat('#,##0.00 [$EUR]');
+  } else {
+    valueCell.setNumberFormat('#,##0');
   }
 }
 

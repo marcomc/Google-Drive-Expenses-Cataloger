@@ -35,8 +35,9 @@ function getItalianLocalization_() {
     },
     dashboard: {
       title: 'Spese di HoStello', subtitle: 'Riepilogo dinamico basato sulle transazioni importate',
-      totalSpend: 'Spesa complessiva', latestMonth: 'Ultimo mese importato',
-      latestMonthSpend: 'Spesa ultimo mese', expenseCount: 'Transazioni di spesa',
+      totalSpend: 'Spesa complessiva', expenseCount: 'Transazioni di spesa',
+      currentYearSpend: 'Spesa anno corrente', currentYearCount: 'Transazioni anno corrente',
+      latestMonth: 'Ultimo mese importato', latestMonthSpend: 'Spesa ultimo mese',
       annualSpend: 'Spesa annua per categoria', monthlyComparison: 'Confronto spese mensili per anno',
       monthlySpend: 'Andamento mensile per categoria', payerSpend: 'Spesa per pagatore',
       topMerchants: 'Top 10 esercenti / fornitori', comparisonYears: 'Anni da confrontare',
