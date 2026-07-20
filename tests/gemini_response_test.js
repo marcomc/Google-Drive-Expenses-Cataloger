@@ -32,6 +32,74 @@ assert.deepEqual(JSON.parse(JSON.stringify(context.applyIncomeRefundClassificati
   { category: 'Groceries', subcategory: 'General groceries', merchant: 'Conad', confidence: 0.9,
     rationale: 'Refund from supplier' }
 ))), ['unchanged', 'Groceries', 'General groceries', 'Conad', 0.9, 'Refund from supplier']);
+
+const incomeHeaders = ['Transaction type', 'Category', 'Subcategory', 'Merchant', 'Confidence', 'Rationale',
+  'Date', 'Payer', 'Beneficiaries', 'Amount', 'Currency', 'Description', 'Source category',
+  'Source custom category'];
+const incomeColumns = Object.fromEntries(incomeHeaders.map((header, index) => [header, index]));
+const incomeRows = [
+  ['income', '', '', '', '', '', '2026-04-01', 'Laura', 'Marco', -25, 'EUR', 'Historic refund', 'OTHER', ''],
+  ['income', 'Food and drink', 'Restaurant', 'Bar', 0.9, 'Already categorized', '2026-04-02', 'Laura', 'Marco',
+    -15, 'EUR', 'Known refund', 'FOOD_AND_DRINK', ''],
+  ['expense', '', '', '', '', '', '2026-04-03', 'Marco', 'Laura', 30, 'EUR', 'Expense', 'OTHER', '']
+];
+const incomeUpdates = [];
+const incomeTransactions = {
+  getLastRow: () => incomeRows.length + 1,
+  getRange: (row, _column, _rowCount, columnCount) => ({
+    getValues: () => columnCount === incomeHeaders.length ? incomeRows.map((entry) => entry.slice()) : [],
+    setValues: (values) => {
+      incomeRows[row - 2] = values[0].slice();
+      incomeUpdates.push({ row, values: values[0].slice() });
+    }
+  })
+};
+let geminiIncomeCalls = 0;
+let dashboardRefreshes = 0;
+let presentationRefreshes = 0;
+let orderingRefreshes = 0;
+context.withExpenseLock_ = (_source, callback) => callback();
+context.assertCatalogConfiguration_ = () => {};
+context.getAutomationConfig_ = () => ({ categories: { 'Food and drink': {} } });
+context.getRootFolderId_ = () => 'root-folder';
+context.DriveApp = { getFolderById: () => ({}) };
+context.loadDriveAgentsPolicy_ = () => ({});
+context.getSpreadsheetId_ = () => 'spreadsheet-id';
+context.SpreadsheetApp = { openById: () => ({ getSheetByName: () => ({}) }) };
+context.getExpenseSheetLayout_ = () => ({ headers: incomeHeaders, transactions: incomeTransactions });
+context.getLocalization_ = () => ({ headers: {
+  transactionType: 'Transaction type', category: 'Category', subcategory: 'Subcategory', merchant: 'Merchant',
+  confidence: 'Confidence', rationale: 'Rationale', date: 'Date', payer: 'Payer', beneficiaries: 'Beneficiaries',
+  amount: 'Amount', currency: 'Currency', description: 'Description', sourceCategory: 'Source category',
+  sourceCustomCategory: 'Source custom category'
+}, sheetNames: { dashboard: 'Dashboard' } });
+context.buildExpenseJsonNormalizationPrompt_ = (records) => records;
+context.callGeminiJson_ = (records) => {
+  geminiIncomeCalls += 1;
+  assert.equal(records.length, 1, 'only uncategorized income rows may reach Gemini');
+  return { records: [{ category: 'Food and drink', subcategory: 'Restaurant', merchant: 'Restaurant',
+    confidence: 0.8, rationale: 'Historic refund' }] };
+};
+context.applyJsonExpenseClassification_ = (classification) => classification;
+context.buildDashboard_ = () => { dashboardRefreshes += 1; };
+context.applyInstallerSpreadsheetPresentation_ = () => { presentationRefreshes += 1; };
+context.orderInstallerSheets_ = () => { orderingRefreshes += 1; };
+assert.deepEqual(JSON.parse(JSON.stringify(context.categorizeIncomeRefunds())), {
+  status: 'CATEGORIZED', categorized: 1
+});
+assert.equal(geminiIncomeCalls, 1);
+assert.equal(incomeUpdates.length, 1);
+assert.deepEqual(incomeRows[0].slice(incomeColumns.Date),
+  ['2026-04-01', 'Laura', 'Marco', -25, 'EUR', 'Historic refund', 'OTHER', ''],
+  'classification must leave immutable ledger and source values untouched');
+assert.equal(dashboardRefreshes, 1);
+assert.equal(presentationRefreshes, 1);
+assert.equal(orderingRefreshes, 1);
+assert.deepEqual(JSON.parse(JSON.stringify(context.categorizeIncomeRefunds())), {
+  status: 'UP_TO_DATE', categorized: 0
+});
+assert.equal(geminiIncomeCalls, 1, 'an idempotent retry must not reclassify configured income refunds');
+assert.equal(dashboardRefreshes, 1, 'no-op runs must not rebuild derived spreadsheet state');
 function generationResponse(finishReason, text) {
   return {
     candidates: [{

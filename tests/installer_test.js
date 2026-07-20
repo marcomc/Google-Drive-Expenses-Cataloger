@@ -42,6 +42,20 @@ assert.match(dashboardFormulas[0].formula,
   /MAP\(years,totals,LAMBDA\(year,total,year&IF\(ROWS\(years\)=1," · ",CHAR\(10\)\)&total\)\)/);
 const installerSource = fs.readFileSync('Installer.gs', 'utf8');
 assert.doesNotMatch(installerSource, /function getDashboardAxisTicks_/);
+assert.equal(context.getInstallerImportAuditHeaders_().indexOf('Source reconciliation status') + 1, 15);
+assert.match(installerSource, /const INSTALLER_PRESENTATION_VERSION = '2';/,
+  'the audit status-column migration must rerun managed presentation for existing sheets');
+const managedFormatRule = (range, value) => ({
+  getBooleanCondition: () => ({ getCriteriaValues: () => [value] }),
+  getRanges: () => [{ getA1Notation: () => range }]
+});
+assert.deepEqual(context.removeManagedTextFormatRules_({
+  getConditionalFormatRules: () => [
+    managedFormatRule('N2:N', 'OK'), managedFormatRule('O2:O1000', 'mismatch'),
+    managedFormatRule('P2:P', 'OK')
+  ]
+}, ['N2:N', 'O2:O1000'], ['OK', 'mismatch']).length, 1,
+  'presentation migration must replace its former and current managed status rules only');
 assert.match(dashboardFormulas[2].formula,
   /MAP\(labels,totals,LAMBDA\(label,total,label&" · "&total\)\)/);
 assert.match(installerSource, /const DASHBOARD_CHART_LAYOUT_DEFAULTS = \{/);

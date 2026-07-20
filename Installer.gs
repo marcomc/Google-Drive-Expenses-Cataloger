@@ -1151,7 +1151,7 @@ function insertDashboardChart_(dashboard, sourceRange, layout, title, type, swit
   dashboard.insertChart(configured.build());
 }
 
-const INSTALLER_PRESENTATION_VERSION = '1';
+const INSTALLER_PRESENTATION_VERSION = '2';
 
 function applyInstallerSpreadsheetPresentation_(spreadsheet, localization) {
   const names = localization.sheetNames;
@@ -1249,7 +1249,7 @@ function applyManagedConditionalFormatting_(spreadsheet, localization) {
   const imports = spreadsheet.getSheetByName(names.imports);
   const reconciliations = spreadsheet.getSheetByName(names.sourceReconciliations);
   if (transactions) {
-    const rules = transactions.getConditionalFormatRules();
+    const rules = removeManagedTextFormatRules_(transactions, ['J2:J'], ['expense', 'transfer']);
     rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('expense')
       .setBackground('#EAF7F2').setRanges([transactions.getRange('J2:J')]).build());
     rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('transfer')
@@ -1257,15 +1257,17 @@ function applyManagedConditionalFormatting_(spreadsheet, localization) {
     transactions.setConditionalFormatRules(rules);
   }
   if (imports) {
-    const rules = imports.getConditionalFormatRules();
+    const statusColumn = getInstallerImportAuditHeaders_().indexOf('Source reconciliation status') + 1;
+    const statusRange = imports.getRange(2, statusColumn, Math.max(1, imports.getMaxRows() - 1), 1);
+    const rules = removeManagedTextFormatRules_(imports, ['N2:N', statusRange.getA1Notation()], ['OK', 'mismatch']);
     rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('OK')
-      .setBackground('#DCFCE7').setRanges([imports.getRange('N2:N')]).build());
+      .setBackground('#DCFCE7').setRanges([statusRange]).build());
     rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('mismatch')
-      .setBackground('#FEE2E2').setRanges([imports.getRange('N2:N')]).build());
+      .setBackground('#FEE2E2').setRanges([statusRange]).build());
     imports.setConditionalFormatRules(rules);
   }
   if (reconciliations) {
-    const rules = reconciliations.getConditionalFormatRules();
+    const rules = removeManagedTextFormatRules_(reconciliations, ['O2:O'], ['OK', 'mismatch']);
     rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('OK')
       .setBackground('#DCFCE7').setRanges([reconciliations.getRange('O2:O')]).build());
     rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('mismatch')
@@ -1273,6 +1275,18 @@ function applyManagedConditionalFormatting_(spreadsheet, localization) {
     reconciliations.setConditionalFormatRules(rules);
   }
   properties.setProperty('SPREADSHEET_PRESENTATION_VERSION', INSTALLER_PRESENTATION_VERSION);
+}
+
+function removeManagedTextFormatRules_(sheet, managedRanges, managedValues) {
+  return sheet.getConditionalFormatRules().filter(function (rule) {
+    const condition = rule.getBooleanCondition();
+    const values = condition ? condition.getCriteriaValues() : [];
+    const hasManagedValue = values.length === 1 && managedValues.indexOf(String(values[0])) >= 0;
+    const hasManagedRange = rule.getRanges().some(function (range) {
+      return managedRanges.indexOf(range.getA1Notation()) >= 0;
+    });
+    return !hasManagedValue || !hasManagedRange;
+  });
 }
 
 function orderInstallerSheets_(spreadsheet, localization) {

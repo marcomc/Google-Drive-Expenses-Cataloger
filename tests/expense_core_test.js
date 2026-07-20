@@ -121,6 +121,25 @@ assert.equal(context.mapTricountTransactionType_('NORMAL', 'Marco - contanti', '
   'transfer');
 assert.equal(context.mapTricountTransactionType_('NORMAL', 'Spesa al supermercato', 'Spesa'), 'expense');
 assert.equal(context.mapTricountTransactionType_('INCOME', 'Rimborso acquisto', ''), 'income');
+const sameValueOpeningRecords = context.uniqueOpeningBalanceRecords_([
+  { date: '2026-04-01', currency: 'EUR', payer: 'Laura', amount: 50,
+    sourceTransactionId: 'opening-a', allocations: [{ participant: 'Marco', amount: 50 }] },
+  { date: '2026-04-01', currency: 'EUR', payer: 'Laura', amount: 50,
+    sourceTransactionId: 'opening-b', allocations: [{ participant: 'Marco', amount: 50 }] },
+  { date: '2026-04-01', currency: 'EUR', payer: 'Laura', amount: 50,
+    sourceTransactionId: 'opening-c', allocations: [{ participant: 'Sara', amount: 50 }] }
+]);
+assert.equal(sameValueOpeningRecords.length, 3,
+  'same-value opening records with distinct source identities or allocations must not collapse');
+const mirroredOpeningRecords = context.uniqueOpeningBalanceRecords_([
+  { date: '2026-04-01', currency: 'EUR', payer: 'Laura', amount: 50,
+    allocations: [{ participant: 'Marco', amount: 50 }] },
+  { date: '2026-04-01', currency: 'EUR', payer: 'Laura', amount: 50,
+    sourceTransactionId: 'opening-json', allocations: [{ participant: 'Marco', amount: 50 }] }
+]);
+assert.equal(mirroredOpeningRecords.length, 1);
+assert.equal(mirroredOpeningRecords[0].sourceTransactionId, 'opening-json',
+  'a source-poor CSV mirror must yield to its richer JSON checkpoint');
 assert.deepEqual(JSON.parse(JSON.stringify(context.buildExactBalanceDeltas_(jsonRecords[0]))), [
   { name: 'Laura', amount: -29 }, { name: 'Marco', amount: 29 }
 ]);

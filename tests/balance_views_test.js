@@ -35,6 +35,38 @@ assert.equal(context.findArchivedSourceRecordForLedgerBackfill_([
 }, {
   '2026-02-01|EUR|laura|12.5|conad': [{ sourceRow: 3, sourceTransactionId: 'archived-id' }]
 }).sourceTransactionId, 'archived-id');
+
+const incomeHeaders = ['Transaction type', 'Source native type', 'Source custom category', 'Description',
+  'Amount', 'Allocation details'];
+const historicIncomeRows = [[
+  'expense', 'INCOME', '', 'Historic refund', 25,
+  JSON.stringify([{ participant: 'Laura', amount: 10 }, { participant: 'Marco', amount: 15 }])
+], [
+  'expense', 'NORMAL', '', 'Historic expense', 40,
+  JSON.stringify([{ participant: 'Laura', amount: 40 }])
+]];
+const historicIncomeSheet = {
+  getLastRow: () => historicIncomeRows.length + 1,
+  getRange: (_row, column, _rowCount, columnCount) => ({
+    getValues: () => column === 1 && columnCount === incomeHeaders.length ? historicIncomeRows : [],
+    setValues: (values) => values.forEach((value, index) => { historicIncomeRows[index][column - 1] = value[0]; })
+  })
+};
+const incomeLocalization = { headers: {
+  transactionType: 'Transaction type', sourceNativeType: 'Source native type',
+  sourceCustomCategory: 'Source custom category', description: 'Description', amount: 'Amount',
+  allocationDetails: 'Allocation details'
+} };
+assert.equal(context.normalizeExistingLedgerTransactionTypes_(historicIncomeSheet, incomeHeaders, incomeLocalization), 1);
+assert.deepEqual(JSON.parse(JSON.stringify(historicIncomeRows[0].slice(0, 5))),
+  ['income', 'INCOME', '', 'Historic refund', -25]);
+assert.deepEqual(JSON.parse(JSON.stringify(context.parseStoredAllocations_(historicIncomeRows[0][5]).map((entry) => [
+  entry.participant, entry.amount
+]))), [['Laura', -10], ['Marco', -15]]);
+assert.equal(context.normalizeExistingLedgerTransactionTypes_(historicIncomeSheet, incomeHeaders, incomeLocalization), 0,
+  'legacy income sign migration must be idempotent');
+assert.equal(historicIncomeRows[1][4], 40, 'non-income rows must retain their stored amount');
+
 assert.deepEqual(JSON.parse(JSON.stringify(context.buildParticipantBalanceDeltas_({
   payer: 'Marco', beneficiaries: 'Laura', amount: 20, allocations: []
 }))), [

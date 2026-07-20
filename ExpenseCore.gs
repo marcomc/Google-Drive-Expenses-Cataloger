@@ -614,8 +614,18 @@ function uniqueOpeningBalanceRecords_(records) {
     }
     // CSV and JSON exports of the same monthly carry-over are distinct Drive
     // records but one economic checkpoint. Prefer the richer JSON record.
-    const key = [record.date, String(record.currency).toUpperCase(), normalizeParticipantName_(record.payer),
-      roundBalanceAmount_(Math.abs(Number(record.amount)))].join('|');
+    const allocationKey = (record.allocations || []).map(function (allocation) {
+      return [normalizeParticipantName_(allocation.participant),
+        roundBalanceAmount_(Number(allocation.amount))].join(':');
+    }).sort().join(',');
+    const baseKey = [record.date, String(record.currency).toUpperCase(), normalizeParticipantName_(record.payer),
+      roundBalanceAmount_(Math.abs(Number(record.amount))), allocationKey].join('|');
+    const sourceTransactionId = String(record.sourceTransactionId || '');
+    let key = baseKey;
+    if (selected[key] && sourceTransactionId && selected[key].sourceTransactionId &&
+      sourceTransactionId !== String(selected[key].sourceTransactionId)) {
+      key += '|source:' + sourceTransactionId;
+    }
     const current = selected[key];
     const quality = (Array.isArray(record.allocations) && record.allocations.length > 0 ? 2 : 0) +
       (record.sourceTransactionId ? 1 : 0);

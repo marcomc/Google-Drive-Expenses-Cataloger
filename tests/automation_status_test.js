@@ -171,6 +171,22 @@ assert.throws(() => context.enableExpenseCataloging(), /Managed automation trigg
 assert.equal(properties.get('AUTO_PROCESSING'), 'false');
 
 activeTriggers = [
+  makeTrigger('processDriveEventQueue', 'existing-polling'),
+  makeTrigger('runDailyExpenseCataloging', 'existing-daily')
+];
+assert.throws(() => context.enableExpenseCataloging(), /Managed automation triggers are not healthy/);
+assert.equal(properties.get('AUTO_PROCESSING'), 'false');
+
+activeTriggers = [
+  makeTrigger('processDriveEventQueue', 'existing-polling'),
+  makeTrigger('runDailyExpenseCataloging', 'existing-daily'),
+  makeTrigger('applyDashboardYearColorsOnEdit', 'existing-dashboard-edit-one'),
+  makeTrigger('applyDashboardYearColorsOnEdit', 'existing-dashboard-edit-two')
+];
+assert.throws(() => context.enableExpenseCataloging(), /Managed automation triggers are not healthy/);
+assert.equal(properties.get('AUTO_PROCESSING'), 'false');
+
+activeTriggers = [
   makeTrigger('processDriveEventQueue', 'duplicate-polling-one'),
   makeTrigger('processDriveEventQueue', 'duplicate-polling-two'),
   makeTrigger('runDailyExpenseCataloging', 'existing-daily')
@@ -214,6 +230,9 @@ assert.deepEqual(triggerLockTimeouts, [280000]);
 
 events.length = 0;
 activeTriggers = [];
+triggerLockAcquisitions = 0;
+triggerLockReleases = 0;
+triggerLockTimeouts.length = 0;
 assert.deepEqual(JSON.parse(JSON.stringify(context.installDashboardYearColorEditTrigger())), {
   triggerCount: 1
 });
@@ -221,6 +240,9 @@ assert.deepEqual(events, ['create:applyDashboardYearColorsOnEdit']);
 assert.deepEqual(activeTriggers.map((trigger) => trigger.getHandlerFunction()), [
   'applyDashboardYearColorsOnEdit'
 ]);
+assert.equal(triggerLockAcquisitions, 1);
+assert.equal(triggerLockReleases, 1);
+assert.deepEqual(triggerLockTimeouts, [280000]);
 
 events.length = 0;
 activeTriggers = [
@@ -240,9 +262,15 @@ assert.equal(dashboardTriggerSpreadsheetIds.at(-1), 'replacement-spreadsheet',
   'trigger reconciliation must bind a replacement to the configured spreadsheet');
 properties.set('SPREADSHEET_ID', 'spreadsheet-id');
 
+triggerLockAcquisitions = 0;
+triggerLockReleases = 0;
+triggerLockAvailable = false;
+assert.throws(() => context.installDashboardYearColorEditTrigger(), /Could not acquire the automation trigger lock/);
+triggerLockAvailable = true;
+
 triggerLockAvailable = false;
 assert.throws(() => context.installAutomationTriggers(), /Could not acquire the automation trigger lock/);
-assert.equal(triggerLockReleases, 1);
+assert.equal(triggerLockReleases, 0);
 triggerLockAvailable = true;
 
 events.length = 0;

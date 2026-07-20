@@ -5,6 +5,10 @@ const AUTOMATION_TRIGGER_HANDLERS = Object.freeze([
 const DASHBOARD_YEAR_COLOR_EDIT_TRIGGER_HANDLER = 'applyDashboardYearColorsOnEdit';
 
 function installDashboardYearColorEditTrigger() {
+  return withAutomationTriggerLock_(installDashboardYearColorEditTrigger_);
+}
+
+function installDashboardYearColorEditTrigger_() {
   const existing = ScriptApp.getProjectTriggers().filter(function (trigger) {
     return trigger.getHandlerFunction() === DASHBOARD_YEAR_COLOR_EDIT_TRIGGER_HANDLER;
   });
@@ -35,7 +39,7 @@ function installAutomationTriggers() {
       created.push(ScriptApp.newTrigger('processDriveEventQueue').timeBased().everyMinutes(15).create());
       created.push(ScriptApp.newTrigger('runDailyExpenseCataloging').timeBased()
         .atHour(CONFIG.DAILY_TRIGGER_HOUR).everyDays(1).create());
-      dashboardTriggerStatus = installDashboardYearColorEditTrigger();
+      dashboardTriggerStatus = installDashboardYearColorEditTrigger_();
     } catch (error) {
       created.forEach(function (trigger) { ScriptApp.deleteTrigger(trigger); });
       throw error;

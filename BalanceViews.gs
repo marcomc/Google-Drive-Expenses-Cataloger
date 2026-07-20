@@ -92,6 +92,8 @@ function normalizeExistingLedgerTransactionTypes_(sheet, headers, localization) 
   const sourceTypeColumn = headers.indexOf(names.sourceNativeType);
   const sourceCustomCategoryColumn = headers.indexOf(names.sourceCustomCategory);
   const descriptionColumn = headers.indexOf(names.description);
+  const amountColumn = headers.indexOf(names.amount);
+  const allocationDetailsColumn = headers.indexOf(names.allocationDetails);
   if ([typeColumn, sourceTypeColumn, sourceCustomCategoryColumn, descriptionColumn]
     .some(function (column) { return column < 0; })) {
     return 0;
@@ -99,21 +101,67 @@ function normalizeExistingLedgerTransactionTypes_(sheet, headers, localization) 
   const rowCount = sheet.getLastRow() - 1;
   const rows = sheet.getRange(2, 1, rowCount, headers.length).getValues();
   let changed = 0;
+  let typeChanged = false;
+  let amountChanged = false;
+  let allocationsChanged = false;
   const types = rows.map(function (row) {
     const current = String(row[typeColumn] || 'expense');
-    const sourceType = String(row[sourceTypeColumn] || '').trim();
+    const sourceType = String(row[sourceTypeColumn] || '').trim().toUpperCase();
     const customCategory = String(row[sourceCustomCategoryColumn] || '').trim();
+    let rowChanged = false;
     if (!sourceType && !customCategory) {
       return [current];
     }
     const normalized = mapTricountTransactionType_(sourceType, row[descriptionColumn], customCategory);
     if (normalized !== current) {
+      typeChanged = true;
+      rowChanged = true;
+    }
+    if (sourceType === 'INCOME' && amountColumn >= 0) {
+      const amount = Number(row[amountColumn]);
+      if (isFinite(amount) && amount > 0) {
+        amountChanged = true;
+        rowChanged = true;
+      }
+    }
+    if (sourceType === 'INCOME' && allocationDetailsColumn >= 0) {
+      const storedAllocations = String(row[allocationDetailsColumn] || '').trim();
+      const allocations = parseStoredAllocations_(storedAllocations);
+      if (storedAllocations && allocations.some(function (allocation) {
+        return Number(allocation.amount) > 0;
+      })) {
+        allocationsChanged = true;
+        rowChanged = true;
+      }
+    }
+    if (rowChanged) {
       changed += 1;
     }
     return [normalized];
   });
-  if (changed > 0) {
+  if (typeChanged) {
     sheet.getRange(2, typeColumn + 1, rowCount, 1).setValues(types);
+  }
+  if (amountChanged) {
+    sheet.getRange(2, amountColumn + 1, rowCount, 1).setValues(rows.map(function (row) {
+      const sourceType = String(row[sourceTypeColumn] || '').trim().toUpperCase();
+      const amount = Number(row[amountColumn]);
+      return [sourceType === 'INCOME' && isFinite(amount) ? -Math.abs(amount) : row[amountColumn]];
+    }));
+  }
+  if (allocationsChanged) {
+    sheet.getRange(2, allocationDetailsColumn + 1, rowCount, 1).setValues(rows.map(function (row) {
+      const sourceType = String(row[sourceTypeColumn] || '').trim().toUpperCase();
+      const storedAllocations = String(row[allocationDetailsColumn] || '').trim();
+      if (sourceType !== 'INCOME' || !storedAllocations) {
+        return [row[allocationDetailsColumn]];
+      }
+      const allocations = parseStoredAllocations_(storedAllocations);
+      return [allocations.some(function (allocation) { return Number(allocation.amount) > 0; }) ?
+        serializeTricountAllocations_(allocations.map(function (allocation) {
+          return Object.assign({}, allocation, { amount: -Math.abs(Number(allocation.amount)) });
+        })) : row[allocationDetailsColumn]];
+    }));
   }
   return changed;
 }

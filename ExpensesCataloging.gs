@@ -13,7 +13,8 @@ function enableExpenseCataloging() {
   assertCatalogConfiguration_();
   const triggerStatus = getAutomationTriggerStatus_();
   if (triggerStatus.missingTriggerHandlers.length > 0 ||
-    triggerStatus.duplicateTriggerHandlers.length > 0) {
+    triggerStatus.duplicateTriggerHandlers.length > 0 ||
+    getDashboardYearColorEditTriggerCount_() !== 1) {
     throw new Error('Managed automation triggers are not healthy. Run installAutomationTriggers first.');
   }
   PropertiesService.getScriptProperties().setProperty(CONFIG.PROPERTY_KEYS.AUTO_PROCESSING, 'true');
