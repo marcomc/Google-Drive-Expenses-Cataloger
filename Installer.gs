@@ -970,7 +970,7 @@ function getDashboardDataSpecifications_(transactionsName, dashboardName, locali
   };
   const monthLabels = function (query) {
     return '=IFERROR(LET(summary,' + query + ',data,FILTER(summary,SEQUENCE(ROWS(summary))>1),labels,' +
-      monthName('INDEX(data,,1)') + ',values,CHOOSECOLS(data,SEQUENCE(1,COLUMNS(data)-1,2)),totals,' +
+      monthName('INDEX(data,,1)') + ',values,CHOOSECOLS(data,SEQUENCE(1,COLUMNS(data)-1,2,1)),totals,' +
       'BYROW(values,LAMBDA(row,TEXT(SUM(row),"#,##0.00")&" EUR")),VSTACK(' +
       localizedHeaders('summary') + ',HSTACK(MAP(labels,totals,LAMBDA(label,total,label&" · "&total)),' +
       'values))),"")';
@@ -978,7 +978,7 @@ function getDashboardDataSpecifications_(transactionsName, dashboardName, locali
   const annualSummary = 'QUERY(' + ledger +
     ",\"select C,sum(G) where (J = 'expense' or J = 'income') and H = 'EUR' and (\"&" + selectedYears +
     "&\") group by C pivot K label sum(G) ''\",1)";
-  const annualCategoryValues = 'CHOOSECOLS(data,SEQUENCE(1,COLUMNS(data)-1,2))';
+  const annualCategoryValues = 'CHOOSECOLS(data,SEQUENCE(1,COLUMNS(data)-1,2,1))';
   const annualChartRows = 'LET(years,INDEX(data,,1),values,' + annualCategoryValues +
     ',totals,BYROW(values,LAMBDA(row,TEXT(SUM(row),"#,##0.00")&" EUR")),' +
     'HSTACK(MAP(years,totals,LAMBDA(year,total,year&" · "&total)),values))';

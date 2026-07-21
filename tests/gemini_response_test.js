@@ -129,6 +129,54 @@ assert.deepEqual(
   { accepted: true },
   'A complete JSON value must remain usable when Gemini appends non-JSON text.'
 );
+assert.deepEqual(
+  JSON.parse(JSON.stringify(context.parseGeminiJsonResponse_(
+    generationResponse('STOP', 'Here is the requested result:\n{"accepted":true}')
+  ))),
+  { accepted: true },
+  'Leading model prose must not hide a complete JSON value.'
+);
+assert.deepEqual(
+  JSON.parse(JSON.stringify(context.parseGeminiJsonResponse_(
+    generationResponse('STOP', 'Result:\n```json\n[{"accepted":true}]\n```')
+  ))),
+  [{ accepted: true }],
+  'A fenced JSON value after leading prose must remain usable.'
+);
+assert.deepEqual(
+  JSON.parse(JSON.stringify(context.parseGeminiJsonResponse_(
+    generationResponse('STOP', 'Do not use {placeholder}. Result: {"accepted":true}')
+  ))),
+  { accepted: true },
+  'An earlier balanced non-JSON snippet must not hide a later valid value.'
+);
+assert.deepEqual(
+  JSON.parse(JSON.stringify(context.parseGeminiJsonResponse_(generationResponse(
+    'STOP',
+    'Result: {not: "json"}\n' +
+      '{"records":[{"text":"escaped quote: \\\"; braces: { } and brackets: [ ]",' +
+      '"nested":{"values":[1,{"ok":true}]}}]}\nDone.'
+  )))),
+  {
+    records: [{
+      text: 'escaped quote: "; braces: { } and brackets: [ ]',
+      nested: { values: [1, { ok: true }] }
+    }]
+  },
+  'Nested delimiters and escaped string content must be scanned without truncation.'
+);
+assert.throws(
+  () => context.parseGeminiJsonResponse_(
+    generationResponse('STOP', 'Result: {"accepted":')
+  ),
+  /Gemini returned invalid JSON:.*incomplete/
+);
+assert.throws(
+  () => context.parseGeminiJsonResponse_(
+    generationResponse('STOP', 'Result: {accepted: true} and [still invalid]')
+  ),
+  /Gemini returned invalid JSON:.*no complete valid object or array/
+);
 assert.throws(
   () => context.parseGeminiJsonResponse_(
     generationResponse('MAX_TOKENS', '{"accepted":true}')

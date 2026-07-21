@@ -43,6 +43,12 @@ assert.match(dashboardFormulas[4].formula,
 assert.match(dashboardFormulas[0].formula,
   /MAP\(years,totals,LAMBDA\(year,total,year&" · "&total\)\)/,
   'annual chart labels must use one clear native axis label per year');
+const allPivotValueColumns =
+  /values,CHOOSECOLS\(data,SEQUENCE\(1,COLUMNS\(data\)-1,2,1\)\)/;
+assert.match(dashboardFormulas[0].formula, allPivotValueColumns,
+  'annual category data must select every pivot value column from column 2 with step 1');
+assert.match(dashboardFormulas[2].formula, allPivotValueColumns,
+  'monthly category data must select every pivot value column from column 2 with step 1');
 const installerSource = fs.readFileSync('Installer.gs', 'utf8');
 assert.doesNotMatch(installerSource, /function getDashboardAxisTicks_/);
 assert.equal(context.getInstallerImportAuditHeaders_().indexOf('Source reconciliation status') + 1, 15);

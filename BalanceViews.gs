@@ -16,6 +16,7 @@ function refreshBalanceViews() {
 }
 
 function refreshBalanceViews_(spreadsheet) {
+  const config = getAutomationConfig_();
   const localization = getLocalization_();
   const transactions = ensureInstallerSheet_(spreadsheet, localization.sheetNames.transactions,
     getInstallerTransactionHeaders_(localization));
@@ -44,7 +45,9 @@ function refreshBalanceViews_(spreadsheet) {
   const sourceFiles = getReconciledSourceFiles_(sourceReconciliations, localization);
   enrichLedgerBalanceSourceMetadata_(allLedgerRecords, sourceFiles);
   const checks = mergeLedgerOpeningBalanceChecks_(recordedChecks, allLedgerRecords);
-  applyLedgerBalancePeriods_(allLedgerRecords, buildLedgerBalanceSourcePeriods_(sourceFiles, checks));
+  const sourcePeriods = buildLedgerBalanceSourcePeriods_(sourceFiles, checks, config);
+  applyLedgerBalancePeriods_(allLedgerRecords, sourcePeriods);
+  applyLedgerBalancePeriods_(checks.flatMap(getOpeningBalanceRecordsFromCheck_), sourcePeriods);
   const ledgerRecords = allLedgerRecords.filter(function (record) {
     return !isBalanceControlRecord_(record);
   });
@@ -477,7 +480,19 @@ function mergeLedgerOpeningBalanceChecks_(checks, records) {
   });
 }
 
-function buildLedgerBalanceSourcePeriods_(sourceFiles, checks) {
+function getEligibleTricountSourcePeriod_(sourceFileName, config) {
+  const name = String(sourceFileName || '');
+  if (!isEligibleTricountJsonFileName_(name, config) || /-\d{6}-\d{6}\.json$/i.test(name)) {
+    return '';
+  }
+  const match = name.match(/-(\d{4})(\d{2})\.json$/i);
+  if (!match || Number(match[2]) < 1 || Number(match[2]) > 12) {
+    return '';
+  }
+  return match[1] + '-' + match[2];
+}
+
+function buildLedgerBalanceSourcePeriods_(sourceFiles, checks, config) {
   const openingRecordsByFile = {};
   (checks || []).flatMap(getOpeningBalanceRecordsFromCheck_).forEach(function (record) {
     const sourceFileId = String(record.sourceFileId || getDriveFileIdFromUrl_(record.sourceFile));
@@ -489,17 +504,16 @@ function buildLedgerBalanceSourcePeriods_(sourceFiles, checks) {
     }
   });
   return (sourceFiles || []).reduce(function (result, source) {
-    const match = String(source.name || '').match(/^transactions-hostello-(\d{4})(\d{2})\.json$/i);
-    if (!match) {
+    let period = getEligibleTricountSourcePeriod_(source.name, config);
+    if (!period) {
       return result;
     }
-    let period = match[1] + '-' + match[2];
     const openingRecords = (openingRecordsByFile[String(source.id || '')] || []).sort(function (left, right) {
       return String(left.date || '').localeCompare(String(right.date || ''));
     });
     if (openingRecords.length > 0) {
       const openingPeriod = String(openingRecords[0].date || '').slice(0, 7);
-      const fileMonthIndex = Number(match[1]) * 12 + Number(match[2]);
+      const fileMonthIndex = Number(period.slice(0, 4)) * 12 + Number(period.slice(5, 7));
       const openingMonthIndex = Number(openingPeriod.slice(0, 4)) * 12 + Number(openingPeriod.slice(5, 7));
       if (/^\d{4}-\d{2}$/.test(openingPeriod) && Math.abs(openingMonthIndex - fileMonthIndex) > 1) {
         period = openingPeriod;
@@ -1060,11 +1074,9 @@ function buildDeclaredMonthlyBalanceControls_(checks, excludedOpeningGroups) {
 function getOpeningBalanceMonthKey_(record) {
   const date = String(record && record.date || '');
   const dateMonth = date.slice(0, 7);
-  const sourceFileName = String(record && record.sourceFileName || '');
-  const sourceMonthMatches = sourceFileName.match(/(\d{4})(\d{2})(?=\.json$|[-_])/g) || [];
-  const sourceMonth = sourceMonthMatches.length > 0 ? sourceMonthMatches[sourceMonthMatches.length - 1] : '';
-  if (sourceMonth && sourceMonth !== date.slice(0, 6) && Number(date.slice(8, 10)) > 7) {
-    return sourceMonth.slice(0, 4) + '-' + sourceMonth.slice(4, 6);
+  const sourceMonth = String(record && record.balanceMonth || '');
+  if (/^\d{4}-\d{2}$/.test(sourceMonth) && sourceMonth !== dateMonth && Number(date.slice(8, 10)) > 7) {
+    return sourceMonth;
   }
   return dateMonth;
 }

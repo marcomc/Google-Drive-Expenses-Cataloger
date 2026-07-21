@@ -1238,44 +1238,62 @@ function parseGeminiJsonResponse_(response) {
 }
 
 /**
- * Gemini can occasionally append prose or a duplicate response after a complete
- * JSON object despite responseMimeType. Keep the first complete structured
- * value; callers still validate its expected schema before using it.
+ * Gemini can occasionally wrap a response in prose or append duplicate content
+ * despite responseMimeType. Keep the first complete, syntactically valid
+ * structured value; callers still validate its expected schema before using it.
  */
 function extractGeminiJsonValue_(text) {
-  const candidate = String(text || '').trim().replace(/^```json\s*/i, '');
-  const opening = candidate.charAt(0);
-  if (opening !== '{' && opening !== '[') {
-    throw new Error('Gemini JSON content must begin with an object or array.');
-  }
+  const candidate = String(text || '');
   const closingFor = { '{': '}', '[': ']' };
-  const stack = [];
-  let inString = false;
-  let escaped = false;
-  for (let index = 0; index < candidate.length; index += 1) {
-    const character = candidate.charAt(index);
-    if (inString) {
-      if (escaped) {
-        escaped = false;
-      } else if (character === '\\') {
-        escaped = true;
-      } else if (character === '"') {
-        inString = false;
-      }
+  let sawOpening = false;
+  let sawCompleteValue = false;
+  for (let start = 0; start < candidate.length; start += 1) {
+    const opening = candidate.charAt(start);
+    if (opening !== '{' && opening !== '[') {
       continue;
     }
-    if (character === '"') {
-      inString = true;
-    } else if (character === '{' || character === '[') {
-      stack.push(closingFor[character]);
-    } else if (character === '}' || character === ']') {
-      if (stack.pop() !== character) {
-        throw new Error('Gemini JSON content has mismatched delimiters.');
+    sawOpening = true;
+    const stack = [];
+    let inString = false;
+    let escaped = false;
+    for (let index = start; index < candidate.length; index += 1) {
+      const character = candidate.charAt(index);
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+        } else if (character === '\\') {
+          escaped = true;
+        } else if (character === '"') {
+          inString = false;
+        }
+        continue;
       }
-      if (stack.length === 0) {
-        return candidate.slice(0, index + 1);
+      if (character === '"') {
+        inString = true;
+      } else if (character === '{' || character === '[') {
+        stack.push(closingFor[character]);
+      } else if (character === '}' || character === ']') {
+        if (stack.pop() !== character) {
+          break;
+        }
+        if (stack.length === 0) {
+          sawCompleteValue = true;
+          const value = candidate.slice(start, index + 1);
+          try {
+            JSON.parse(value);
+            return value;
+          } catch (error) {
+            break;
+          }
+        }
       }
     }
+  }
+  if (!sawOpening) {
+    throw new Error('Gemini JSON content contains no object or array.');
+  }
+  if (sawCompleteValue) {
+    throw new Error('Gemini JSON content contains no complete valid object or array.');
   }
   throw new Error('Gemini JSON content is incomplete.');
 }

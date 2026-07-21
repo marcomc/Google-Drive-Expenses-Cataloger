@@ -205,13 +205,18 @@ assert.deepEqual(JSON.parse(JSON.stringify(resetRows.filter((row) => row[0] === 
 ]);
 
 assert.equal(context.getOpeningBalanceMonthKey_({ date: '2025-05-31',
-  sourceFileName: 'transactions-hostello-202506.json' }), '2025-06',
+  balanceMonth: '2025-06' }), '2025-06',
   'a month-opening marker dated on the prior month end uses its Tricount month');
+assert.equal(context.getOpeningBalanceMonthKey_({ date: '2025-05-31',
+  sourceFileName: 'transactions-unrelated-202506.json' }), '2025-05',
+  'an unmapped source filename cannot move an opening marker to another month');
 
+const sourceConfig = { intake_keyword: 'Casa.+(Shared)' };
 const sourceFiles = [
-  { id: 'december', name: 'transactions-hostello-202312.json' },
-  { id: 'combined', name: 'transactions-hostello-202305-202308.json' },
-  { id: 'mistyped-april', name: 'transactions-hostello-202304.json' }
+  { id: 'december', name: 'transactions-Casa.+(Shared)-202312.json' },
+  { id: 'combined', name: 'transactions-Casa.+(Shared)-202305-202308.json' },
+  { id: 'mistyped-april', name: 'transactions-Casa.+(Shared)-202304.json' },
+  { id: 'ineligible', name: 'transactions-unrelated-202401.json' }
 ];
 const sourceLedgerRecords = [{
   id: 'december-opening', date: '2023-12-01', year: 2023, month: 12, currency: 'EUR',
@@ -233,24 +238,36 @@ const sourceLedgerRecords = [{
   payer: 'Laura', amount: 10, transactionType: 'expense',
   sourceFile: 'https://drive.google.com/open?id=mistyped-april', sourceRow: 1,
   allocations: [{ participant: 'Marco', amount: 10 }]
+}, {
+  id: 'ineligible-expense', date: '2024-02-02', year: 2024, month: 2, currency: 'EUR',
+  payer: 'Laura', amount: 10, transactionType: 'expense',
+  sourceFile: 'https://drive.google.com/open?id=ineligible', sourceRow: 1,
+  allocations: [{ participant: 'Marco', amount: 10 }]
 }];
 context.enrichLedgerBalanceSourceMetadata_(sourceLedgerRecords, sourceFiles);
 const sourceChecks = context.mergeLedgerOpeningBalanceChecks_([{
   record: {
     date: '2025-04-01', currency: 'EUR', payer: 'Marco', amount: 0.78,
-    sourceFileId: 'mistyped-april', sourceFileName: 'transactions-hostello-202304.json',
+    sourceFileId: 'mistyped-april', sourceFileName: 'transactions-Casa.+(Shared)-202304.json',
     transactionType: 'opening_balance', allocations: [{ participant: 'Laura', amount: 0.78 }]
   }
 }], sourceLedgerRecords);
-const sourcePeriods = context.buildLedgerBalanceSourcePeriods_(sourceFiles, sourceChecks);
+const sourcePeriods = context.buildLedgerBalanceSourcePeriods_(sourceFiles, sourceChecks, sourceConfig);
 context.applyLedgerBalancePeriods_(sourceLedgerRecords, sourcePeriods);
-assert.equal(sourceLedgerRecords[0].sourceFileName, 'transactions-hostello-202312.json');
+context.applyLedgerBalancePeriods_(sourceChecks.flatMap(context.getOpeningBalanceRecordsFromCheck_), sourcePeriods);
+assert.equal(sourceLedgerRecords[0].sourceFileName, 'transactions-Casa.+(Shared)-202312.json');
 assert.equal(context.getBalanceMonthKey_(sourceLedgerRecords[1]), '2023-12',
   'a backdated transaction belongs to the monthly Tricount balance period');
 assert.equal(context.getBalanceMonthKey_(sourceLedgerRecords[2]), '2023-08',
   'a combined multi-month source retains the transaction calendar month');
 assert.equal(context.getBalanceMonthKey_(sourceLedgerRecords[3]), '2025-04',
   'an opening marker corrects a materially mistyped source filename period');
+assert.equal(context.getBalanceMonthKey_(sourceLedgerRecords[4]), '2024-02',
+  'an ineligible source retains the transaction calendar month');
+assert.equal(sourcePeriods.combined, undefined, 'a combined-range source has no mapped balance period');
+assert.equal(sourcePeriods.ineligible, undefined, 'an ineligible source has no mapped balance period');
+assert.equal(context.getOpeningBalanceMonthKey_(sourceChecks[0].record), '2025-04',
+  'opening-marker correction uses the mapped period for a configured non-default keyword');
 
 const sourceOrderedLedger = [{
   id: 'november-movement', date: '2023-11-15', year: 2023, month: 11, currency: 'EUR',
