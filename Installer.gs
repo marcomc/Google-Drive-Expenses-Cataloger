@@ -1,7 +1,15 @@
 const INSTALLER_SECRET_PREFIX = 'drive-expenses-cataloger-';
 // V11:X100 provides 90 comparison-year controls. The corresponding chart
 // sources need one label column plus one series column for every control row.
+const DASHBOARD_COMPARISON_YEAR_CONTROL_START_ROW = 11;
 const DASHBOARD_COMPARISON_YEAR_CONTROL_ROW_COUNT = 90;
+const DASHBOARD_COMPARISON_YEAR_CONTROL_END_ROW = DASHBOARD_COMPARISON_YEAR_CONTROL_START_ROW +
+  DASHBOARD_COMPARISON_YEAR_CONTROL_ROW_COUNT - 1;
+const DASHBOARD_DETAIL_YEAR_HEADER_ROW = DASHBOARD_COMPARISON_YEAR_CONTROL_END_ROW + 2;
+const DASHBOARD_DETAIL_YEAR_VALUE_ROW = DASHBOARD_DETAIL_YEAR_HEADER_ROW + 1;
+const DASHBOARD_MERCHANT_SORT_HEADER_ROW = DASHBOARD_DETAIL_YEAR_VALUE_ROW + 2;
+const DASHBOARD_MERCHANT_SORT_VALUE_ROW = DASHBOARD_MERCHANT_SORT_HEADER_ROW + 1;
+const DASHBOARD_CONTROL_LAST_ROW = DASHBOARD_MERCHANT_SORT_VALUE_ROW;
 const DASHBOARD_COMPARISON_CHART_COLUMN_COUNT = DASHBOARD_COMPARISON_YEAR_CONTROL_ROW_COUNT + 1;
 const DASHBOARD_BOUNDED_CHART_COLUMN_COUNT = 26;
 const DASHBOARD_TOP_MERCHANT_CHART_COLUMN_COUNT = 2;
@@ -76,11 +84,13 @@ function validateCatalogerInstallation() {
 
 /** Reapply the managed layout, reporting formulas, and presentation explicitly. */
 function refreshSpreadsheetLayoutAndPresentation() {
-  assertCatalogConfiguration_();
-  const spreadsheet = SpreadsheetApp.openById(getSpreadsheetId_());
-  initializeInstallerSheets_(spreadsheet, getAutomationConfig_());
-  SpreadsheetApp.flush();
-  return { status: 'REFRESHED', spreadsheetUrl: spreadsheet.getUrl() };
+  return withAutomationTriggerLock_(function () {
+    assertCatalogConfiguration_();
+    const spreadsheet = SpreadsheetApp.openById(getSpreadsheetId_());
+    initializeInstallerSheets_(spreadsheet, getAutomationConfig_());
+    SpreadsheetApp.flush();
+    return { status: 'REFRESHED', spreadsheetUrl: spreadsheet.getUrl() };
+  });
 }
 
 function validateInstallerOptions_(options) {
@@ -598,18 +608,22 @@ function writeConfigurationTaxonomy_(sheet, categories, localization) {
 function buildDashboard_(dashboard, transactions, localization) {
   const labels = localization.dashboard;
   const transactionsName = transactions.getName().replace(/'/g, "''");
+  const years = getDashboardAvailableYears_(transactions);
+  assertDashboardYearControlCapacity_(years);
   const technicalData = ensureInstallerSheet_(dashboard.getParent(), localization.sheetNames.technicalData, []);
   if (dashboard.getMaxColumns() < 24) {
     dashboard.insertColumnsAfter(dashboard.getMaxColumns(), 24 - dashboard.getMaxColumns());
   }
+  if (dashboard.getMaxRows() < DASHBOARD_CONTROL_LAST_ROW) {
+    dashboard.insertRowsAfter(dashboard.getMaxRows(), DASHBOARD_CONTROL_LAST_ROW - dashboard.getMaxRows());
+  }
   const selectionState = getDashboardSelectionState_(dashboard);
-  const years = getDashboardAvailableYears_(transactions);
   const chartLayouts = captureDashboardChartLayouts_(dashboard, labels);
   writeDashboardTechnicalData_(technicalData, transactionsName, dashboard.getName(), localization);
   dashboard.clear();
-  dashboard.getRange('A1:X100').breakApart();
-  dashboard.getRange('Q3:X100').removeCheckboxes();
-  dashboard.getRange('Q3:X100').clearDataValidations();
+  dashboard.getRange('A1:X' + DASHBOARD_CONTROL_LAST_ROW).breakApart();
+  dashboard.getRange('Q3:X' + DASHBOARD_CONTROL_LAST_ROW).removeCheckboxes();
+  dashboard.getRange('Q3:X' + DASHBOARD_CONTROL_LAST_ROW).clearDataValidations();
   dashboard.getCharts().forEach(function (chart) { dashboard.removeChart(chart); });
   dashboard.getRange('A1:X1').merge().setValue(labels.title);
   dashboard.getRange('A2:X2').merge().setValue(labels.subtitle);
@@ -693,7 +707,9 @@ function getDashboardSelectionState_(dashboard) {
     }, []);
   };
   const maxColumns = dashboard.getMaxColumns ? dashboard.getMaxColumns() : 27;
-  const layouts = [dashboard.getRange('V11:X100').getValues()];
+  const currentLayout = 'V' + DASHBOARD_COMPARISON_YEAR_CONTROL_START_ROW + ':X' +
+    DASHBOARD_COMPARISON_YEAR_CONTROL_END_ROW;
+  const layouts = [dashboard.getRange(currentLayout).getValues()];
   if (maxColumns >= 25) {
     layouts.push(dashboard.getRange('W11:Y100').getValues());
     layouts.push(dashboard.getRange('W51:Y100').getValues());
@@ -704,11 +720,13 @@ function getDashboardSelectionState_(dashboard) {
     return rows.some(function (row) { return Number(row[0]); });
   }) || [];
   const selectedYears = extractSelectedYears(currentRows);
-  const detailYear = Number(dashboard.getRange('X48').getValue()) || Number(dashboard.getRange('X50').getValue()) ||
+  const detailYear = Number(dashboard.getRange('X' + DASHBOARD_DETAIL_YEAR_VALUE_ROW).getValue()) ||
+    Number(dashboard.getRange('X48').getValue()) || Number(dashboard.getRange('X50').getValue()) ||
     (maxColumns >= 27 ? Number(dashboard.getRange('AA50').getValue()) : 0) ||
     Number(dashboard.getRange('V30').getValue()) ||
     Number(dashboard.getRange('V2').getValue()) || Number(dashboard.getRange('V3').getValue());
-  const merchantSort = String(dashboard.getRange('X51').getValue() || '');
+  const merchantSort = String(dashboard.getRange('X' + DASHBOARD_MERCHANT_SORT_VALUE_ROW).getValue() ||
+    dashboard.getRange('X51').getValue() || '');
   const yearColors = currentRows.reduce(function (colors, row) {
     const year = Number(row[0]);
     if (year && row[2]) {
@@ -739,7 +757,15 @@ function getDashboardAvailableYears_(transactions) {
   return years.sort(function (left, right) { return left - right; });
 }
 
+function assertDashboardYearControlCapacity_(years) {
+  if (years.length > DASHBOARD_COMPARISON_YEAR_CONTROL_ROW_COUNT) {
+    throw new Error('Dashboard supports at most ' + DASHBOARD_COMPARISON_YEAR_CONTROL_ROW_COUNT +
+      ' distinct years; found ' + years.length + '.');
+  }
+}
+
 function writeDashboardYearControls_(dashboard, years, selectionState, labels) {
+  assertDashboardYearControlCapacity_(years);
   const selectedYears = selectionState.selectedYears.length ? selectionState.selectedYears : years;
   const detailYear = years.indexOf(selectionState.detailYear) >= 0 ? selectionState.detailYear : years[years.length - 1];
   const merchantSortOptions = [
@@ -755,24 +781,28 @@ function writeDashboardYearControls_(dashboard, years, selectionState, labels) {
     return result;
   }, {});
   dashboard.getRange('V9:X9').merge().setValue(labels.comparisonYears);
-  dashboard.getRange('V47:X47').merge().setValue(labels.detailYear);
-  dashboard.getRange('V50:X50').merge().setValue(labels.merchantSort || 'Sort merchants');
+  dashboard.getRange('V' + DASHBOARD_DETAIL_YEAR_HEADER_ROW + ':X' + DASHBOARD_DETAIL_YEAR_HEADER_ROW)
+    .merge().setValue(labels.detailYear);
+  dashboard.getRange('V' + DASHBOARD_MERCHANT_SORT_HEADER_ROW + ':X' + DASHBOARD_MERCHANT_SORT_HEADER_ROW)
+    .merge().setValue(labels.merchantSort || 'Sort merchants');
   dashboard.getRange('V10:X10').setValues([[labels.year, labels.includeYear, labels.color || 'Color']]);
-  dashboard.getRange('V48:W48').merge().setValue(labels.selectedYear);
-  dashboard.getRange('X48').setValue(detailYear);
-  dashboard.getRange('V51:W51').merge().setValue(labels.merchantSortBy || 'Sort by');
-  dashboard.getRange('X51').setValue(merchantSort);
-  dashboard.getRange('X48').setDataValidation(SpreadsheetApp.newDataValidation()
+  dashboard.getRange('V' + DASHBOARD_DETAIL_YEAR_VALUE_ROW + ':W' + DASHBOARD_DETAIL_YEAR_VALUE_ROW)
+    .merge().setValue(labels.selectedYear);
+  dashboard.getRange('X' + DASHBOARD_DETAIL_YEAR_VALUE_ROW).setValue(detailYear);
+  dashboard.getRange('V' + DASHBOARD_MERCHANT_SORT_VALUE_ROW + ':W' + DASHBOARD_MERCHANT_SORT_VALUE_ROW)
+    .merge().setValue(labels.merchantSortBy || 'Sort by');
+  dashboard.getRange('X' + DASHBOARD_MERCHANT_SORT_VALUE_ROW).setValue(merchantSort);
+  dashboard.getRange('X' + DASHBOARD_DETAIL_YEAR_VALUE_ROW).setDataValidation(SpreadsheetApp.newDataValidation()
     .requireValueInList(years.map(String), true).setAllowInvalid(false).build());
-  dashboard.getRange('X51').setDataValidation(SpreadsheetApp.newDataValidation()
+  dashboard.getRange('X' + DASHBOARD_MERCHANT_SORT_VALUE_ROW).setDataValidation(SpreadsheetApp.newDataValidation()
     .requireValueInList(merchantSortOptions, true).setAllowInvalid(false).build());
   const yearRows = years.map(function (year, index) {
     const colorName = selectionState.yearColors && selectionState.yearColors[year];
     return [year, selectedYears.indexOf(year) >= 0, colorByName[colorName] ? colorName : colorNames[index % colorNames.length]];
   });
-  const values = dashboard.getRange(11, 22, yearRows.length, 3);
-  const colorCells = dashboard.getRange(11, 24, yearRows.length, 1);
-  dashboard.getRange(11, 23, yearRows.length, 1).insertCheckboxes();
+  const values = dashboard.getRange(DASHBOARD_COMPARISON_YEAR_CONTROL_START_ROW, 22, yearRows.length, 3);
+  const colorCells = dashboard.getRange(DASHBOARD_COMPARISON_YEAR_CONTROL_START_ROW, 24, yearRows.length, 1);
+  dashboard.getRange(DASHBOARD_COMPARISON_YEAR_CONTROL_START_ROW, 23, yearRows.length, 1).insertCheckboxes();
   values.setValues(yearRows);
   colorCells.setDataValidation(SpreadsheetApp.newDataValidation()
     .requireValueInList(colorNames, true).setAllowInvalid(false).build());
@@ -780,21 +810,28 @@ function writeDashboardYearControls_(dashboard, years, selectionState, labels) {
     .setFontColor('#FFFFFF').setFontWeight('bold').setHorizontalAlignment('center');
   dashboard.getRange('V9:X9').setBackground('#1A1B1F').setFontColor('#FFFFFF')
     .setFontFamily('Montserrat').setFontSize(10).setFontWeight('bold').setHorizontalAlignment('center');
-  dashboard.getRange('V47:X47').setBackground('#1A1B1F').setFontColor('#FFFFFF')
+  dashboard.getRange('V' + DASHBOARD_DETAIL_YEAR_HEADER_ROW + ':X' + DASHBOARD_DETAIL_YEAR_HEADER_ROW)
+    .setBackground('#1A1B1F').setFontColor('#FFFFFF')
     .setFontFamily('Montserrat').setFontSize(10).setFontWeight('bold').setHorizontalAlignment('center');
-  dashboard.getRange('V50:X50').setBackground('#1A1B1F').setFontColor('#FFFFFF')
+  dashboard.getRange('V' + DASHBOARD_MERCHANT_SORT_HEADER_ROW + ':X' + DASHBOARD_MERCHANT_SORT_HEADER_ROW)
+    .setBackground('#1A1B1F').setFontColor('#FFFFFF')
     .setFontFamily('Montserrat').setFontSize(10).setFontWeight('bold').setHorizontalAlignment('center');
   dashboard.getRange('V10:X10').setBackground('#EAF7F2').setFontColor('#1A1B1F')
     .setFontFamily('Montserrat').setFontSize(9).setFontWeight('bold').setHorizontalAlignment('center');
-  dashboard.getRange('V48:W48').setBackground('#EAF7F2').setFontColor('#1A1B1F')
+  dashboard.getRange('V' + DASHBOARD_DETAIL_YEAR_VALUE_ROW + ':W' + DASHBOARD_DETAIL_YEAR_VALUE_ROW)
+    .setBackground('#EAF7F2').setFontColor('#1A1B1F')
     .setFontFamily('Montserrat').setFontSize(9).setFontWeight('bold').setHorizontalAlignment('center');
-  dashboard.getRange('V51:W51').setBackground('#EAF7F2').setFontColor('#1A1B1F')
+  dashboard.getRange('V' + DASHBOARD_MERCHANT_SORT_VALUE_ROW + ':W' + DASHBOARD_MERCHANT_SORT_VALUE_ROW)
+    .setBackground('#EAF7F2').setFontColor('#1A1B1F')
     .setFontFamily('Montserrat').setFontSize(9).setFontWeight('bold').setHorizontalAlignment('center');
-  dashboard.getRange(11, 22, Math.max(1, yearRows.length), 3).setFontFamily('Montserrat')
+  dashboard.getRange(DASHBOARD_COMPARISON_YEAR_CONTROL_START_ROW, 22, Math.max(1, yearRows.length), 3)
+    .setFontFamily('Montserrat')
     .setFontSize(10).setHorizontalAlignment('center');
-  dashboard.getRange('X48').setBackground('#EAF7F2').setFontColor('#1A1B1F').setFontFamily('Montserrat')
+  dashboard.getRange('X' + DASHBOARD_DETAIL_YEAR_VALUE_ROW).setBackground('#EAF7F2')
+    .setFontColor('#1A1B1F').setFontFamily('Montserrat')
     .setFontSize(11).setFontWeight('bold').setHorizontalAlignment('center');
-  dashboard.getRange('X51').setBackground('#EAF7F2').setFontColor('#1A1B1F').setFontFamily('Montserrat')
+  dashboard.getRange('X' + DASHBOARD_MERCHANT_SORT_VALUE_ROW).setBackground('#EAF7F2')
+    .setFontColor('#1A1B1F').setFontFamily('Montserrat')
     .setFontSize(10).setFontWeight('bold').setHorizontalAlignment('center');
 }
 
@@ -879,7 +916,8 @@ function getDashboardSelectedYearChartColors_(dashboard, labels) {
     result[option.name] = option.hex;
     return result;
   }, {});
-  return dashboard.getRange('V11:X100').getValues().reduce(function (colors, row) {
+  return dashboard.getRange('V' + DASHBOARD_COMPARISON_YEAR_CONTROL_START_ROW + ':X' +
+    DASHBOARD_COMPARISON_YEAR_CONTROL_END_ROW).getValues().reduce(function (colors, row) {
     if (Number(row[0]) && row[1] === true) {
       colors.push(colorByName[String(row[2])] || options[colors.length % options.length].hex);
     }
@@ -904,10 +942,11 @@ function applyDashboardYearColorsOnEdit(event) {
   const lastRow = range.getRow() + range.getNumRows() - 1;
   const lastColumn = range.getColumn() + range.getNumColumns() - 1;
   const intersectsYearControls = sheet.getName() === localization.sheetNames.dashboard &&
-    range.getRow() <= 100 && lastRow >= 11 &&
+    range.getRow() <= DASHBOARD_COMPARISON_YEAR_CONTROL_END_ROW &&
+    lastRow >= DASHBOARD_COMPARISON_YEAR_CONTROL_START_ROW &&
     range.getColumn() <= 24 && lastColumn >= 23;
-  const firstManagedRow = Math.max(11, range.getRow());
-  const lastManagedRow = Math.min(100, lastRow);
+  const firstManagedRow = Math.max(DASHBOARD_COMPARISON_YEAR_CONTROL_START_ROW, range.getRow());
+  const lastManagedRow = Math.min(DASHBOARD_COMPARISON_YEAR_CONTROL_END_ROW, lastRow);
   const isYearControlEdit = intersectsYearControls && sheet
     .getRange(firstManagedRow, 22, lastManagedRow - firstManagedRow + 1, 1)
     .getValues().some(function (row) { return Number(row[0]); });
@@ -923,7 +962,8 @@ function applyDashboardYearChartColors_(dashboard, labels) {
     result[option.name] = option.hex;
     return result;
   }, {});
-  const colorCells = dashboard.getRange('X11:X100');
+  const colorCells = dashboard.getRange('X' + DASHBOARD_COMPARISON_YEAR_CONTROL_START_ROW + ':X' +
+    DASHBOARD_COMPARISON_YEAR_CONTROL_END_ROW);
   colorCells.setBackgrounds(colorCells.getValues().map(function (row) {
     return [colorByName[String(row[0])] || '#FFFFFF'];
   }));
@@ -946,9 +986,16 @@ function getDashboardDataSpecifications_(transactionsName, dashboardName, locali
   const monthNames = Array.isArray(dashboardLabels.monthNames) ? dashboardLabels.monthNames :
     ['January', 'February', 'March', 'April', 'May', 'June',
       'July', 'August', 'September', 'October', 'November', 'December'];
+  const comparisonYearRange = '$V$' + DASHBOARD_COMPARISON_YEAR_CONTROL_START_ROW + ':$V$' +
+    DASHBOARD_COMPARISON_YEAR_CONTROL_END_ROW;
+  const comparisonYearCheckboxRange = '$W$' + DASHBOARD_COMPARISON_YEAR_CONTROL_START_ROW + ':$W$' +
+    DASHBOARD_COMPARISON_YEAR_CONTROL_END_ROW;
+  const detailYearCell = '$X$' + DASHBOARD_DETAIL_YEAR_VALUE_ROW;
+  const merchantSortCell = '$X$' + DASHBOARD_MERCHANT_SORT_VALUE_ROW;
   const selectedYears = 'TEXTJOIN(" or ",TRUE,FILTER("C = "&' + dashboard +
-    '$V$11:$V,' + dashboard + '$W$11:$W=TRUE))';
-  const selectedYearValues = 'FILTER(' + dashboard + '$V$11:$V,' + dashboard + '$W$11:$W=TRUE)';
+    comparisonYearRange + ',' + dashboard + comparisonYearCheckboxRange + '=TRUE))';
+  const selectedYearValues = 'FILTER(' + dashboard + comparisonYearRange + ',' + dashboard +
+    comparisonYearCheckboxRange + '=TRUE)';
   const withoutPivotHeaders = function (query) {
     return 'FILTER(' + query + ',SEQUENCE(ROWS(' + query + '))>1)';
   };
@@ -993,7 +1040,7 @@ function getDashboardDataSpecifications_(transactionsName, dashboardName, locali
     localization.headers.amount : 'Amount';
   const alphabeticalMerchantSort = String(dashboardLabels.merchantSortAlphabetically || 'Alphabetical')
     .replace(/"/g, '""');
-  const merchantOrderBy = 'IF(' + dashboard + '$X$51="' + alphabeticalMerchantSort +
+  const merchantOrderBy = 'IF(' + dashboard + merchantSortCell + '="' + alphabeticalMerchantSort +
     '","order by M asc","order by sum(G) desc")';
   const monthlyComparison = '=IFERROR(LET(years,' + selectedYearValues +
     ',monthIndexes,SEQUENCE(12),HSTACK(VSTACK("' +
@@ -1010,13 +1057,13 @@ function getDashboardDataSpecifications_(transactionsName, dashboardName, locali
     { anchor: 'A30', formula: monthlyComparison },
     { anchor: 'A60', formula: monthLabels('QUERY(' + ledger +
       ",\"select D,sum(G) where (J = 'expense' or J = 'income') and H = 'EUR' and C = \"&" + dashboard +
-        '$X$48&" group by D pivot K order by D label sum(G) \'\'",1)') },
+        detailYearCell + '&" group by D pivot K order by D label sum(G) \'\'",1)') },
     { anchor: 'A90', formula: '=QUERY(' + ledger +
       ",\"select E,sum(G) where (J = 'expense' or J = 'income') and H = 'EUR' and (\"&" + selectedYears +
       "&\") group by E pivot C order by E label sum(G) ''\",1)" },
     { anchor: 'A120', formula: '=IFERROR(LET(summary,QUERY(' + ledger +
       ",\"select M,sum(G) where (J = 'expense' or J = 'income') and H = 'EUR' and C = \"&" + dashboard +
-        '$X$48&" and M is not null and M <> \'Unknown\' and M <> \'N/A\' group by M "&' + merchantOrderBy +
+        detailYearCell + '&" and M is not null and M <> \'Unknown\' and M <> \'N/A\' group by M "&' + merchantOrderBy +
         '&" limit 20 label sum(G) \'\'",0),VSTACK({"' +
         String(merchantHeader).replace(/"/g, '""') + '","' + String(amountHeader).replace(/"/g, '""') +
         '"},HSTACK(INDEX(summary,,1),INDEX(summary,,2)))),"")' }
