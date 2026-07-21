@@ -992,8 +992,8 @@ function getDashboardDataSpecifications_(transactionsName, dashboardName, locali
     DASHBOARD_COMPARISON_YEAR_CONTROL_END_ROW;
   const detailYearCell = '$X$' + DASHBOARD_DETAIL_YEAR_VALUE_ROW;
   const merchantSortCell = '$X$' + DASHBOARD_MERCHANT_SORT_VALUE_ROW;
-  const selectedYears = 'TEXTJOIN(" or ",TRUE,FILTER("C = "&' + dashboard +
-    comparisonYearRange + ',' + dashboard + comparisonYearCheckboxRange + '=TRUE))';
+  const selectedYears = 'IFERROR(TEXTJOIN(" or ",TRUE,FILTER("C = "&' + dashboard +
+    comparisonYearRange + ',' + dashboard + comparisonYearCheckboxRange + '=TRUE)),"C = -1")';
   const selectedYearValues = 'FILTER(' + dashboard + comparisonYearRange + ',' + dashboard +
     comparisonYearCheckboxRange + '=TRUE)';
   const withoutPivotHeaders = function (query) {

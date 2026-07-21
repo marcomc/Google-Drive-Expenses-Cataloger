@@ -35,6 +35,9 @@ assert.match(dashboardFormulas[1].formula,
 assert.match(dashboardFormulas[2].formula, /C = "&'Dashboard'!\$X\$103/);
 assert.match(dashboardFormulas[3].formula,
   /select E,sum\(G\).*FILTER\("C = "&'Dashboard'!\$V\$11:\$V\$100,'Dashboard'!\$W\$11:\$W\$100=TRUE\).*group by E pivot C order by E/);
+assert.match(dashboardFormulas[3].formula,
+  /IFERROR\(TEXTJOIN\(" or ",TRUE,FILTER\("C = "&'Dashboard'!\$V\$11:\$V\$100,'Dashboard'!\$W\$11:\$W\$100=TRUE\)\),"C = -1"\)/,
+  'comparison queries must use a valid always-false predicate when no year is selected');
 assert.match(dashboardFormulas[4].formula,
   /IF\('Dashboard'!\$X\$106="Alphabetical","order by M asc","order by sum\(G\) desc"\)&" limit 20/,
   'Top 20 chart data must use the merchant-sort dropdown before applying its limit');
