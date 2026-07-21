@@ -1,4 +1,10 @@
 const INSTALLER_SECRET_PREFIX = 'drive-expenses-cataloger-';
+// V11:X100 provides 90 comparison-year controls. The corresponding chart
+// sources need one label column plus one series column for every control row.
+const DASHBOARD_COMPARISON_YEAR_CONTROL_ROW_COUNT = 90;
+const DASHBOARD_COMPARISON_CHART_COLUMN_COUNT = DASHBOARD_COMPARISON_YEAR_CONTROL_ROW_COUNT + 1;
+const DASHBOARD_BOUNDED_CHART_COLUMN_COUNT = 26;
+const DASHBOARD_TOP_MERCHANT_CHART_COLUMN_COUNT = 2;
 
 /** Owner-only bootstrap invoked by the resumable local installer. */
 function bootstrapCatalogerInstallation(options) {
@@ -625,23 +631,28 @@ function buildDashboard_(dashboard, transactions, localization) {
   // dynamic pivot has settled, otherwise a late-arriving payer or category is
   // permanently omitted from the newly-created chart.
   waitForDashboardChartSources_(technicalData);
-  insertDashboardChart_(dashboard, getDashboardChartSourceRange_(technicalData, 1, 25),
+  insertDashboardChart_(dashboard, getDashboardChartSourceRange_(technicalData, 1, 25,
+    DASHBOARD_BOUNDED_CHART_COLUMN_COUNT),
     getDashboardChartLayout_(chartLayouts, 'annualSpend'), labels.annualSpend, 'column', false, {
       focusTarget: 'datum', hAxis: { slantedText: false }
     });
-  insertDashboardChart_(dashboard, getDashboardChartSourceRange_(technicalData, 30, 55),
+  insertDashboardChart_(dashboard, getDashboardChartSourceRange_(technicalData, 30, 55,
+    DASHBOARD_COMPARISON_CHART_COLUMN_COUNT),
     getDashboardChartLayout_(chartLayouts, 'monthlyComparison'), labels.monthlyComparison, 'line', false, {
       hAxis: { showTextEvery: 1 }, colors: yearColors
     });
-  insertDashboardChart_(dashboard, getDashboardChartSourceRange_(technicalData, 60, 85),
+  insertDashboardChart_(dashboard, getDashboardChartSourceRange_(technicalData, 60, 85,
+    DASHBOARD_BOUNDED_CHART_COLUMN_COUNT),
     getDashboardChartLayout_(chartLayouts, 'monthlySpend'), labels.monthlySpend, 'column', false, {
       hAxis: { showTextEvery: 1 }
     });
-  insertDashboardChart_(dashboard, getDashboardChartSourceRange_(technicalData, 90, 115),
+  insertDashboardChart_(dashboard, getDashboardChartSourceRange_(technicalData, 90, 115,
+    DASHBOARD_COMPARISON_CHART_COLUMN_COUNT),
     getDashboardChartLayout_(chartLayouts, 'payerSpend'), labels.payerSpend, 'column', false, {
       colors: yearColors
     });
-  insertDashboardChart_(dashboard, getDashboardChartSourceRange_(technicalData, 120, 145),
+  insertDashboardChart_(dashboard, getDashboardChartSourceRange_(technicalData, 120, 145,
+    DASHBOARD_TOP_MERCHANT_CHART_COLUMN_COUNT),
     getDashboardChartLayout_(chartLayouts, 'topMerchants'), labels.topMerchants, 'bar', false, {
       colors: ['#20B486'], legend: { position: 'none' }, bar: { groupWidth: '85%' }
     });
@@ -654,18 +665,20 @@ function buildDashboard_(dashboard, transactions, localization) {
 }
 
 function writeDashboardTechnicalData_(technicalData, transactionsName, dashboardName, localization) {
-  if (technicalData.getMaxColumns() < 28) {
-    technicalData.insertColumnsAfter(technicalData.getMaxColumns(), 28 - technicalData.getMaxColumns());
+  const currentColumnCount = technicalData.getMaxColumns();
+  if (currentColumnCount < DASHBOARD_COMPARISON_CHART_COLUMN_COUNT) {
+    technicalData.insertColumnsAfter(currentColumnCount,
+      DASHBOARD_COMPARISON_CHART_COLUMN_COUNT - currentColumnCount);
   }
-  technicalData.getRange('A1:Z145').clearContent();
-  technicalData.getRange('AA1:AB25').clearContent();
+  technicalData.getRange(1, 1, 145, DASHBOARD_COMPARISON_CHART_COLUMN_COUNT).clearContent();
   technicalData.getRange('A200:B220').clearContent();
   getDashboardDataSpecifications_(transactionsName, dashboardName, localization)
     .forEach(function (specification) {
     technicalData.getRange(specification.anchor).setFormula(specification.formula);
     technicalData.getRange(specification.anchor).setFontWeight('bold');
   });
-  technicalData.hideColumns(27, 2);
+  technicalData.hideColumns(DASHBOARD_BOUNDED_CHART_COLUMN_COUNT + 1,
+    DASHBOARD_COMPARISON_CHART_COLUMN_COUNT - DASHBOARD_BOUNDED_CHART_COLUMN_COUNT);
   technicalData.setFrozenRows(1);
 }
 
@@ -1011,12 +1024,18 @@ function getDashboardDataSpecifications_(transactionsName, dashboardName, locali
 }
 
 function waitForDashboardChartSources_(technicalData) {
-  const sourceRows = [1, 30, 60, 90, 120];
+  const sources = [
+    { row: 1, columnCount: DASHBOARD_BOUNDED_CHART_COLUMN_COUNT },
+    { row: 30, columnCount: DASHBOARD_COMPARISON_CHART_COLUMN_COUNT },
+    { row: 60, columnCount: DASHBOARD_BOUNDED_CHART_COLUMN_COUNT },
+    { row: 90, columnCount: DASHBOARD_COMPARISON_CHART_COLUMN_COUNT },
+    { row: 120, columnCount: DASHBOARD_TOP_MERCHANT_CHART_COLUMN_COUNT }
+  ];
   let previousWidths = null;
   for (let attempt = 0; attempt < 12; attempt += 1) {
     SpreadsheetApp.flush();
-    const widths = sourceRows.map(function (row) {
-      const values = technicalData.getRange(row, 1, 1, 26).getDisplayValues()[0];
+    const widths = sources.map(function (source) {
+      const values = technicalData.getRange(source.row, 1, 1, source.columnCount).getDisplayValues()[0];
       return values.reduce(function (width, value, index) {
         return value !== '' ? index + 1 : width;
       }, 0);
@@ -1033,11 +1052,11 @@ function waitForDashboardChartSources_(technicalData) {
   }
 }
 
-function getDashboardChartSourceRange_(sheet, startRow, endRow) {
+function getDashboardChartSourceRange_(sheet, startRow, endRow, columnCount) {
   // Charts retain the supplied range, while the formulas inside it expand and
   // contract as dashboard controls change. Keep the full source block so a
   // newly selected year cannot fall outside a chart created with fewer rows.
-  return sheet.getRange(startRow, 1, endRow - startRow + 1, 26);
+  return sheet.getRange(startRow, 1, endRow - startRow + 1, columnCount);
 }
 
 function getDashboardLatestMonthSpendFormula_(transactionsName) {

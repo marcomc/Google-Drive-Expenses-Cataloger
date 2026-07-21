@@ -126,7 +126,12 @@ assert.match(installerSource, /function captureDashboardChartLayouts_\(dashboard
 assert.match(installerSource, /showTextEvery: 1/);
 assert.match(installerSource,
   /'monthlyComparison'\), labels\.monthlyComparison, 'line', false, \{\s+hAxis: \{ showTextEvery: 1 \}/);
-assert.match(installerSource, /const sourceRows = \[1, 30, 60, 90, 120\]/);
+assert.match(installerSource, /const DASHBOARD_COMPARISON_YEAR_CONTROL_ROW_COUNT = 90;/,
+  'the comparison chart capacity must match all 90 dashboard year-control rows');
+assert.match(installerSource,
+  /\{ row: 30, columnCount: DASHBOARD_COMPARISON_CHART_COLUMN_COUNT \}/);
+assert.match(installerSource,
+  /\{ row: 90, columnCount: DASHBOARD_COMPARISON_CHART_COLUMN_COUNT \}/);
 assert.match(installerSource, /late-arriving payer or category/);
 const annualChartBlock = Array.from({ length: 25 }, () => ['', '', '']);
 annualChartBlock[0] = ['Anno', 'Casa', 'Viaggi'];
@@ -141,9 +146,80 @@ const annualChartSource = context.getDashboardChartSourceRange_({
     columnCount,
     getValues: () => annualChartBlock
   })
-}, 1, 25);
+}, 1, 25, 26);
 assert.equal(annualChartSource.rowCount, 25,
   'annual chart sources must retain rows for every year later selected in the dashboard');
+assert.equal(annualChartSource.columnCount, 26,
+  'category-based chart sources must remain bounded to their supported series count');
+const comparisonHeaders = ['Month'].concat(Array.from({ length: 30 }, (_, index) => `Year ${index + 1}`));
+const comparisonChartSource = context.getDashboardChartSourceRange_({
+  getRange: (row, column, rowCount, columnCount) => ({
+    row,
+    column,
+    rowCount,
+    columnCount,
+    getValues: () => [comparisonHeaders.concat(Array(columnCount - comparisonHeaders.length).fill(''))]
+  })
+}, 30, 55, 91);
+assert.equal(comparisonChartSource.columnCount, 91,
+  'comparison chart sources must reserve one label plus all 90 selected-year series');
+assert.equal(comparisonChartSource.getValues()[0][30], 'Year 30',
+  'comparison chart sources must retain selected years beyond the former 25-series boundary');
+assert.match(installerSource,
+  /getDashboardChartSourceRange_\(technicalData, 30, 55,\s*DASHBOARD_COMPARISON_CHART_COLUMN_COUNT\)/);
+assert.match(installerSource,
+  /getDashboardChartSourceRange_\(technicalData, 90, 115,\s*DASHBOARD_COMPARISON_CHART_COLUMN_COUNT\)/);
+
+const technicalDataOperations = { inserted: null, cleared: null, hidden: null };
+const technicalDataSheet = {
+  columnCount: 28,
+  getMaxColumns() {
+    return this.columnCount;
+  },
+  insertColumnsAfter(column, count) {
+    technicalDataOperations.inserted = [column, count];
+    this.columnCount += count;
+  },
+  getRange(...arguments_) {
+    const range = {
+      clearContent: () => {
+        if (arguments_[0] === 1) {
+          technicalDataOperations.cleared = arguments_;
+        }
+        return range;
+      },
+      setFormula: () => range,
+      setFontWeight: () => range
+    };
+    return range;
+  },
+  hideColumns(column, count) {
+    technicalDataOperations.hidden = [column, count];
+  },
+  setFrozenRows: () => {}
+};
+context.writeDashboardTechnicalData_(technicalDataSheet, 'Transazioni', 'Dashboard');
+assert.equal(technicalDataSheet.columnCount, 91,
+  'technical chart data must provide capacity for all comparison-year columns');
+assert.deepEqual(technicalDataOperations.inserted, [28, 63]);
+assert.deepEqual(technicalDataOperations.cleared, [1, 1, 145, 91],
+  'dashboard refreshes must clear the full reserved chart-source width');
+assert.deepEqual(technicalDataOperations.hidden, [27, 65]);
+
+const waitedChartSourceWidths = [];
+context.SpreadsheetApp = { flush: () => {} };
+context.Utilities = { sleep: () => {} };
+context.waitForDashboardChartSources_({
+  getRange: (row, column, rowCount, columnCount) => {
+    waitedChartSourceWidths.push(columnCount);
+    const values = Array(columnCount).fill('');
+    values[0] = 'Label';
+    values[columnCount - 1] = 'Last supported series';
+    return { getDisplayValues: () => [values] };
+  }
+});
+assert.deepEqual(waitedChartSourceWidths, [26, 91, 26, 91, 2, 26, 91, 26, 91, 2],
+  'formula settling must observe each chart across its complete supported width');
 const dashboardControlRanges = new Map();
 function getDashboardControlRange_(reference) {
   if (dashboardControlRanges.has(reference)) {

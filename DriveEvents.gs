@@ -25,10 +25,13 @@ function getDashboardYearColorEditTriggers_() {
 }
 
 function getDashboardYearColorEditTriggerCount_() {
-  const spreadsheetId = getSpreadsheetId_();
+  return getDashboardYearColorEditTriggersForSpreadsheet_(getSpreadsheetId_()).length;
+}
+
+function getDashboardYearColorEditTriggersForSpreadsheet_(spreadsheetId) {
   return getDashboardYearColorEditTriggers_().filter(function (trigger) {
     return trigger.getTriggerSourceId() === spreadsheetId;
-  }).length;
+  });
 }
 
 /**
@@ -74,7 +77,9 @@ function deleteTriggersBestEffort_(triggers) {
 
 function removeAutomationTriggers() {
   return withAutomationTriggerLock_(function () {
-    getManagedAutomationTriggers_().forEach(function (trigger) {
+    const managedTriggers = getManagedAutomationTriggers_()
+      .concat(getDashboardYearColorEditTriggersForSpreadsheet_(getSpreadsheetId_()));
+    managedTriggers.forEach(function (trigger) {
       ScriptApp.deleteTrigger(trigger);
     });
   });

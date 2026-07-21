@@ -321,14 +321,25 @@ triggerLockAcquisitions = 0;
 triggerLockReleases = 0;
 activeTriggers = [
   makeTrigger('processDriveEventQueue', 'existing-polling'),
-  makeTrigger('runDailyExpenseCataloging', 'existing-daily')
+  makeTrigger('runDailyExpenseCataloging', 'existing-daily'),
+  makeTrigger('applyDashboardYearColorsOnEdit', 'existing-dashboard-edit'),
+  makeTrigger('applyDashboardYearColorsOnEdit', 'other-spreadsheet-dashboard-edit', {
+    sourceId: 'other-spreadsheet'
+  }),
+  makeTrigger('applyDashboardYearColorsOnEdit', 'unrelated-dashboard-event', {
+    eventType: 'ON_OPEN'
+  })
 ];
 context.removeAutomationTriggers();
 assert.deepEqual(events, [
   'delete:existing-polling',
-  'delete:existing-daily'
+  'delete:existing-daily',
+  'delete:existing-dashboard-edit'
 ]);
-assert.deepEqual(activeTriggers, []);
+assert.deepEqual(activeTriggers.map((trigger) => trigger.getUniqueId()).sort(), [
+  'other-spreadsheet-dashboard-edit',
+  'unrelated-dashboard-event'
+], 'trigger removal must preserve another spreadsheet and unrelated event types');
 assert.equal(triggerLockAcquisitions, 1);
 assert.equal(triggerLockReleases, 1);
 
