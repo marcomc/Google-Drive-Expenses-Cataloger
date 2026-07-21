@@ -356,4 +356,78 @@ assert.equal(insertedRows, 6);
 assert.equal(derivedSheetRows, 1006);
 assert.equal(writtenRowCount, 1005);
 
+const recoveryCandidate = {
+  date: '2026-04-15', currency: 'EUR', payer: 'Laura', beneficiaries: 'Marco', amount: 12,
+  description: 'Historic cash settlement', transactionType: 'transfer', sourceFileId: 'source-file-id',
+  sourceFileName: 'transactions-hostello-202604.json', sourceRow: 8, sourceFingerprint: 'tricount:recovery'
+};
+let recoveryImported = false;
+let recoveryAudit = null;
+let recoveryReconciliations = null;
+context.getRecordedOpeningBalanceChecks_ = () => [{ records: [recoveryCandidate] }];
+context.getHistoricalBalanceTransferCandidates_ = () => [recoveryCandidate];
+context.getExistingLedgerFingerprints_ = () => recoveryImported ? [{ fingerprint: 'tricount:recovery' }] : [];
+context.partitionIncomingRows_ = (records, existing) => ({
+  unique: existing.length ? [] : records,
+  duplicates: []
+});
+context.writeLedgerRows_ = (_layout, records) => {
+  recoveryImported = true;
+  return records.map((record, index) => Object.assign({}, record, { ledgerRow: index + 2 }));
+};
+context.verifyLedgerWrite_ = () => {};
+context.sortLedgerTransactions_ = () => {};
+context.buildSourceReconciliations_ = (records, _partition, imported, sourceFiles) => {
+  assert.deepEqual(JSON.parse(JSON.stringify(sourceFiles)), [{
+    id: 'source-file-id', name: 'transactions-hostello-202604.json', contentHash: ''
+  }]);
+  return records.map((record) => ({
+    sourceFileId: record.sourceFileId, sourceFileName: record.sourceFileName,
+    status: imported.length ? 'OK' : 'duplicate'
+  }));
+};
+context.writeImportAudit_ = (_sheet, recovery, sourceResults, records, _partition, imported, _openingBalances,
+  reconciliations) => {
+  recoveryAudit = { recovery, sourceResults, records, imported, reconciliations };
+};
+context.writeSourceReconciliations_ = (_sheet, recovery, reconciliations) => {
+  recoveryReconciliations = { recovery, reconciliations };
+};
+context.verifySourceReconciliations_ = (reconciliations) => {
+  assert.equal(reconciliations[0].status, 'OK');
+};
+const recoveryLayout = { transactions: {}, headers: [], imports: {}, sourceReconciliations: {} };
+assert.equal(context.recoverHistoricalBalanceTransfers_(recoveryLayout), 1);
+assert.equal(recoveryAudit.recovery.name, 'Historical balance transfer recovery');
+assert.equal(recoveryAudit.sourceResults[0].file.getName(), 'transactions-hostello-202604.json');
+assert.equal(recoveryAudit.imported.length, 1);
+assert.equal(recoveryReconciliations.reconciliations.length, 1);
+assert.equal(context.recoverHistoricalBalanceTransfers_(recoveryLayout), 0,
+  'a recovery retry must not duplicate a ledger, audit, or reconciliation decision');
+
+const refreshEvents = [];
+const refreshSpreadsheet = {
+  getSheetByName: (name) => ({ name })
+};
+context.withExpenseLock_ = (source, callback) => {
+  refreshEvents.push('lock:' + source);
+  return callback();
+};
+context.assertCatalogConfiguration_ = () => refreshEvents.push('configuration');
+context.getSpreadsheetId_ = () => 'spreadsheet-id';
+context.SpreadsheetApp = { openById: () => refreshSpreadsheet };
+context.getExpenseSheetLayout_ = () => ({ transactions: { name: 'Transactions' } });
+context.sortLedgerTransactions_ = () => 3;
+context.refreshBalanceViews_ = () => refreshEvents.push('views');
+context.getLocalization_ = () => ({ sheetNames: { dashboard: 'Dashboard', transactions: 'Transactions' } });
+context.buildDashboard_ = () => refreshEvents.push('dashboard');
+context.applyInstallerSpreadsheetPresentation_ = () => refreshEvents.push('presentation');
+context.orderInstallerSheets_ = () => refreshEvents.push('ordering');
+assert.deepEqual(JSON.parse(JSON.stringify(context.refreshBalanceViews())), {
+  status: 'REFRESHED', sortedRows: 3
+});
+assert.deepEqual(refreshEvents, [
+  'lock:balance-view-refresh', 'configuration', 'views', 'dashboard', 'presentation', 'ordering'
+], 'manual balance refresh must share the intake lock before it mutates the ledger');
+
 console.log('balance view tests passed');

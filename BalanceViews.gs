@@ -1,16 +1,18 @@
 /** Rebuilds the derived per-participant balance sheets from the canonical ledger. */
 function refreshBalanceViews() {
-  assertCatalogConfiguration_();
-  const spreadsheet = SpreadsheetApp.openById(getSpreadsheetId_());
-  const layout = getExpenseSheetLayout_(spreadsheet);
-  const sortedRows = sortLedgerTransactions_(layout);
-  refreshBalanceViews_(spreadsheet);
-  const localization = getLocalization_();
-  buildDashboard_(spreadsheet.getSheetByName(localization.sheetNames.dashboard),
-    spreadsheet.getSheetByName(localization.sheetNames.transactions), localization);
-  applyInstallerSpreadsheetPresentation_(spreadsheet, localization);
-  orderInstallerSheets_(spreadsheet, localization);
-  return { status: 'REFRESHED', sortedRows: sortedRows };
+  return withExpenseLock_('balance-view-refresh', function () {
+    assertCatalogConfiguration_();
+    const spreadsheet = SpreadsheetApp.openById(getSpreadsheetId_());
+    const layout = getExpenseSheetLayout_(spreadsheet);
+    const sortedRows = sortLedgerTransactions_(layout);
+    refreshBalanceViews_(spreadsheet);
+    const localization = getLocalization_();
+    buildDashboard_(spreadsheet.getSheetByName(localization.sheetNames.dashboard),
+      spreadsheet.getSheetByName(localization.sheetNames.transactions), localization);
+    applyInstallerSpreadsheetPresentation_(spreadsheet, localization);
+    orderInstallerSheets_(spreadsheet, localization);
+    return { status: 'REFRESHED', sortedRows: sortedRows };
+  });
 }
 
 function refreshBalanceViews_(spreadsheet) {
@@ -31,7 +33,12 @@ function refreshBalanceViews_(spreadsheet) {
   normalizeExistingLedgerMerchants_(transactions, headers, localization);
   normalizeExistingLedgerTransactionTypes_(transactions, headers, localization);
   backfillMissingLedgerAllocations_(transactions, headers, localization);
-  recoverHistoricalBalanceTransfers_({ transactions: transactions, headers: headers }, imports);
+  recoverHistoricalBalanceTransfers_({
+    transactions: transactions,
+    headers: headers,
+    imports: imports,
+    sourceReconciliations: sourceReconciliations
+  });
   headers = transactions.getRange(1, 1, 1, transactions.getLastColumn()).getValues()[0];
   const allLedgerRecords = readAllLedgerBalanceViewRecords_(transactions, headers, localization);
   const sourceFiles = getReconciledSourceFiles_(sourceReconciliations, localization);
@@ -56,8 +63,8 @@ function refreshBalanceViews_(spreadsheet) {
   refreshTransactionBalanceImpactLabels_(transactions, headers, allLedgerRecords, localization);
 }
 
-function recoverHistoricalBalanceTransfers_(layout, imports) {
-  const candidates = getHistoricalBalanceTransferCandidates_(getRecordedOpeningBalanceChecks_(imports));
+function recoverHistoricalBalanceTransfers_(layout) {
+  const candidates = getHistoricalBalanceTransferCandidates_(getRecordedOpeningBalanceChecks_(layout.imports));
   if (candidates.length === 0) {
     return 0;
   }
@@ -69,7 +76,34 @@ function recoverHistoricalBalanceTransfers_(layout, imports) {
   const imported = writeLedgerRows_(layout, partition.unique, 'balance-marker-recovery');
   verifyLedgerWrite_(layout.transactions, imported);
   sortLedgerTransactions_(layout);
+  const sourceFiles = getHistoricalBalanceTransferRecoverySourceFiles_(candidates);
+  const reconciliations = buildSourceReconciliations_(candidates, partition, imported, sourceFiles);
+  const recovery = { name: 'Historical balance transfer recovery', url: '' };
+  writeImportAudit_(layout.imports, recovery, sourceFiles.map(function (sourceFile) {
+    return {
+      file: { getName: function () { return sourceFile.name; } },
+      records: candidates.filter(function (record) { return record.sourceFileId === sourceFile.id; })
+    };
+  }), candidates, partition, imported, [], reconciliations);
+  writeSourceReconciliations_(layout.sourceReconciliations, recovery, reconciliations);
+  verifySourceReconciliations_(reconciliations);
   return imported.length;
+}
+
+function getHistoricalBalanceTransferRecoverySourceFiles_(records) {
+  const sources = {};
+  (records || []).forEach(function (record) {
+    const id = String(record.sourceFileId || '');
+    if (!id || sources[id]) {
+      return;
+    }
+    sources[id] = {
+      id: id,
+      name: String(record.sourceFileName || id),
+      contentHash: ''
+    };
+  });
+  return Object.keys(sources).sort().map(function (id) { return sources[id]; });
 }
 
 function normalizeExistingLedgerMerchants_(sheet, headers, localization) {

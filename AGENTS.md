@@ -15,6 +15,9 @@
   state after ledger and audit verification but before archival so cleanup
   failures remain retryable while the source is still discoverable. Do not
   reprocess an unchanged archived folder.
+- At an LLM response boundary, extract the first balanced JSON object or array
+  before parsing and retain caller-side schema validation. Cover valid JSON
+  followed by non-JSON model text in the regression suite.
 - Revalidate eligible JSON identities, content hashes, and source-unit
   membership immediately before ledger replacement or archival. On drift,
   preserve the source in intake and require a safe retry or rebuild reset.
@@ -30,6 +33,10 @@
   before deleting stale triggers, require exactly one polling handler, one daily
   handler, and one dashboard year-color edit trigger, and finish that repair
   after promotion even if a newer source revision becomes available.
+- Validate the dashboard edit trigger by handler, spreadsheet source, event
+  type, and target spreadsheet identity. Use the shared trigger lock for every
+  public installer and repair entrypoint; recovery ledger writes must retain
+  their audit and source-reconciliation proof.
 - Before and after promotion, require the configured stable deployment to have
   the expected script, deployment, manifest, and version identities plus
   exactly one owner-only Execution API entry point. Reject mixed or public
@@ -67,6 +74,8 @@
 - For dynamic dashboard charts, set the source header count explicitly and use
   `ARRAYFORMULA` for derived month-label arrays. Verify helper output and chart
   specifications after dashboard changes.
+- Before writing hidden chart helpers beyond an existing grid, expand the sheet
+  to the required column count, then cover fresh-import and rebuild paths.
 - Normalize provider-generated `QUERY`/`PIVOT` headers before localization and
   verify the localized helper headers against the live Sheets runtime.
 - Bind dynamic-array charts to their complete reserved technical-data blocks,

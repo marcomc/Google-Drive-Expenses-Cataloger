@@ -9,18 +9,25 @@ function installDashboardYearColorEditTrigger() {
 }
 
 function installDashboardYearColorEditTrigger_() {
-  const existing = ScriptApp.getProjectTriggers().filter(function (trigger) {
-    return trigger.getHandlerFunction() === DASHBOARD_YEAR_COLOR_EDIT_TRIGGER_HANDLER;
-  });
+  const existing = getDashboardYearColorEditTriggers_();
   ScriptApp.newTrigger(DASHBOARD_YEAR_COLOR_EDIT_TRIGGER_HANDLER)
     .forSpreadsheet(getSpreadsheetId_()).onEdit().create();
   deleteTriggersBestEffort_(existing);
   return { triggerCount: getDashboardYearColorEditTriggerCount_() };
 }
 
-function getDashboardYearColorEditTriggerCount_() {
+function getDashboardYearColorEditTriggers_() {
   return ScriptApp.getProjectTriggers().filter(function (trigger) {
-    return trigger.getHandlerFunction() === DASHBOARD_YEAR_COLOR_EDIT_TRIGGER_HANDLER;
+    return trigger.getHandlerFunction() === DASHBOARD_YEAR_COLOR_EDIT_TRIGGER_HANDLER &&
+      trigger.getTriggerSource() === ScriptApp.TriggerSource.SPREADSHEETS &&
+      trigger.getEventType() === ScriptApp.EventType.ON_EDIT;
+  });
+}
+
+function getDashboardYearColorEditTriggerCount_() {
+  const spreadsheetId = getSpreadsheetId_();
+  return getDashboardYearColorEditTriggers_().filter(function (trigger) {
+    return trigger.getTriggerSourceId() === spreadsheetId;
   }).length;
 }
 

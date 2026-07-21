@@ -175,12 +175,23 @@ function getDashboardControlRange_(reference) {
   dashboardControlRanges.set(reference, range);
   return range;
 }
-const validationBuilder = {
-  requireValueInList: () => validationBuilder,
-  setAllowInvalid: () => validationBuilder,
-  build: () => ({ type: 'year-list' })
+context.SpreadsheetApp = {
+  newDataValidation: () => {
+    const validation = { values: [], allowInvalid: null };
+    const builder = {
+      requireValueInList: (values) => {
+        validation.values = values.slice();
+        return builder;
+      },
+      setAllowInvalid: (allowInvalid) => {
+        validation.allowInvalid = allowInvalid;
+        return builder;
+      },
+      build: () => ({ type: 'value-list', values: validation.values, allowInvalid: validation.allowInvalid })
+    };
+    return builder;
+  }
 };
-context.SpreadsheetApp = { newDataValidation: () => validationBuilder };
 context.writeDashboardYearControls_({
   getRange: (...arguments_) => getDashboardControlRange_(arguments_.join(':'))
 }, [2023, 2024, 2025], { selectedYears: [2023, 2024], detailYear: 2024 }, {
@@ -190,7 +201,9 @@ context.writeDashboardYearControls_({
 });
 assert.equal(dashboardControlRanges.get('X48').value, 2024,
   'the detail-year selection must end at the dashboard right margin in column X');
-assert.deepEqual(dashboardControlRanges.get('X48').validation, { type: 'year-list' });
+assert.deepEqual(JSON.parse(JSON.stringify(dashboardControlRanges.get('X48').validation)), {
+  type: 'value-list', values: ['2023', '2024', '2025'], allowInvalid: false
+});
 assert.equal(dashboardControlRanges.get('V9:X9').value, 'Years to compare',
   'the comparison-year panel must end at the dashboard right margin in column X');
 assert.equal(dashboardControlRanges.get('V10:X10').values[0].length, 3,
@@ -199,9 +212,22 @@ assert.equal(dashboardControlRanges.get('V47:X47').value, 'Detail year',
   'the detail-year panel must use the dashboard position selected by the user');
 assert.equal(dashboardControlRanges.get('X51').value, 'By spending',
   'merchant sorting must default to spending total');
-assert.deepEqual(dashboardControlRanges.get('X51').validation, { type: 'year-list' });
+assert.deepEqual(JSON.parse(JSON.stringify(dashboardControlRanges.get('X51').validation)), {
+  type: 'value-list', values: ['By spending', 'Alphabetical'], allowInvalid: false
+}, 'merchant sorting must expose only its localized supported options');
 assert.equal(dashboardControlRanges.get('V50:X50').value, 'Sort merchants',
   'the merchant-sort panel must use the dashboard right margin');
+context.writeDashboardYearControls_({
+  getRange: (...arguments_) => getDashboardControlRange_(arguments_.join(':'))
+}, [2023, 2024, 2025], {
+  selectedYears: [2023, 2024], detailYear: 2024, merchantSort: 'Alphabetical'
+}, {
+  comparisonYears: 'Years to compare', detailYear: 'Detail year', year: 'Year',
+  includeYear: 'Show', selectedYear: 'Show details for', merchantSort: 'Sort merchants',
+  merchantSortBy: 'Sort by', merchantSortBySpend: 'By spending', merchantSortAlphabetically: 'Alphabetical'
+});
+assert.equal(dashboardControlRanges.get('X51').value, 'Alphabetical',
+  'dashboard refreshes must preserve an existing alphabetical merchant sort');
 function createGridSheet(initialRows) {
   const grid = Array.from({ length: 40 }, () => Array(10).fill(''));
   initialRows.forEach((row, rowIndex) => row.forEach((value, columnIndex) => {
@@ -351,11 +377,11 @@ const intermediateDashboardSelection = context.getDashboardSelectionState_({
     if (['V11:X100', 'W51:Y100', 'Q51:S100', 'Q3:S100'].includes(reference)) {
       return { getValues: () => [] };
     }
-    return { getValue: () => reference === 'AA50' ? 2025 : '' };
+    return { getValue: () => reference === 'AA50' ? 2025 : reference === 'X51' ? 'Alphabetical' : '' };
   }
 });
 assert.deepEqual(JSON.parse(JSON.stringify(intermediateDashboardSelection)), {
-  selectedYears: [2024], detailYear: 2025, yearColors: { 2024: 'Blue', 2025: 'Orange' }, merchantSort: ''
+  selectedYears: [2024], detailYear: 2025, yearColors: { 2024: 'Blue', 2025: 'Orange' }, merchantSort: 'Alphabetical'
 });
 const italianDashboardFormulas = context.getDashboardDataSpecifications_('Transazioni', 'Dashboard', {
   headers: { month: 'Mese' },

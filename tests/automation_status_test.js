@@ -24,10 +24,17 @@ let triggerLockAcquisitions = 0;
 let triggerLockReleases = 0;
 const triggerLockTimeouts = [];
 
-function makeTrigger(handler, id) {
+function makeTrigger(handler, id, options = {}) {
+  const dashboardEdit = handler === 'applyDashboardYearColorsOnEdit';
+  const triggerSource = options.triggerSource || (dashboardEdit ? 'SPREADSHEETS' : 'CLOCK');
+  const eventType = options.eventType || (dashboardEdit ? 'ON_EDIT' : 'CLOCK');
+  const sourceId = options.sourceId || (dashboardEdit ? 'spreadsheet-id' : '');
   const trigger = {
     getHandlerFunction: () => handler,
     getUniqueId: () => id,
+    getTriggerSource: () => triggerSource,
+    getEventType: () => eventType,
+    getTriggerSourceId: () => sourceId,
     deleteTrigger: () => {
       events.push(`delete:${id}`);
       if (id === failDeletionFor) {
@@ -47,6 +54,8 @@ const context = {
     })
   },
   ScriptApp: {
+    TriggerSource: { SPREADSHEETS: 'SPREADSHEETS' },
+    EventType: { ON_EDIT: 'ON_EDIT' },
     getProjectTriggers: () => activeTriggers.slice(),
     deleteTrigger: (trigger) => trigger.deleteTrigger(),
     newTrigger: (handler) => ({
@@ -133,6 +142,15 @@ properties.delete('GEMINI_AUTO_VERTEX_FALLBACK');
 properties.delete('GEMINI_VERTEX_FALLBACK_UNTIL');
 
 context.assertCatalogConfiguration_ = () => {};
+properties.delete('GOOGLE_CLOUD_PROJECT_ID');
+assert.throws(() => context.enableAutomaticVertexFallback(), /GOOGLE_CLOUD_PROJECT_ID is required/);
+assert.equal(properties.has('GEMINI_AUTO_VERTEX_FALLBACK'), false,
+  'a failed fallback enablement must not leave a Vertex fallback flag behind');
+properties.set('GOOGLE_CLOUD_PROJECT_ID', 'cloud-project');
+assert.equal(context.enableAutomaticVertexFallback().status, 'ENABLED');
+properties.delete('GEMINI_AUTO_VERTEX_FALLBACK');
+
+context.assertCatalogConfiguration_ = () => {};
 context.getRootFolderId_ = () => 'root-folder';
 context.loadDriveAgentsPolicy_ = () => {};
 context.DriveApp = { getFolderById: () => ({}) };
@@ -153,6 +171,19 @@ assert.equal(context.enableExpenseCataloging().status, 'ENABLED');
 assert.equal(properties.get('AUTO_PROCESSING'), 'true');
 assert.equal(context.disableExpenseCataloging().status, 'DISABLED');
 assert.equal(properties.get('AUTO_PROCESSING'), 'false');
+
+activeTriggers = [
+  makeTrigger('processDriveEventQueue', 'existing-polling'),
+  makeTrigger('runDailyExpenseCataloging', 'existing-daily'),
+  makeTrigger('applyDashboardYearColorsOnEdit', 'wrong-dashboard-sheet', { sourceId: 'other-spreadsheet' })
+];
+assert.equal(context.validateCatalogerInstallation().installed, false,
+  'a dashboard edit trigger for another spreadsheet must not satisfy installation health');
+activeTriggers[2] = makeTrigger('applyDashboardYearColorsOnEdit', 'wrong-dashboard-event', {
+  eventType: 'ON_OPEN'
+});
+assert.equal(context.validateCatalogerInstallation().installed, false,
+  'a non-edit trigger must not satisfy dashboard edit-trigger health');
 
 activeTriggers = [makeTrigger('runDailyExpenseCataloging', 'existing-daily')];
 assert.deepEqual(JSON.parse(JSON.stringify(context.validateCatalogerInstallation())), {
@@ -256,6 +287,18 @@ assert.deepEqual(events, [
   'delete:duplicate-dashboard-edit'
 ]);
 assert.equal(context.getDashboardYearColorEditTriggerCount_(), 1);
+events.length = 0;
+activeTriggers = [
+  makeTrigger('applyDashboardYearColorsOnEdit', 'stale-dashboard-sheet', { sourceId: 'old-spreadsheet' }),
+  makeTrigger('applyDashboardYearColorsOnEdit', 'unrelated-dashboard-event', { eventType: 'ON_OPEN' })
+];
+context.installDashboardYearColorEditTrigger();
+assert.deepEqual(events, [
+  'create:applyDashboardYearColorsOnEdit',
+  'delete:stale-dashboard-sheet'
+], 'reconciliation must remove stale spreadsheet edit triggers without deleting unrelated event types');
+assert.equal(context.getDashboardYearColorEditTriggerCount_(), 1);
+assert.equal(activeTriggers.some((trigger) => trigger.getUniqueId() === 'unrelated-dashboard-event'), true);
 properties.set('SPREADSHEET_ID', 'replacement-spreadsheet');
 context.installDashboardYearColorEditTrigger();
 assert.equal(dashboardTriggerSpreadsheetIds.at(-1), 'replacement-spreadsheet',

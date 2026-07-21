@@ -154,10 +154,18 @@ example, `LIDL`, `Lidl`, and `lIdL` all become `Lidl`; `CONAD CITY` becomes
 `Conad City`.
 
 To repair existing ledger rows after deploying this behavior, pause scheduled
-processing and run the owner-only Apps Script function
-`normalizeImportedMerchantNames`. It is idempotent and returns the changed row
-count plus groups such as `LIDL` / `Lidl` that collapse to the same canonical
-name. Re-enable scheduled processing after checking the returned groups.
+processing, then run the owner-only Apps Script function:
+
+```sh
+npx --yes @google/clasp@3.3.0 \
+  -A .installer/clasp-owner-auth.json \
+  --json run normalizeImportedMerchantNames
+```
+
+It is idempotent and returns the changed-row count plus groups such as `LIDL` /
+`Lidl` that collapse to the same canonical name. Check that result, then run
+`validateCatalogerInstallation` with the same owner authorization before
+re-enabling scheduled processing.
 
 ## Full JSON rebuild
 

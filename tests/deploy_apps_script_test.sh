@@ -80,6 +80,9 @@ case "${command_name}" in
     if [[ "${deployments_count}" -eq "${TEST_REMOVE_TOKEN_AFTER}" ]]; then
       printf '%s\n' '{"tokens":{"default":{}}}' >"${auth_file}"
     fi
+    if [[ "${TEST_REFRESH_TOKEN_ON_DEPLOYMENTS}" == 'true' && "${deployments_count}" -eq 2 ]]; then
+      printf '%s\n' '{"tokens":{"default":{"access_token":"refreshed-test-token"}}}' >"${auth_file}"
+    fi
     printf '[{"deploymentId":"%s","versionNumber":4}]\n' "${TEST_LISTED_DEPLOYMENT_ID}"
     ;;
   pull)
@@ -147,7 +150,7 @@ while IFS= read -r header; do
     authorization="${header}"
   fi
 done
-test "${authorization}" = 'Authorization: Bearer sensitive-test-token-do-not-log'
+test "${authorization}" = "Authorization: Bearer ${TEST_EXPECTED_ACCESS_TOKEN}"
 deployment_url="https://script.googleapis.com/v1/projects/test-script/deployments/${APPS_SCRIPT_DEPLOYMENT_ID}"
 execution_url="https://script.googleapis.com/v1/scripts/${APPS_SCRIPT_DEPLOYMENT_ID}:run"
 if [[ "${url}" == "${execution_url}" ]]; then
@@ -247,10 +250,13 @@ run_fixture() {
   local put_response_deployment_id="${16:-${listed_deployment_id}}"
   local put_response_version="${17:-5}"
   local fail_push="${18:-false}"
+  local refresh_token_on_deployments="${19:-false}"
+  local initial_access_token="${20:-sensitive-test-token-do-not-log}"
+  local expected_access_token="${21:-${initial_access_token}}"
 
   mkdir -p "${fixture_dir}/runner/clasp-auth"
   printf '%s\n' \
-    '{"tokens":{"default":{"access_token":"sensitive-test-token-do-not-log"}}}' \
+    "{\"tokens\":{\"default\":{\"access_token\":\"${initial_access_token}\"}}}" \
     >"${fixture_dir}/runner/clasp-auth/.clasprc.json"
   printf '%s\n' '{"scriptId":"test-script","rootDir":"."}' >"${fixture_dir}/.clasp.json"
   printf '%s\n' '{"timeZone":"Etc/UTC"}' >"${fixture_dir}/appsscript.json"
@@ -282,6 +288,8 @@ run_fixture() {
       TEST_PUT_RESPONSE_DEPLOYMENT_ID="${put_response_deployment_id}" \
       TEST_PUT_RESPONSE_VERSION="${put_response_version}" \
       TEST_FAIL_PUSH="${fail_push}" \
+      TEST_REFRESH_TOKEN_ON_DEPLOYMENTS="${refresh_token_on_deployments}" \
+      TEST_EXPECTED_ACCESS_TOKEN="${expected_access_token}" \
       TEST_COMMAND_LOG="${fixture_dir}/commands.log" \
       TEST_ORDER_LOG="${fixture_dir}/order.log" \
       "${PROJECT_ROOT}/scripts/deploy-apps-script.sh"
@@ -304,6 +312,13 @@ test "${actual_commands}" = 'push version update triggers '
 actual_order="$(tr '\n' ' ' <"${success_dir}/order.log")"
 test "${actual_order}" = \
   'main-check list-deployments auth-refresh main-check push version auth-refresh main-check update auth-refresh triggers '
+
+refreshed_token_dir="${TEST_ROOT}/refreshed-token"
+mkdir -p "${refreshed_token_dir}"
+run_fixture "${refreshed_token_dir}" "${CURRENT_SHA}" "${CURRENT_SHA}" \
+  'deployment-1' 'deployment-1' true false \
+  "${CURRENT_SHA},${CURRENT_SHA},${CURRENT_SHA}" true 99 valid 0 none \
+  'deployment-1' 4 'deployment-1' 5 false true expired-test-token refreshed-test-token
 
 failed_push_dir="${TEST_ROOT}/failed-push"
 mkdir -p "${failed_push_dir}"

@@ -52,6 +52,9 @@ function getApplicationVersion() {
 /** Enable the configured Vertex project when Gemini Developer API quota is exhausted. */
 function enableAutomaticVertexFallback() {
   assertCatalogConfiguration_();
+  if (!getScriptProperty_(CONFIG.PROPERTY_KEYS.GOOGLE_CLOUD_PROJECT_ID)) {
+    throw new Error('GOOGLE_CLOUD_PROJECT_ID is required for Vertex AI.');
+  }
   PropertiesService.getScriptProperties().setProperty(
     CONFIG.PROPERTY_KEYS.GEMINI_AUTO_VERTEX_FALLBACK,
     'true'
