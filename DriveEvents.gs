@@ -2,6 +2,50 @@ const AUTOMATION_TRIGGER_HANDLERS = Object.freeze([
   'processDriveEventQueue',
   'runDailyExpenseCataloging'
 ]);
+const DASHBOARD_YEAR_COLOR_EDIT_TRIGGER_HANDLER = 'applyDashboardYearColorsOnEdit';
+
+function installDashboardYearColorEditTrigger() {
+  return withAutomationTriggerLock_(installDashboardYearColorEditTrigger_);
+}
+
+function installDashboardYearColorEditTrigger_() {
+  const existing = getDashboardYearColorEditTriggers_();
+  ScriptApp.newTrigger(DASHBOARD_YEAR_COLOR_EDIT_TRIGGER_HANDLER)
+    .forSpreadsheet(getSpreadsheetId_()).onEdit().create();
+  deleteTriggersBestEffort_(existing);
+  return { triggerCount: getDashboardYearColorEditTriggerCount_() };
+}
+
+function getDashboardYearColorEditTriggers_() {
+  return ScriptApp.getProjectTriggers().filter(function (trigger) {
+    return trigger.getHandlerFunction() === DASHBOARD_YEAR_COLOR_EDIT_TRIGGER_HANDLER &&
+      trigger.getTriggerSource() === ScriptApp.TriggerSource.SPREADSHEETS &&
+      trigger.getEventType() === ScriptApp.EventType.ON_EDIT;
+  });
+}
+
+function getDashboardYearColorEditTriggerCount_() {
+  return getDashboardYearColorEditTriggerStatus_().triggerCount;
+}
+
+function getDashboardYearColorEditTriggerStatus_(spreadsheetId) {
+  const triggers = getDashboardYearColorEditTriggers_();
+  const targetSpreadsheetId = spreadsheetId || getSpreadsheetId_();
+  const triggerCount = triggers.filter(function (trigger) {
+    return trigger.getTriggerSourceId() === targetSpreadsheetId;
+  }).length;
+  return {
+    triggerCount: triggerCount,
+    totalTriggerCount: triggers.length,
+    staleTriggerCount: triggers.length - triggerCount
+  };
+}
+
+function getDashboardYearColorEditTriggersForSpreadsheet_(spreadsheetId) {
+  return getDashboardYearColorEditTriggers_().filter(function (trigger) {
+    return trigger.getTriggerSourceId() === spreadsheetId;
+  });
+}
 
 /**
  * Install an event-polling trigger plus an independent daily safety net.
@@ -13,22 +57,42 @@ function installAutomationTriggers() {
   return withAutomationTriggerLock_(function () {
     const existing = getManagedAutomationTriggers_();
     const created = [];
+    let dashboardTriggerStatus;
     try {
       created.push(ScriptApp.newTrigger('processDriveEventQueue').timeBased().everyMinutes(15).create());
       created.push(ScriptApp.newTrigger('runDailyExpenseCataloging').timeBased()
         .atHour(CONFIG.DAILY_TRIGGER_HOUR).everyDays(1).create());
+      dashboardTriggerStatus = installDashboardYearColorEditTrigger_();
     } catch (error) {
       created.forEach(function (trigger) { ScriptApp.deleteTrigger(trigger); });
       throw error;
     }
-    existing.forEach(function (trigger) { ScriptApp.deleteTrigger(trigger); });
-    return getAutomationTriggerStatus_();
+    deleteTriggersBestEffort_(existing);
+    const status = getAutomationTriggerStatus_();
+    status.dashboardYearColorEditTriggerCount = dashboardTriggerStatus.triggerCount;
+    return status;
   });
+}
+
+function deleteTriggersBestEffort_(triggers) {
+  let firstError = null;
+  (triggers || []).forEach(function (trigger) {
+    try {
+      ScriptApp.deleteTrigger(trigger);
+    } catch (error) {
+      firstError = firstError || error;
+    }
+  });
+  if (firstError) {
+    throw firstError;
+  }
 }
 
 function removeAutomationTriggers() {
   return withAutomationTriggerLock_(function () {
-    getManagedAutomationTriggers_().forEach(function (trigger) {
+    const managedTriggers = getManagedAutomationTriggers_()
+      .concat(getDashboardYearColorEditTriggersForSpreadsheet_(getSpreadsheetId_()));
+    managedTriggers.forEach(function (trigger) {
       ScriptApp.deleteTrigger(trigger);
     });
   });

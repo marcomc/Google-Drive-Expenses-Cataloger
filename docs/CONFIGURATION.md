@@ -6,6 +6,7 @@
 - [Script Properties](#script-properties)
 - [Drive policy](#drive-policy)
 - [Taxonomy](#taxonomy)
+- [Related documentation](#related-documentation)
 
 ## Local configuration
 
@@ -45,9 +46,22 @@ The installation-specific `AGENTS.md` in Drive controls the trusted processing
 policy. It cannot widen the code-enforced root-folder scope. Never place API
 keys or passwords in it.
 
+It does not define tabs, columns, formulas, or charts. Those are Apps Script
+schema concerns documented in [Spreadsheet lifecycle and schema](SPREADSHEET.md).
+
 ## Taxonomy
 
 Each expense has one category and one subcategory. `Health` is human-only;
 veterinary bills and dog medicines belong to `Dogs`. Merchant/supplier remains
 a separate normalized field so a Lidl/Conad comparison does not consume the
-subcategory dimension. Tags are intentionally absent in the first release.
+subcategory dimension. The dashboard supports at most 25 category series;
+known default categories use localized chart labels and custom categories retain
+their configured names. Tags are intentionally absent in the first release.
+
+## Related documentation
+
+- [Project overview and documentation index](../README.md)
+- [Installation guide](INSTALLATION.md)
+- [Spreadsheet lifecycle and schema](SPREADSHEET.md)
+- [Operations guide](OPERATIONS.md)
+- [Deployment guide](DEPLOYMENT.md)

@@ -2,10 +2,7 @@
 
 # Expense import policy
 
-Use this file as the initial `AGENTS.md` policy in the configured Drive root.
-For an existing installation, replace only the instructions between the managed
-policy markers and keep Drive-only instructions outside them. The runtime reads
-that Drive copy for each import. Do not include credentials.
+These rules govern imports from this Drive root. Do not include credentials.
 
 ## Scope
 
@@ -34,14 +31,30 @@ that Drive copy for each import. Do not include credentials.
 - Derive calendar year and month from the transaction date, never the file or
   folder name.
 - Keep `transfer` records in the ledger but exclude them from spending totals
-  and spending charts. Treat Tricount `Bilancio` records as opening-balance
-  controls rather than ledger rows. Exact participant allocations in the JSON
+  and spending charts. Treat Tricount `Bilancio inizio mese` records as
+  opening-balance controls rather than ledger rows. Ignore `Bilancio fine mese`
+  records in spending and balance calculations; their following opening marker
+  is the checkpoint source of truth. Exact participant allocations in the JSON
   are the balance-control source of truth.
+- Treat Tricount `INCOME` rows as categorized refunds: retain their negative
+  sign and include them in spending totals so they reduce the relevant category.
 - Use exactly one category and one subcategory for an expense. Normalize the
   merchant or supplier in its own field; do not add tags.
+- Never use Unknown, N/A, or a placeholder as the merchant. Preserve a specific
+  merchant named by the source. When it is absent, infer only a defensible
+  merchant type from the description and classification: tobacco, cigarettes,
+  or cigars become Tabaccheria; metano fuel becomes Distributore di metano; a
+  veterinary visit becomes Veterinario. Leave the field blank when the source
+  does not support either a specific merchant or a defensible type.
 - Preserve the source category, custom category, description, and exact
   allocations. Prefer them and previous human corrections for classification.
   Use attachment evidence only when those are insufficient.
+- Treat a tangible item sold by a retailer or marketplace, whether new or used,
+  as a product purchase based on the item and its recipient or use, not as an
+  activity or service. Books, puzzles, games, and similar durable goods are not
+  `Leisure and travel` / `Entertainment` solely because they are recreational.
+  Use `Personal and gifts` / `Personal purchase`, or `Personal and gifts` /
+  `Gift` only when the source or prior human correction supports gifting.
 - Never import an exact duplicate. For overlapping exports, import only unique
   rows and record the duplicate decision in the import audit.
 

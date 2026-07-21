@@ -50,6 +50,33 @@ assert.equal(context.isTricountJsonFileName_('transactions-hostello-202603.txt')
 assert.equal(context.isEligibleTricountJsonFileName_('transactions-hostello-202603.json', config), true);
 assert.equal(context.isEligibleTricountJsonFileName_('transactions-london-202603.json', config), false);
 assert.equal(context.isExcludedRootFolderName_('Importazioni', config), true);
+assert.equal(context.resolveMerchant_('Unknown', 'Laura - stecca Delia', 'Personal purchases', 'Other'),
+  'Tabaccheria');
+assert.equal(context.resolveMerchant_('N/A', 'Carburante - metano', 'Transport', 'Fuel'),
+  'Distributore di metano');
+assert.equal(context.resolveMerchant_('Unknown', 'Aperitivi', 'Food and drink', 'Bar and breakfast'), 'Bar');
+assert.equal(context.resolveMerchant_('', 'Regalo per Elisa - piadine', 'Personal and gifts', 'Gift'),
+  'Piadineria');
+assert.equal(context.resolveMerchant_('Specific shop', 'sigari', 'Personal purchases', 'Other'),
+  'Specific shop');
+assert.equal(context.resolveMerchant_('Unknown', 'REACT-073 - rata 2 di 3', 'Other', 'Other'), '');
+
+assert.equal(context.normalizeMerchantName_('LIDL'), 'Lidl');
+assert.equal(context.normalizeMerchantName_('Conad'), 'Conad');
+assert.equal(context.normalizeMerchantName_('CONAD CITY'), 'Conad City');
+assert.equal(context.normalizeMerchantName_('  MCDONALD\'S  -  ITALIA '), "Mcdonald's-Italia");
+assert.equal(context.normalizeMerchantName_(''), '');
+const merchantNormalization = context.normalizeMerchantValues_([
+  ['LIDL'], ['Lidl'], ['CONAD'], ['Conad'], [''], ['COOP-ALLEANZA']
+]);
+assert.deepEqual(JSON.parse(JSON.stringify(merchantNormalization.values)), [
+  ['Lidl'], ['Lidl'], ['Conad'], ['Conad'], [''], ['Coop-Alleanza']
+]);
+assert.equal(merchantNormalization.changedRows, 3);
+assert.deepEqual(JSON.parse(JSON.stringify(merchantNormalization.variantGroups)), [
+  { normalized: 'Conad', variants: ['CONAD', 'Conad'] },
+  { normalized: 'Lidl', variants: ['LIDL', 'Lidl'] }
+]);
 
 const tricountJson = {
   Response: [{ Registry: { all_registry_entry: [
@@ -107,8 +134,97 @@ assert.deepEqual(JSON.parse(JSON.stringify(jsonRecords[0])), {
   sourceFingerprint: 'tricount:brasserie-uuid'
 });
 assert.equal(jsonRecords[1].transactionType, 'opening_balance');
+assert.equal(context.mapTricountTransactionType_('BALANCE', 'Bilancio fine mese', 'Bilancio ⚖️'),
+  'closing_balance');
+assert.equal(context.mapTricountTransactionType_('NORMAL', 'Bilancio inizio mese', ''),
+  'opening_balance');
+assert.equal(context.mapTricountTransactionType_('NORMAL', 'Bilancio in io mese', ''),
+  'opening_balance');
+assert.equal(context.mapTricountTransactionType_('NORMAL', 'Bilancio fine mese', ''),
+  'closing_balance');
+assert.equal(context.mapTricountTransactionType_('BALANCE', 'Bilancio generico', 'Bilancio ⚖️'),
+  'transfer');
+assert.equal(context.mapTricountTransactionType_('NORMAL', 'Marco - contanti', 'Contanti 💶'),
+  'transfer');
+assert.equal(context.mapTricountTransactionType_('NORMAL', 'Spesa al supermercato', 'Spesa'), 'expense');
+const legacyAuditBalanceCheck = context.getOpeningBalanceRecordsFromCheck_({ records: [
+  { date: '2023-09-30', currency: 'EUR', transactionType: 'opening_balance',
+    sourceNativeType: 'BALANCE', sourceCustomCategory: 'Bilancio ⚖️',
+    description: 'Bilancio fine mese' },
+  { date: '2023-10-01', currency: 'EUR', transactionType: 'opening_balance',
+    sourceNativeType: 'BALANCE', sourceCustomCategory: 'Bilancio ⚖️',
+    description: 'Bilancio inizio mese' }
+] });
+assert.deepEqual(JSON.parse(JSON.stringify(legacyAuditBalanceCheck.map((record) => [
+  record.date, record.transactionType
+]))), [['2023-10-01', 'opening_balance']],
+  'legacy audit checks must ignore stored month-end markers');
+const historicalBalanceTransfers = context.getHistoricalBalanceTransferCandidates_([{ records: [
+  { sourceFingerprint: 'tricount:vacanze', sourceNativeType: 'BALANCE',
+    sourceCustomCategory: 'Bilancio ⚖️', description: 'Bilancio Vacanze Pasqua',
+    transactionType: 'opening_balance' },
+  { sourceFingerprint: 'tricount:opening', sourceNativeType: 'BALANCE',
+    sourceCustomCategory: 'Bilancio ⚖️', description: 'Bilancio inizio mese',
+    transactionType: 'opening_balance' }
+] }]);
+assert.deepEqual(JSON.parse(JSON.stringify(historicalBalanceTransfers.map((record) => [
+  record.sourceFingerprint, record.transactionType
+]))), [['tricount:vacanze', 'transfer']],
+  'historical non-monthly BALANCE settlements must be recoverable as transfers');
+assert.equal(context.mapTricountTransactionType_('INCOME', 'Rimborso acquisto', ''), 'income');
+const sameValueOpeningRecords = context.uniqueOpeningBalanceRecords_([
+  { date: '2026-04-01', currency: 'EUR', payer: 'Laura', amount: 50,
+    sourceTransactionId: 'opening-a', allocations: [{ participant: 'Marco', amount: 50 }] },
+  { date: '2026-04-01', currency: 'EUR', payer: 'Laura', amount: 50,
+    sourceTransactionId: 'opening-b', allocations: [{ participant: 'Marco', amount: 50 }] },
+  { date: '2026-04-01', currency: 'EUR', payer: 'Laura', amount: 50,
+    sourceTransactionId: 'opening-c', allocations: [{ participant: 'Sara', amount: 50 }] }
+]);
+assert.equal(sameValueOpeningRecords.length, 3,
+  'same-value opening records with distinct source identities or allocations must not collapse');
+const mirroredOpeningRecords = context.uniqueOpeningBalanceRecords_([
+  { date: '2026-04-01', currency: 'EUR', payer: 'Laura', amount: 50,
+    allocations: [{ participant: 'Marco', amount: 50 }] },
+  { date: '2026-04-01', currency: 'EUR', payer: 'Laura', amount: 50,
+    sourceTransactionId: 'opening-json', allocations: [{ participant: 'Marco', amount: 50 }] }
+]);
+assert.equal(mirroredOpeningRecords.length, 1);
+assert.equal(mirroredOpeningRecords[0].sourceTransactionId, 'opening-json',
+  'a source-poor CSV mirror must yield to its richer JSON checkpoint');
 assert.deepEqual(JSON.parse(JSON.stringify(context.buildExactBalanceDeltas_(jsonRecords[0]))), [
   { name: 'Laura', amount: -29 }, { name: 'Marco', amount: 29 }
+]);
+
+const incomeEntry = JSON.parse(JSON.stringify(
+  tricountJson.Response[0].Registry.all_registry_entry[0].RegistryEntry
+));
+incomeEntry.type_transaction = 'INCOME';
+incomeEntry.description = 'Rimborso condiviso';
+incomeEntry.amount.value = '410.00';
+incomeEntry.membership_owned.RegistryMembershipNonUser.alias.display_name = 'Laura';
+incomeEntry.allocations[0].amount.value = '205.00';
+incomeEntry.allocations[1].amount.value = '205.00';
+const incomeRecord = context.normalizeTricountJsonEntry_(incomeEntry, 3,
+  { id: 'json-file', name: 'transactions-hostello-202603.json' },
+  { id: 'folder-id', name: 'HoStello---202603' });
+assert.equal(incomeRecord.transactionType, 'income');
+assert.equal(incomeRecord.amount, -410);
+assert.deepEqual(JSON.parse(JSON.stringify(incomeRecord.allocations.map((entry) => entry.amount))),
+  [-205, -205]);
+assert.deepEqual(JSON.parse(JSON.stringify(context.buildExactBalanceDeltas_(incomeRecord))), [
+  { name: 'Laura', amount: -205 }, { name: 'Marco', amount: 205 }
+]);
+
+const fractionalAllocationRecord = {
+  payer: 'Laura',
+  amount: 10.005,
+  allocations: [
+    { participant: 'Laura', amount: 5.0025 },
+    { participant: 'Marco', amount: 5.0025 }
+  ]
+};
+assert.deepEqual(JSON.parse(JSON.stringify(context.buildExactBalanceDeltas_(fractionalAllocationRecord))), [
+  { name: 'Laura', amount: 5.0025 }, { name: 'Marco', amount: -5.0025 }
 ]);
 
 const sourceFingerprint = context.buildSourceTransactionFingerprint_({
@@ -196,17 +312,43 @@ const anchoredBalance = context.evaluateOpeningBalance_(
 assert.equal(anchoredBalance.matched, true);
 assert.equal(anchoredBalance.anchor.date, '2026-01-01');
 
+const multiParticipantMonth = [
+  { date: '2026-01-12', amount: 50, currency: 'EUR', description: 'Shared',
+    payer: 'Laura', beneficiaries: 'Marco', transactionType: 'expense',
+    allocations: [{ participant: 'Marco', amount: 50 }] },
+  { date: '2026-01-13', amount: 20, currency: 'EUR', description: 'Shared',
+    payer: 'Marco', beneficiaries: 'Sara', transactionType: 'expense',
+    allocations: [{ participant: 'Sara', amount: 20 }] }
+];
+const multiParticipantCheck = context.evaluateOpeningBalanceGroup_([
+  { date: '2026-02-01', amount: 50, currency: 'EUR', payer: 'Laura',
+    beneficiaries: 'Marco', transactionType: 'opening_balance',
+    allocations: [{ participant: 'Marco', amount: 50 }] },
+  { date: '2026-02-01', amount: 20, currency: 'EUR', payer: 'Marco',
+    beneficiaries: 'Sara', transactionType: 'opening_balance',
+    allocations: [{ participant: 'Sara', amount: 20 }] }
+], multiParticipantMonth, 0.01);
+assert.equal(multiParticipantCheck.matched, true);
+assert.equal(multiParticipantCheck.records.length, 2);
+assert.deepEqual(JSON.parse(JSON.stringify(multiParticipantCheck.differences)), [
+  { name: 'Laura', expected: 50, actual: 50, difference: 0 },
+  { name: 'Marco', expected: -30, actual: -30, difference: 0 },
+  { name: 'Sara', expected: -20, actual: -20, difference: 0 }
+]);
+
 const reconciliationRecords = [
   { sourceFileId: 'march', sourceFileName: 'march.json', sourceRow: 2, amount: 36,
     currency: 'EUR', transactionType: 'expense' },
   { sourceFileId: 'march', sourceFileName: 'march.json', sourceRow: 3, amount: 20,
     currency: 'EUR', transactionType: 'opening_balance' },
+  { sourceFileId: 'march', sourceFileName: 'march.json', sourceRow: 4, amount: 20,
+    currency: 'EUR', transactionType: 'closing_balance' },
   { sourceFileId: 'april', sourceFileName: 'april.json', sourceRow: 2, amount: 25,
     currency: 'EUR', transactionType: 'expense' }
 ];
 const reconciliation = context.buildSourceReconciliations_(reconciliationRecords, {
   unique: [reconciliationRecords[0], reconciliationRecords[1]],
-  duplicates: [{ row: reconciliationRecords[2], reason: 'existing_fingerprint' }]
+  duplicates: [{ row: reconciliationRecords[3], reason: 'existing_fingerprint' }]
 }, [reconciliationRecords[0]], [
   { id: 'march', name: 'march.json', contentHash: 'march-hash' },
   { id: 'april', name: 'april.json', contentHash: 'april-hash' }
@@ -221,10 +363,11 @@ assert.deepEqual(JSON.parse(JSON.stringify(reconciliation[0])), {
 });
 assert.deepEqual(JSON.parse(JSON.stringify(reconciliation[1])), {
   sourceFileId: 'march', sourceFileName: 'march.json', sourceContentHash: 'march-hash',
-  sourceRows: 2, importedRows: 1, duplicateRows: 0, openingBalanceRows: 1, unaccountedRows: 0,
-  sourceTotals: { EUR: 56 }, accountedTotals: { EUR: 56 }, status: 'OK', decisions: [
+  sourceRows: 3, importedRows: 1, duplicateRows: 0, openingBalanceRows: 1, unaccountedRows: 0,
+  sourceTotals: { EUR: 76 }, accountedTotals: { EUR: 76 }, status: 'OK', decisions: [
     { sourceRow: 2, status: 'imported', amount: 36, currency: 'EUR', reason: '' },
-    { sourceRow: 3, status: 'opening_balance', amount: 20, currency: 'EUR', reason: '' }
+    { sourceRow: 3, status: 'opening_balance', amount: 20, currency: 'EUR', reason: '' },
+    { sourceRow: 4, status: 'closing_balance', amount: 20, currency: 'EUR', reason: '' }
   ]
 });
 const unreconciled = context.buildSourceReconciliations_([reconciliationRecords[0]], {

@@ -7,6 +7,7 @@
 - [Install](#install)
 - [Browser handoff](#browser-handoff)
 - [First controlled run](#first-controlled-run)
+- [Related documentation](#related-documentation)
 
 ## Prerequisites
 
@@ -63,10 +64,13 @@ make install-resume
 ```
 
 The bootstrap creates or adopts the spreadsheet resources, Script Properties,
-the Drive policy, ignored fixture/archive folders, and time triggers. Automatic
+the Drive policy, ignored fixture/archive folders, and managed trigger set. Automatic
 processing is deliberately disabled at first, so the historical folders can be
-isolated without a race. It then validates the ledger layout and trigger before
+isolated without a race. It then validates the ledger layout and triggers before
 reporting the installed spreadsheet URL.
+
+For the create-versus-adopt decision, managed tabs, and customization boundary,
+see [Spreadsheet lifecycle and schema](SPREADSHEET.md).
 
 ## First controlled run
 
@@ -84,7 +88,7 @@ npx --yes @google/clasp@3.3.0 \
   --json run getSetupStatus
 ```
 
-Then validate the Drive policy, spreadsheet schema, and installed trigger:
+Then validate the Drive policy, spreadsheet schema, and installed triggers:
 
 ```sh
 npx --yes @google/clasp@3.3.0 \
@@ -94,7 +98,8 @@ npx --yes @google/clasp@3.3.0 \
 
 `getSetupStatus` reports whether automatic processing is enabled;
 `validateCatalogerInstallation` additionally reports missing, duplicate, and
-counted managed trigger handlers. Neither returns credentials. The Apps Script
+counted managed time-trigger handlers plus the dashboard year-color edit
+trigger count. Neither returns credentials. The Apps Script
 **Triggers** page is the authoritative place to inspect the actual 15-minute
 interval and the version associated with each trigger.
 
@@ -133,3 +138,11 @@ npx --yes @google/clasp@3.3.0 \
 The 15-minute trigger will then process future eligible source units. Do not
 run `clasp login` again for these commands; the dedicated authorization already
 contains the required Apps Script, Drive, Sheets, and mail scopes.
+
+## Related documentation
+
+- [Project overview and documentation index](../README.md)
+- [Spreadsheet lifecycle and schema](SPREADSHEET.md)
+- [Configuration reference](CONFIGURATION.md)
+- [Operations guide](OPERATIONS.md)
+- [Deployment guide](DEPLOYMENT.md)

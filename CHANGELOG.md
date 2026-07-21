@@ -5,7 +5,47 @@ All notable changes to this project are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [Semantic Versioning](https://semver.org/).
 
-## [0.2.2] - 2026-07-19
+## [0.2.2] - 2026-07-20
+
+### Added
+
+- A localized, formula-driven dashboard with year-selection controls, dynamic
+  category, payer, merchant, and monthly-spending visualizations.
+- A protected `Calculation data` worksheet for dashboard calculation ranges,
+  keeping generated formulas out of the user-facing dashboard.
+- Automatic initial-balance configuration and explanatory opening-balance audit
+  details, with manual overrides retained separately from generated values.
+- Merchant enrichment for incomplete imports, including deterministic fallback
+  merchants inferred from the transaction description and category.
+- Spreadsheet lifecycle and customization documentation, including the
+  installer-owned default schema and non-destructive update behavior.
+- A targeted `categorizeIncomeRefunds` maintenance entrypoint that classifies
+  legacy income rows missing a reporting category, without rewriting their
+  amount, allocation, or source provenance.
+
+### Changed
+
+- Distinguish `Bilancio inizio mese` checkpoints from `Bilancio fine mese`
+  markers; ignore month-end markers in ledger and monthly-balance calculations
+  while keeping them accounted for in source reconciliation.
+- Make `Transazioni` the sole canonical ledger and derive all summaries,
+  balances, dashboard tables, and charts dynamically from it.
+- Refresh the dashboard visual design, chart legends, localized Italian labels,
+  and category names while retaining English as the installation default.
+- Preserve user-adjusted dashboard chart positions and ordinary dimensions
+  during a refresh; the Top 20 chart height intentionally follows the monthly
+  category chart, and new installations use the approved default layout.
+- Show all months and their spending totals in the monthly-category chart, and
+  retain the adaptive annual-label format for one or multiple selected years.
+- Organize generated spreadsheet controls and calculation data into managed,
+  protected sheets rather than hidden remote columns in user-facing tabs.
+- Treat Tricount `INCOME` rows as categorized, signed refunds in spending
+  reports: they reduce the relevant category, month, year, payer, merchant,
+  and KPI total instead of inflating spending or appearing uncategorized.
+- Keep participant cash settlements visible for balance reconciliation while
+  excluding them from all household-spending totals and charts.
+- Support up to 25 configurable dashboard category series; default categories
+  use localized labels and custom categories retain their configured names.
 
 ### Fixed
 
@@ -18,6 +58,23 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - Keep OAuth credentials out of deployment command arguments, require an exact
   owner-only stable executable, close the pre-promotion stale-revision race, and
   validate the provider envelope before accepting trigger repair.
+- Rebuild balance movements from opening balances and participant allocations,
+  preventing systematic monthly carry-forward mismatches; tolerate only
+  cent-level checkpoint residuals through explicit balancing adjustments.
+- Backfill missing allocation details, normalize historic transaction types,
+  and exclude transfers and opening-balance controls from spending aggregates.
+- Recover historic non-monthly Tricount `BALANCE` settlements that an older
+  import misclassified as opening-balance controls before rebuilding balances.
+- Reconcile balances in monthly Tricount source order while retaining original
+  transaction dates for spending reports, so backdated or forward-dated rows
+  cannot cross a carry-over checkpoint; recover legacy `NORMAL` opening markers
+  as checkpoints and prevent later checks from hiding an earlier mismatch.
+- Classify historic income refunds before rebuilding dashboard formulas, so
+  existing negative rows immediately reduce their appropriate reporting
+  categories without a destructive JSON re-import.
+- Prevent dashboard charts from being created before their dynamic sources are
+  calculated, and avoid changing their geometry on later refreshes except for
+  the intentional Top 20 height synchronization.
 
 ## [0.2.1] - 2026-07-18
 

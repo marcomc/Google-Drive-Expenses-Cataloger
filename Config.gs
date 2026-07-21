@@ -52,6 +52,9 @@ function getApplicationVersion() {
 /** Enable the configured Vertex project when Gemini Developer API quota is exhausted. */
 function enableAutomaticVertexFallback() {
   assertCatalogConfiguration_();
+  if (!getScriptProperty_(CONFIG.PROPERTY_KEYS.GOOGLE_CLOUD_PROJECT_ID)) {
+    throw new Error('GOOGLE_CLOUD_PROJECT_ID is required for Vertex AI.');
+  }
   PropertiesService.getScriptProperties().setProperty(
     CONFIG.PROPERTY_KEYS.GEMINI_AUTO_VERTEX_FALLBACK,
     'true'
@@ -124,6 +127,9 @@ function validateAutomationConfig_(config) {
   if (!config.categories || typeof config.categories !== 'object' ||
     Array.isArray(config.categories)) {
     throw new Error('categories must be an object.');
+  }
+  if (Object.keys(config.categories).length > 25) {
+    throw new Error('categories supports at most 25 dashboard series.');
   }
   Object.keys(config.categories).forEach(function (category) {
     if (!Array.isArray(config.categories[category]) ||

@@ -3,7 +3,8 @@ function getEnglishLocalization_() {
     sheetNames: {
       transactions: 'Transactions', imports: 'Imports', dashboard: 'Dashboard',
       configuration: 'Configuration', balanceMovements: 'Balance movements',
-      monthlyBalances: 'Monthly balances', sourceReconciliations: 'Source reconciliations'
+      monthlyBalances: 'Monthly balances', sourceReconciliations: 'Source reconciliations',
+      personalAnalysis: 'Personal analysis', technicalData: 'Calculation data'
     },
     headers: {
       transactionId: 'Transaction ID', date: 'Date', year: 'Year', month: 'Month',
@@ -25,6 +26,40 @@ function getEnglishLocalization_() {
       sourceNativeType: 'Source transaction type', sourceStatus: 'Source status',
       sourceCustomCategory: 'Source custom category', allocationDetails: 'Participant allocations',
       exchangeRate: 'Exchange rate', sourceCreatedAt: 'Source created at', sourceUpdatedAt: 'Source updated at'
+    },
+    initialBalanceConfiguration: {
+      headers: ['Initial-balance date', 'Currency', 'Participant', 'Initial balance', 'Origin', 'Active', 'Notes'],
+      origins: { automatic: 'Automatic', manual: 'Manual', assumedZero: 'Assumed zero' },
+      automaticNotePrefix: 'Detected from the earliest available import: ',
+      assumedZeroNote: 'No initial balance detected: the calculation explicitly starts at zero.'
+    },
+    balanceDescriptions: {
+      initialBalance: 'Initial balance', configurationSource: 'Configuration',
+      roundingAdjustment: 'Tricount checkpoint rounding alignment', checkpointSource: 'Tricount checkpoint',
+      allocationNote: 'Calculated from exact participant allocations preserved in the Tricount JSON source.',
+      monthlyNote: 'Calculated from exact allocations; declared carry-overs are independent monthly controls.'
+    },
+    dashboard: {
+      title: 'HoStello expenses', subtitle: 'Dynamic summary based on imported transactions',
+      totalSpend: 'Total spending', expenseCount: 'Expense transactions',
+      currentYearSpend: 'Current-year spending', currentYearCount: 'Current-year transactions',
+      latestMonth: 'Latest imported month', latestMonthSpend: 'Latest-month spending',
+      annualSpend: 'Annual spending by category', monthlyComparison: 'Monthly spending comparison by year',
+      monthlySpend: 'Monthly spending by category', payerSpend: 'Spending by payer',
+      topMerchants: 'Top 20 merchants / suppliers', comparisonYears: 'Years to compare', color: 'Color',
+      yearColors: { green: 'Green', blue: 'Blue', orange: 'Orange', purple: 'Purple', pink: 'Pink', teal: 'Teal', red: 'Red', lime: 'Lime' },
+      detailYear: 'Detail year', year: 'Year', includeYear: 'Show',
+      selectedYear: 'Show details for',
+      merchantSort: 'Sort merchants', merchantSortBy: 'Sort by',
+      merchantSortBySpend: 'By spending', merchantSortAlphabetically: 'Alphabetical',
+      monthNames: ['January', 'February', 'March', 'April', 'May', 'June', 'July',
+        'August', 'September', 'October', 'November', 'December']
+    },
+    categoryLabels: {
+      Dogs: 'Dogs', 'Food and drink': 'Food and drink', Groceries: 'Groceries',
+      Health: 'Health', 'Home and utilities': 'Home and utilities',
+      'Home purchases': 'Home purchases', 'Leisure and travel': 'Leisure and travel',
+      Other: 'Other', 'Personal and gifts': 'Personal and gifts', Transport: 'Transport'
     }
   };
 }
