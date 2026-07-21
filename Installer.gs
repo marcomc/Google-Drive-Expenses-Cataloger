@@ -64,15 +64,18 @@ function validateCatalogerInstallation() {
   assertCatalogConfiguration_();
   const root = DriveApp.getFolderById(getRootFolderId_());
   loadDriveAgentsPolicy_(root);
-  const spreadsheet = SpreadsheetApp.openById(getSpreadsheetId_());
+  const spreadsheetId = getSpreadsheetId_();
+  const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
   const layout = getExpenseSheetLayout_(spreadsheet);
   const triggerStatus = getAutomationTriggerStatus_();
-  const dashboardYearColorEditTriggerCount = getDashboardYearColorEditTriggerCount_();
+  const dashboardTriggerStatus = getDashboardYearColorEditTriggerStatus_(spreadsheetId);
+  const dashboardYearColorEditTriggerCount = dashboardTriggerStatus.triggerCount;
   return {
     installed: Boolean(layout.transactions && layout.imports &&
       triggerStatus.missingTriggerHandlers.length === 0 &&
       triggerStatus.duplicateTriggerHandlers.length === 0 &&
-      dashboardYearColorEditTriggerCount === 1),
+      dashboardYearColorEditTriggerCount === 1 &&
+      dashboardTriggerStatus.totalTriggerCount === 1),
     automaticProcessingEnabled: isAutomaticProcessingEnabled_(),
     missingTriggerHandlers: triggerStatus.missingTriggerHandlers,
     duplicateTriggerHandlers: triggerStatus.duplicateTriggerHandlers,

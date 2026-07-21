@@ -25,7 +25,20 @@ function getDashboardYearColorEditTriggers_() {
 }
 
 function getDashboardYearColorEditTriggerCount_() {
-  return getDashboardYearColorEditTriggersForSpreadsheet_(getSpreadsheetId_()).length;
+  return getDashboardYearColorEditTriggerStatus_().triggerCount;
+}
+
+function getDashboardYearColorEditTriggerStatus_(spreadsheetId) {
+  const triggers = getDashboardYearColorEditTriggers_();
+  const targetSpreadsheetId = spreadsheetId || getSpreadsheetId_();
+  const triggerCount = triggers.filter(function (trigger) {
+    return trigger.getTriggerSourceId() === targetSpreadsheetId;
+  }).length;
+  return {
+    triggerCount: triggerCount,
+    totalTriggerCount: triggers.length,
+    staleTriggerCount: triggers.length - triggerCount
+  };
 }
 
 function getDashboardYearColorEditTriggersForSpreadsheet_(spreadsheetId) {

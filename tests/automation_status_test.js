@@ -175,6 +175,19 @@ assert.equal(properties.get('AUTO_PROCESSING'), 'false');
 activeTriggers = [
   makeTrigger('processDriveEventQueue', 'existing-polling'),
   makeTrigger('runDailyExpenseCataloging', 'existing-daily'),
+  makeTrigger('applyDashboardYearColorsOnEdit', 'existing-dashboard-edit'),
+  makeTrigger('applyDashboardYearColorsOnEdit', 'stale-dashboard-edit', {
+    sourceId: 'other-spreadsheet'
+  })
+];
+assert.equal(context.validateCatalogerInstallation().installed, false,
+  'a stale dashboard edit trigger for another spreadsheet must make installation health fail');
+assert.throws(() => context.enableExpenseCataloging(), /Managed automation triggers are not healthy/);
+assert.equal(properties.get('AUTO_PROCESSING'), 'false');
+
+activeTriggers = [
+  makeTrigger('processDriveEventQueue', 'existing-polling'),
+  makeTrigger('runDailyExpenseCataloging', 'existing-daily'),
   makeTrigger('applyDashboardYearColorsOnEdit', 'wrong-dashboard-sheet', { sourceId: 'other-spreadsheet' })
 ];
 assert.equal(context.validateCatalogerInstallation().installed, false,
