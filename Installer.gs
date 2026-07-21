@@ -926,10 +926,14 @@ function getDashboardSelectedYearChartColors_(dashboard, labels) {
 }
 
 function refreshDashboardYearChartColors() {
-  assertCatalogConfiguration_();
-  const spreadsheet = SpreadsheetApp.openById(getSpreadsheetId_());
-  const localization = getLocalization_();
-  return applyDashboardYearChartColors_(spreadsheet.getSheetByName(localization.sheetNames.dashboard), localization.dashboard);
+  return withAutomationTriggerLock_(function () {
+    assertCatalogConfiguration_();
+    const spreadsheet = SpreadsheetApp.openById(getSpreadsheetId_());
+    const localization = getLocalization_();
+    return applyDashboardYearChartColors_(
+      spreadsheet.getSheetByName(localization.sheetNames.dashboard), localization.dashboard
+    );
+  });
 }
 
 function applyDashboardYearColorsOnEdit(event) {
@@ -953,7 +957,9 @@ function applyDashboardYearColorsOnEdit(event) {
   if (!isYearControlEdit) {
     return { status: 'IGNORED' };
   }
-  return applyDashboardYearChartColors_(sheet, localization.dashboard);
+  return withAutomationTriggerLock_(function () {
+    return applyDashboardYearChartColors_(sheet, localization.dashboard);
+  });
 }
 
 function applyDashboardYearChartColors_(dashboard, labels) {
@@ -1347,8 +1353,11 @@ function styleDashboardSheet_(dashboard) {
 
 function applyManagedConditionalFormatting_(spreadsheet, localization) {
   const properties = PropertiesService.getScriptProperties();
-  if (properties.getProperty('SPREADSHEET_PRESENTATION_VERSION') ===
-    INSTALLER_PRESENTATION_VERSION) {
+  const presentationMarker = JSON.stringify({
+    version: INSTALLER_PRESENTATION_VERSION,
+    spreadsheetId: spreadsheet.getId()
+  });
+  if (properties.getProperty('SPREADSHEET_PRESENTATION_VERSION') === presentationMarker) {
     return;
   }
   const names = localization.sheetNames;
@@ -1381,7 +1390,7 @@ function applyManagedConditionalFormatting_(spreadsheet, localization) {
       .setBackground('#FEE2E2').setRanges([reconciliations.getRange('O2:O')]).build());
     reconciliations.setConditionalFormatRules(rules);
   }
-  properties.setProperty('SPREADSHEET_PRESENTATION_VERSION', INSTALLER_PRESENTATION_VERSION);
+  properties.setProperty('SPREADSHEET_PRESENTATION_VERSION', presentationMarker);
 }
 
 function removeManagedTextFormatRules_(sheet, managedRanges, managedValues) {

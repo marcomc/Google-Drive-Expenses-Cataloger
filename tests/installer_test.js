@@ -13,6 +13,7 @@ const context = {
       setProperties: (values) => {
         Object.entries(values).forEach(([key, value]) => properties.set(key, value));
       },
+      setProperty: (key, value) => properties.set(key, value),
       deleteProperty: (key) => properties.delete(key)
     })
   }
@@ -141,6 +142,47 @@ assert.deepEqual(context.removeManagedTextFormatRules_({
   ]
 }, ['N2:N', 'O2:O1000'], ['OK', 'mismatch']).length, 1,
   'presentation migration must replace its former and current managed status rules only');
+const presentationProperty = 'SPREADSHEET_PRESENTATION_VERSION';
+const currentPresentationVersion = vm.runInContext('INSTALLER_PRESENTATION_VERSION', context);
+let presentationSheetLookups = 0;
+function createPresentationSpreadsheet(id) {
+  return {
+    getId: () => id,
+    getSheetByName: () => {
+      presentationSheetLookups += 1;
+      return null;
+    }
+  };
+}
+const presentationLocalization = {
+  sheetNames: {
+    transactions: 'Transactions', imports: 'Import Audit', sourceReconciliations: 'Reconciliations'
+  }
+};
+properties.set(presentationProperty, currentPresentationVersion);
+context.applyManagedConditionalFormatting_(
+  createPresentationSpreadsheet('spreadsheet-a'), presentationLocalization
+);
+assert.equal(presentationSheetLookups, 3,
+  'a legacy plain presentation version must reapply formatting once');
+assert.equal(properties.get(presentationProperty),
+  JSON.stringify({ version: currentPresentationVersion, spreadsheetId: 'spreadsheet-a' }),
+  'presentation formatting must persist its version and target spreadsheet identity');
+presentationSheetLookups = 0;
+context.applyManagedConditionalFormatting_(
+  createPresentationSpreadsheet('spreadsheet-a'), presentationLocalization
+);
+assert.equal(presentationSheetLookups, 0,
+  'the current presentation version must skip repeat application only for the same spreadsheet');
+context.applyManagedConditionalFormatting_(
+  createPresentationSpreadsheet('spreadsheet-b'), presentationLocalization
+);
+assert.equal(presentationSheetLookups, 3,
+  'switching the configured spreadsheet must reapply managed formatting');
+assert.equal(properties.get(presentationProperty),
+  JSON.stringify({ version: currentPresentationVersion, spreadsheetId: 'spreadsheet-b' }),
+  'the final presentation marker must identify the newly formatted spreadsheet');
+properties.delete(presentationProperty);
 assert.match(dashboardFormulas[2].formula,
   /MAP\(labels,totals,LAMBDA\(label,total,label&" · "&total\)\)/);
 assert.match(installerSource, /const DASHBOARD_CHART_LAYOUT_DEFAULTS = \{/);
@@ -514,14 +556,83 @@ assert.deepEqual(JSON.parse(JSON.stringify(context.applyDashboardYearChartColors
 assert.deepEqual(JSON.parse(JSON.stringify(chartColorUpdates.map((chart) => chart.value))), [
   ['#20B486', '#4F7CAC'], ['#20B486', '#4F7CAC']
 ]);
-let yearControlEditCalls = 0;
-context.getLocalization_ = () => ({
-  sheetNames: { dashboard: 'Dashboard' }, dashboard: { monthlyComparison: 'Monthly comparison' }
-});
-context.applyDashboardYearChartColors_ = () => {
-  yearControlEditCalls += 1;
+const originalYearColorDependencies = {
+  withAutomationTriggerLock_: context.withAutomationTriggerLock_,
+  assertCatalogConfiguration_: context.assertCatalogConfiguration_,
+  getSpreadsheetId_: context.getSpreadsheetId_,
+  getLocalization_: context.getLocalization_,
+  applyDashboardYearChartColors_: context.applyDashboardYearChartColors_,
+  SpreadsheetApp: context.SpreadsheetApp
+};
+const yearColorEvents = [];
+context.withAutomationTriggerLock_ = (callback) => {
+  yearColorEvents.push('lock-acquired');
+  try {
+    return callback();
+  } finally {
+    yearColorEvents.push('lock-released');
+  }
+};
+context.assertCatalogConfiguration_ = () => yearColorEvents.push('configuration-asserted');
+context.getSpreadsheetId_ = () => {
+  yearColorEvents.push('spreadsheet-id-read');
+  return 'spreadsheet-id';
+};
+context.getLocalization_ = () => {
+  yearColorEvents.push('localization-read');
+  return {
+    sheetNames: { dashboard: 'Dashboard' },
+    dashboard: { monthlyComparison: 'Monthly comparison' }
+  };
+};
+const colorRepairDashboard = {};
+context.SpreadsheetApp = {
+  openById: (spreadsheetId) => {
+    yearColorEvents.push('spreadsheet-opened:' + spreadsheetId);
+    return {
+      getSheetByName: (sheetName) => {
+        yearColorEvents.push('dashboard-read:' + sheetName);
+        return colorRepairDashboard;
+      }
+    };
+  }
+};
+context.applyDashboardYearChartColors_ = (dashboard) => {
+  assert.equal(dashboard, colorRepairDashboard);
+  yearColorEvents.push('charts-mutated');
   return { status: 'UPDATED' };
 };
+assert.equal(context.refreshDashboardYearChartColors().status, 'UPDATED');
+assert.deepEqual(yearColorEvents, [
+  'lock-acquired', 'configuration-asserted', 'spreadsheet-id-read',
+  'spreadsheet-opened:spreadsheet-id', 'localization-read', 'dashboard-read:Dashboard',
+  'charts-mutated', 'lock-released'
+], 'the public year-colour repair lock must cover every chart lookup and mutation');
+yearColorEvents.length = 0;
+context.withAutomationTriggerLock_ = () => {
+  yearColorEvents.push('lock-rejected');
+  throw new Error('locked');
+};
+assert.throws(() => context.refreshDashboardYearChartColors(), /locked/);
+assert.deepEqual(yearColorEvents, ['lock-rejected'],
+  'a rejected year-colour repair lock must prevent spreadsheet access and mutation');
+yearColorEvents.length = 0;
+context.withAutomationTriggerLock_ = (callback) => {
+  yearColorEvents.push('lock-acquired');
+  try {
+    return callback();
+  } finally {
+    yearColorEvents.push('lock-released');
+  }
+};
+context.applyDashboardYearChartColors_ = () => {
+  yearColorEvents.push('charts-mutated');
+  throw new Error('chart update failed');
+};
+assert.throws(() => context.refreshDashboardYearChartColors(), /chart update failed/);
+assert.equal(yearColorEvents.at(-1), 'lock-released',
+  'a failed public year-colour repair must still release the shared lock');
+
 function createDashboardEditEvent(row, column, sheetName = 'Dashboard') {
   const sheet = {
     getName: () => sheetName,
@@ -541,6 +652,24 @@ function createDashboardEditEvent(row, column, sheetName = 'Dashboard') {
     }
   };
 }
+let yearControlEditCalls = 0;
+yearColorEvents.length = 0;
+context.getLocalization_ = () => ({
+  sheetNames: { dashboard: 'Dashboard' }, dashboard: { monthlyComparison: 'Monthly comparison' }
+});
+context.withAutomationTriggerLock_ = (callback) => {
+  yearColorEvents.push('edit-lock-acquired');
+  try {
+    return callback();
+  } finally {
+    yearColorEvents.push('edit-lock-released');
+  }
+};
+context.applyDashboardYearChartColors_ = () => {
+  yearColorEvents.push('edit-charts-mutated');
+  yearControlEditCalls += 1;
+  return { status: 'UPDATED' };
+};
 assert.equal(context.applyDashboardYearColorsOnEdit(createDashboardEditEvent(11, 23)).status, 'UPDATED');
 assert.equal(context.applyDashboardYearColorsOnEdit(createDashboardEditEvent(11, 24)).status, 'UPDATED');
 assert.equal(context.applyDashboardYearColorsOnEdit(createDashboardEditEvent(48, 24)).status, 'IGNORED');
@@ -548,6 +677,39 @@ assert.equal(context.applyDashboardYearColorsOnEdit(createDashboardEditEvent(10,
 assert.equal(context.applyDashboardYearColorsOnEdit(createDashboardEditEvent(11, 22)).status, 'IGNORED');
 assert.equal(context.applyDashboardYearColorsOnEdit(createDashboardEditEvent(11, 23, 'Other')).status, 'IGNORED');
 assert.equal(yearControlEditCalls, 2);
+assert.deepEqual(yearColorEvents, [
+  'edit-lock-acquired', 'edit-charts-mutated', 'edit-lock-released',
+  'edit-lock-acquired', 'edit-charts-mutated', 'edit-lock-released'
+], 'relevant edits must mutate charts under the lock while irrelevant edits avoid the lock entirely');
+yearColorEvents.length = 0;
+context.withAutomationTriggerLock_ = () => {
+  yearColorEvents.push('edit-lock-rejected');
+  throw new Error('locked');
+};
+assert.throws(() => context.applyDashboardYearColorsOnEdit(createDashboardEditEvent(11, 23)), /locked/);
+assert.deepEqual(yearColorEvents, ['edit-lock-rejected'],
+  'a rejected edit-handler lock must prevent chart mutation');
+yearColorEvents.length = 0;
+context.withAutomationTriggerLock_ = (callback) => {
+  yearColorEvents.push('edit-lock-acquired');
+  try {
+    return callback();
+  } finally {
+    yearColorEvents.push('edit-lock-released');
+  }
+};
+context.applyDashboardYearChartColors_ = () => {
+  yearColorEvents.push('edit-charts-mutated');
+  throw new Error('chart update failed');
+};
+assert.throws(() => context.applyDashboardYearColorsOnEdit(createDashboardEditEvent(11, 23)),
+  /chart update failed/);
+assert.deepEqual(yearColorEvents,
+  ['edit-lock-acquired', 'edit-charts-mutated', 'edit-lock-released'],
+  'a failed edit-handler mutation must release the shared lock');
+Object.entries(originalYearColorDependencies).forEach(([key, value]) => {
+  context[key] = value;
+});
 const legacyDashboardSelection = context.getDashboardSelectionState_({
   getRange: (reference) => {
     if (reference === 'V11:X100' || reference === 'W11:Y100' || reference === 'W51:Y100' ||
