@@ -37,6 +37,9 @@ and the project uses [Semantic Versioning](https://semver.org/).
   category chart, and new installations use the approved default layout.
 - Show all months and their spending totals in the monthly-category chart, and
   retain the adaptive annual-label format for one or multiple selected years.
+- Use `Anni da confrontare` as the single year filter for every dashboard chart;
+  aggregate monthly categories and top suppliers across the selected years,
+  rank suppliers by spending, and label missing suppliers explicitly.
 - Organize generated spreadsheet controls and calculation data into managed,
   protected sheets rather than hidden remote columns in user-facing tabs.
 - Treat Tricount `INCOME` rows as categorized, signed refunds in spending

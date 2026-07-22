@@ -48,10 +48,7 @@ function getItalianLocalization_() {
       monthlySpend: 'Andamento mensile per categoria', payerSpend: 'Spesa per pagatore',
       topMerchants: 'Top 20 esercenti / fornitori', comparisonYears: 'Anni da confrontare', color: 'Colore',
       yearColors: { green: 'Verde', blue: 'Blu', orange: 'Arancione', purple: 'Viola', pink: 'Rosa', teal: 'Turchese', red: 'Rosso', lime: 'Lime' },
-      detailYear: 'Anno di dettaglio', year: 'Anno', includeYear: 'Mostra',
-      selectedYear: 'Visualizza dettagli per',
-      merchantSort: 'Ordina esercenti', merchantSortBy: 'Ordina per',
-      merchantSortBySpend: 'Per spesa', merchantSortAlphabetically: 'Alfabetico',
+      year: 'Anno', includeYear: 'Mostra', unspecifiedMerchant: 'Esercente non specificato',
       monthNames: ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
         'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre']
     },

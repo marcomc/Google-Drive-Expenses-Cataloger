@@ -130,10 +130,11 @@ The dashboard provides annual category comparison, monthly total comparison by
 year, monthly category detail, payer comparison, and top suppliers. KPI cards
 and chart data are dynamic queries over the canonical ledger; importing a new
 month, year, or category updates them automatically. Use the `Anni da
-confrontare` checkboxes for multi-year charts and the `Anno di dettaglio`
-dropdown for the category and supplier detail charts. Use `Ordina esercenti` to
-switch the supplier chart between total spending (the default) and alphabetical
-order. Spending charts use EUR `expense` and signed `income` rows, so refunds
+confrontare` checkboxes for every chart. The monthly-category and top-supplier
+charts sum the selected years; select only one year when a single-year detail is
+needed. Top suppliers are always ordered by spending, and missing supplier values
+are shown as one localized unspecified-merchant group. Spending charts use EUR
+`expense` and signed `income` rows, so refunds
 reduce their corresponding category. They do not mix currencies or count
 `transfer` and `opening_balance` records.
 

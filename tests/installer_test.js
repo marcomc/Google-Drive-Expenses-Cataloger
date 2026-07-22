@@ -33,15 +33,26 @@ assert.match(dashboardFormulas[1].formula, /MAKEARRAY\(12,ROWS\(years\)/);
 assert.match(dashboardFormulas[1].formula, /SUMIFS\('Transazioni'!G:G,'Transazioni'!C:C,INDEX\(years,yearIndex\)/);
 assert.match(dashboardFormulas[1].formula,
   /VSTACK\("Month",ARRAYFORMULA\(CHOOSE\(monthIndexes,"January"/);
-assert.match(dashboardFormulas[2].formula, /C = "&'Dashboard'!\$X\$103/);
+assert.match(dashboardFormulas[2].formula,
+  /FILTER\("C = "&'Dashboard'!\$V\$11:\$V\$100,'Dashboard'!\$W\$11:\$W\$100=TRUE\)/);
+assert.match(dashboardFormulas[2].formula, /monthIndexes,SEQUENCE\(12\)/);
+assert.match(dashboardFormulas[2].formula,
+  /VLOOKUP\(monthIndexes,data,SEQUENCE\(1,COLUMNS\(summary\)-1,2,1\),FALSE\)/,
+  'monthly category data must retain all 12 months for the selected years');
 assert.match(dashboardFormulas[3].formula,
   /select E,sum\(G\).*FILTER\("C = "&'Dashboard'!\$V\$11:\$V\$100,'Dashboard'!\$W\$11:\$W\$100=TRUE\).*group by E pivot C order by E/);
 assert.match(dashboardFormulas[3].formula,
   /IFERROR\(TEXTJOIN\(" or ",TRUE,FILTER\("C = "&'Dashboard'!\$V\$11:\$V\$100,'Dashboard'!\$W\$11:\$W\$100=TRUE\)\),"C = -1"\)/,
   'comparison queries must use a valid always-false predicate when no year is selected');
 assert.match(dashboardFormulas[4].formula,
-  /IF\('Dashboard'!\$X\$106="Alphabetical","order by M asc","order by sum\(G\) desc"\)&" limit 20/,
-  'Top 20 chart data must use the merchant-sort dropdown before applying its limit');
+  /FILTER\("Col3 = "&'Dashboard'!\$V\$11:\$V\$100,'Dashboard'!\$W\$11:\$W\$100=TRUE\)/,
+  'Top 20 chart data must use the selected comparison years');
+assert.match(dashboardFormulas[4].formula,
+  /group by Col1 order by sum\(Col2\) desc limit 20/,
+  'Top 20 chart data must always rank merchants by spending before applying its limit');
+assert.match(dashboardFormulas[4].formula,
+  /ARRAYFORMULA\(IF\(LEN\(TRIM\('Transazioni'!M2:M\)\)=0,"Unspecified merchant"/,
+  'Top 20 chart data must label missing merchants instead of dropping them');
 assert.match(dashboardFormulas[4].formula,
   /VSTACK\(\{"Merchant \/ supplier","Amount"\},HSTACK\(INDEX\(summary,,1\),INDEX\(summary,,2\)\)\)/,
   'Top 20 chart data must use one merchant category per row');
@@ -52,8 +63,9 @@ const allPivotValueColumns =
   /values,CHOOSECOLS\(data,SEQUENCE\(1,COLUMNS\(data\)-1,2,1\)\)/;
 assert.match(dashboardFormulas[0].formula, allPivotValueColumns,
   'annual category data must select every pivot value column from column 2 with step 1');
-assert.match(dashboardFormulas[2].formula, allPivotValueColumns,
-  'monthly category data must select every pivot value column from column 2 with step 1');
+assert.match(dashboardFormulas[2].formula,
+  /VLOOKUP\(monthIndexes,data,SEQUENCE\(1,COLUMNS\(summary\)-1,2,1\),FALSE\)/,
+  'monthly category data must preserve every dynamic pivot column while filling missing months');
 const installerSource = fs.readFileSync('Installer.gs', 'utf8');
 const originalRefreshDependencies = {
   withAutomationTriggerLock_: context.withAutomationTriggerLock_,
@@ -241,10 +253,10 @@ assert.deepEqual(JSON.parse(JSON.stringify(
 )), { status: 'APPLIED', merchantCount: 2 });
 assert.equal(chartUpdates[0].requests[0].updateChartSpec.spec.basicChart.series[0].styleOverrides.length, 2);
 assert.match(installerSource,
-  /dashboard\.getRange\('Q3:X' \+ DASHBOARD_CONTROL_LAST_ROW\)\.removeCheckboxes\(\)/,
+  /dashboard\.getRange\('Q3:X' \+ DASHBOARD_LEGACY_CONTROL_LAST_ROW\)\.removeCheckboxes\(\)/,
   'dashboard refreshes must remove checkbox artifacts from superseded control locations');
 assert.match(installerSource,
-  /dashboard\.getRange\('Q3:X' \+ DASHBOARD_CONTROL_LAST_ROW\)\.clearDataValidations\(\)/,
+  /dashboard\.getRange\('Q3:X' \+ DASHBOARD_LEGACY_CONTROL_LAST_ROW\)\.clearDataValidations\(\)/,
   'dashboard refreshes must remove validation artifacts from superseded control locations');
 assert.match(installerSource, /dashboard\.deleteColumns\(25, dashboard\.getMaxColumns\(\) - 24\)/,
   'dashboard refreshes must remove columns beyond X');
@@ -254,10 +266,12 @@ assert.match(installerSource,
   /'monthlyComparison'\), labels\.monthlyComparison, 'line', false, \{\s+hAxis: \{ showTextEvery: 1 \}/);
 assert.match(installerSource, /const DASHBOARD_COMPARISON_YEAR_CONTROL_ROW_COUNT = 90;/,
   'the comparison chart capacity must match all 90 dashboard year-control rows');
-assert.match(installerSource, /const DASHBOARD_DETAIL_YEAR_HEADER_ROW = DASHBOARD_COMPARISON_YEAR_CONTROL_END_ROW \+ 2;/,
-  'the detail-year controls must start after the full comparison-year capacity and a spacer row');
-assert.match(installerSource, /const DASHBOARD_MERCHANT_SORT_HEADER_ROW = DASHBOARD_DETAIL_YEAR_VALUE_ROW \+ 2;/,
-  'the merchant-sort controls must remain separated from the detail-year controls');
+assert.match(installerSource,
+  /const DASHBOARD_CONTROL_LAST_ROW = DASHBOARD_COMPARISON_YEAR_CONTROL_END_ROW;/,
+  'comparison years must be the only managed dashboard controls');
+assert.match(installerSource,
+  /const DASHBOARD_LEGACY_CONTROL_LAST_ROW = DASHBOARD_COMPARISON_YEAR_CONTROL_END_ROW \+ 6;/,
+  'refreshes must clear the removed detail-year and merchant-sort controls');
 assert.match(installerSource,
   /\{ row: 30, columnCount: DASHBOARD_COMPARISON_CHART_COLUMN_COUNT \}/);
 assert.match(installerSource,
@@ -399,60 +413,37 @@ context.SpreadsheetApp = {
   }
 };
 const dashboardControlLabels = {
-  comparisonYears: 'Years to compare', detailYear: 'Detail year', year: 'Year',
-  includeYear: 'Show', selectedYear: 'Show details for', merchantSort: 'Sort merchants',
-  merchantSortBy: 'Sort by', merchantSortBySpend: 'By spending', merchantSortAlphabetically: 'Alphabetical'
+  comparisonYears: 'Years to compare', year: 'Year', includeYear: 'Show'
 };
 context.writeDashboardYearControls_({
   getRange: (...arguments_) => getDashboardControlRange_(arguments_.join(':'))
-}, [2023, 2024, 2025], { selectedYears: [2023, 2024], detailYear: 2024 }, dashboardControlLabels);
-assert.equal(dashboardControlRanges.get('X103').value, 2024,
-  'the detail-year selection must end at the dashboard right margin in column X');
-assert.deepEqual(JSON.parse(JSON.stringify(dashboardControlRanges.get('X103').validation)), {
-  type: 'value-list', values: ['2023', '2024', '2025'], allowInvalid: false
-});
+}, [2023, 2024, 2025], { selectedYears: [2023, 2024] }, dashboardControlLabels);
 assert.equal(dashboardControlRanges.get('V9:X9').value, 'Years to compare',
   'the comparison-year panel must end at the dashboard right margin in column X');
 assert.equal(dashboardControlRanges.get('V10:X10').values[0].length, 3,
   'the comparison-year panel must reserve three horizontal cells');
-assert.equal(dashboardControlRanges.get('V102:X102').value, 'Detail year',
-  'the detail-year panel must sit below all 90 comparison-year rows');
-assert.equal(dashboardControlRanges.get('X106').value, 'By spending',
-  'merchant sorting must default to spending total');
-assert.deepEqual(JSON.parse(JSON.stringify(dashboardControlRanges.get('X106').validation)), {
-  type: 'value-list', values: ['By spending', 'Alphabetical'], allowInvalid: false
-}, 'merchant sorting must expose only its localized supported options');
-assert.equal(dashboardControlRanges.get('V105:X105').value, 'Sort merchants',
-  'the merchant-sort panel must use the dashboard right margin');
-context.writeDashboardYearControls_({
-  getRange: (...arguments_) => getDashboardControlRange_(arguments_.join(':'))
-}, [2023, 2024, 2025], {
-  selectedYears: [2023, 2024], detailYear: 2024, merchantSort: 'Alphabetical'
-}, dashboardControlLabels);
-assert.equal(dashboardControlRanges.get('X106').value, 'Alphabetical',
-  'dashboard refreshes must preserve an existing alphabetical merchant sort');
+assert.equal(dashboardControlRanges.has('V102:X102'), false,
+  'the dashboard must not recreate the removed detail-year panel');
+assert.equal(dashboardControlRanges.has('V105:X105'), false,
+  'the dashboard must not recreate the removed merchant-sort panel');
 dashboardControlRanges.clear();
 const thirtyEightYears = Array.from({ length: 38 }, (_, index) => 1987 + index);
 context.writeDashboardYearControls_({
   getRange: (...arguments_) => getDashboardControlRange_(arguments_.join(':'))
 }, thirtyEightYears, {
-  selectedYears: thirtyEightYears, detailYear: 2024, merchantSort: 'By spending'
+  selectedYears: thirtyEightYears
 }, dashboardControlLabels);
 assert.equal(dashboardControlRanges.get('11:22:38:3').values[37][0], 2024,
   '38 comparison years must remain entirely inside rows 11 through 48');
-assert.equal(dashboardControlRanges.get('X103').value, 2024,
-  'the detail-year control must not overlap comparison row 48');
 dashboardControlRanges.clear();
 const ninetyYears = Array.from({ length: 90 }, (_, index) => 1935 + index);
 context.writeDashboardYearControls_({
   getRange: (...arguments_) => getDashboardControlRange_(arguments_.join(':'))
 }, ninetyYears, {
-  selectedYears: ninetyYears, detailYear: 2024, merchantSort: 'Alphabetical'
+  selectedYears: ninetyYears
 }, dashboardControlLabels);
 assert.equal(dashboardControlRanges.get('11:22:90:3').values[89][0], 2024,
   'the full supported comparison-year capacity must end at row 100');
-assert.equal(dashboardControlRanges.get('V102:X102').value, 'Detail year',
-  'the full 90-year capacity must retain a spacer before the detail controls');
 let rejectedYearControlRangeCalls = 0;
 assert.throws(() => context.writeDashboardYearControls_({
   getRange: () => {
@@ -460,7 +451,7 @@ assert.throws(() => context.writeDashboardYearControls_({
     throw new Error('unexpected mutation');
   }
 }, Array.from({ length: 91 }, (_, index) => 1934 + index), {
-  selectedYears: [], detailYear: 2024, merchantSort: ''
+  selectedYears: []
 }, dashboardControlLabels), /Dashboard supports at most 90 distinct years; found 91\./);
 assert.equal(rejectedYearControlRangeCalls, 0,
   'an over-capacity dashboard must fail before mutating any control range');
@@ -719,39 +710,23 @@ const legacyDashboardSelection = context.getDashboardSelectionState_({
     if (reference === 'Q3:S100') {
       return { getValues: () => [[2023, true, ''], [2024, true, '']] };
     }
-    return { getValue: () => reference === 'V3' ? 2024 : '' };
+    return { getValues: () => [] };
   }
 });
-assert.equal(legacyDashboardSelection.detailYear, 2024,
-  'dashboard refreshes must preserve a detail year stored in the legacy V3 cell');
+assert.deepEqual(JSON.parse(JSON.stringify(legacyDashboardSelection)), {
+  selectedYears: [2023, 2024], yearColors: {}
+}, 'dashboard refreshes must still migrate selected comparison years from the legacy panel');
 const priorControlDashboardSelection = context.getDashboardSelectionState_({
   getRange: (reference) => {
     if (['V11:X100', 'W11:Y100', 'W51:Y100', 'Q51:S100', 'Q3:S100'].includes(reference)) {
       return { getValues: () => [] };
     }
-    return {
-      getValue: () => reference === 'X48' ? 2023 : reference === 'X51' ? 'Alphabetical' : ''
-    };
+    return { getValues: () => [] };
   }
 });
-assert.equal(priorControlDashboardSelection.detailYear, 2023,
-  'dashboard refreshes must migrate a detail year from the former X48 control');
-assert.equal(priorControlDashboardSelection.merchantSort, 'Alphabetical',
-  'dashboard refreshes must migrate merchant sorting from the former X51 control');
-const currentControlDashboardSelection = context.getDashboardSelectionState_({
-  getRange: (reference) => {
-    if (['V11:X100', 'W11:Y100', 'W51:Y100', 'Q51:S100', 'Q3:S100'].includes(reference)) {
-      return { getValues: () => [] };
-    }
-    return {
-      getValue: () => reference === 'X103' ? 2025 : reference === 'X106' ? 'Alphabetical' : ''
-    };
-  }
-});
-assert.equal(currentControlDashboardSelection.detailYear, 2025,
-  'dashboard refreshes must preserve the current X103 detail-year control');
-assert.equal(currentControlDashboardSelection.merchantSort, 'Alphabetical',
-  'dashboard refreshes must preserve the current X106 merchant-sort control');
+assert.deepEqual(JSON.parse(JSON.stringify(priorControlDashboardSelection)), {
+  selectedYears: [], yearColors: {}
+}, 'removed detail-year and merchant-sort controls must no longer affect dashboard state');
 const intermediateDashboardSelection = context.getDashboardSelectionState_({
   getMaxColumns: () => 27,
   getRange: (reference) => {
@@ -761,35 +736,35 @@ const intermediateDashboardSelection = context.getDashboardSelectionState_({
     if (['V11:X100', 'W51:Y100', 'Q51:S100', 'Q3:S100'].includes(reference)) {
       return { getValues: () => [] };
     }
-    return { getValue: () => reference === 'AA50' ? 2025 : reference === 'X51' ? 'Alphabetical' : '' };
+    return { getValues: () => [] };
   }
 });
 assert.deepEqual(JSON.parse(JSON.stringify(intermediateDashboardSelection)), {
-  selectedYears: [2024], detailYear: 2025, yearColors: { 2024: 'Blue', 2025: 'Orange' }, merchantSort: 'Alphabetical'
+  selectedYears: [2024], yearColors: { 2024: 'Blue', 2025: 'Orange' }
 });
 const italianDashboardFormulas = context.getDashboardDataSpecifications_('Transazioni', 'Dashboard', {
   headers: { month: 'Mese' },
   categoryLabels: { Dogs: 'Cani' },
   dashboard: {
-    merchantSortAlphabetically: 'Alfabetico',
+    unspecifiedMerchant: 'Esercente non specificato',
     monthNames: ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
       'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre']
   }
 });
 assert.match(italianDashboardFormulas[1].formula,
   /VSTACK\("Mese",ARRAYFORMULA\(CHOOSE\(monthIndexes,"Gennaio"/);
-assert.match(italianDashboardFormulas[2].formula, /ARRAYFORMULA\(CHOOSE\(INDEX\(data,,1\),"Gennaio","Febbraio"/);
+assert.match(italianDashboardFormulas[2].formula,
+  /labels,ARRAYFORMULA\(CHOOSE\(monthIndexes,"Gennaio","Febbraio"/);
 assert.match(italianDashboardFormulas[0].formula, /SWITCH\(TRIM\(header\),"Dogs","Cani"/,
   'known category headers must use the selected locale');
 assert.match(italianDashboardFormulas[0].formula, /,TRIM\(header\)\)\)\)/,
   'custom category headers must retain their configured name');
 assert.match(italianDashboardFormulas[0].formula, /\$V\$11:\$V\$100/);
 assert.match(italianDashboardFormulas[1].formula, /\$V\$11:\$V\$100/);
-assert.match(italianDashboardFormulas[2].formula, /\$X\$103/);
-assert.match(italianDashboardFormulas[4].formula, /\$X\$106="Alfabetico"/,
-  'the merchant chart source must use the localized sort dropdown');
-assert.match(italianDashboardFormulas[4].formula, /order by M asc/);
-assert.match(italianDashboardFormulas[4].formula, /order by sum\(G\) desc/);
+assert.match(italianDashboardFormulas[2].formula, /\$V\$11:\$V\$100/);
+assert.match(italianDashboardFormulas[4].formula, /Esercente non specificato/,
+  'the merchant chart source must localize the missing-merchant bucket');
+assert.match(italianDashboardFormulas[4].formula, /order by sum\(Col2\) desc/);
 const italianLatestMonthFormula = context.getDashboardLatestMonthLabelFormula_('Transazioni', [
   'Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto',
   'Settembre', 'Ottobre', 'Novembre', 'Dicembre'
@@ -849,8 +824,10 @@ assert.deepEqual(
   JSON.parse(JSON.stringify(dashboardData.map((specification) => specification.anchor))),
   ['A1', 'A30', 'A60', 'A90', 'A120']
 );
-assert.ok(dashboardData.filter((specification) => specification.anchor !== 'A30')
+assert.ok(dashboardData.filter((specification) => !['A30', 'A120'].includes(specification.anchor))
   .every((specification) => specification.formula.includes("'Transazioni'!A:AD")));
+assert.match(dashboardData.find((specification) => specification.anchor === 'A120').formula,
+  /'Transazioni'!M2:M/);
 assert.match(context.getDashboardLatestMonthSpendFormula_('Transazioni'), /SUM\(FILTER/);
 assert.match(context.getDashboardLatestMonthSpendFormula_('Transazioni'), /expense\|income/);
 assert.match(context.getDashboardSpendingSumFormula_('Transazioni'), /SUMIFS\([^)]*"expense"[\s\S]*SUMIFS\([^)]*"income"/);
@@ -861,8 +838,11 @@ assert.match(context.getDashboardCurrentYearCountFormula_('Transazioni'), /YEAR\
 assert.match(context.getDashboardCurrentYearCountFormula_('Transazioni'), /COUNTIFS\([^)]*"expense"[\s\S]*COUNTIFS\([^)]*"income"/);
 assert.match(installerSource, /else \{\s*valueCell\.setNumberFormat\('#,##0'\);\s*\}/,
   'count KPI cards must reset a currency format inherited from a previous layout');
-assert.ok(dashboardData.every((specification) => specification.anchor === 'A30' ?
-  specification.formula.includes('"income"') : specification.formula.includes("J = 'income'")));
+assert.ok(dashboardData.every((specification) => {
+  if (specification.anchor === 'A30') return specification.formula.includes('"income"');
+  if (specification.anchor === 'A120') return specification.formula.includes("Col5 = 'income'");
+  return specification.formula.includes("J = 'income'");
+}));
 
 properties.clear();
 assert.throws(

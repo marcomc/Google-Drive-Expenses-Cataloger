@@ -5,11 +5,10 @@ const DASHBOARD_COMPARISON_YEAR_CONTROL_START_ROW = 11;
 const DASHBOARD_COMPARISON_YEAR_CONTROL_ROW_COUNT = 90;
 const DASHBOARD_COMPARISON_YEAR_CONTROL_END_ROW = DASHBOARD_COMPARISON_YEAR_CONTROL_START_ROW +
   DASHBOARD_COMPARISON_YEAR_CONTROL_ROW_COUNT - 1;
-const DASHBOARD_DETAIL_YEAR_HEADER_ROW = DASHBOARD_COMPARISON_YEAR_CONTROL_END_ROW + 2;
-const DASHBOARD_DETAIL_YEAR_VALUE_ROW = DASHBOARD_DETAIL_YEAR_HEADER_ROW + 1;
-const DASHBOARD_MERCHANT_SORT_HEADER_ROW = DASHBOARD_DETAIL_YEAR_VALUE_ROW + 2;
-const DASHBOARD_MERCHANT_SORT_VALUE_ROW = DASHBOARD_MERCHANT_SORT_HEADER_ROW + 1;
-const DASHBOARD_CONTROL_LAST_ROW = DASHBOARD_MERCHANT_SORT_VALUE_ROW;
+const DASHBOARD_CONTROL_LAST_ROW = DASHBOARD_COMPARISON_YEAR_CONTROL_END_ROW;
+// Older dashboards used rows 102:106 for detail-year and merchant-sort
+// controls. Keep the cleanup boundary until every installation has refreshed.
+const DASHBOARD_LEGACY_CONTROL_LAST_ROW = DASHBOARD_COMPARISON_YEAR_CONTROL_END_ROW + 6;
 const DASHBOARD_COMPARISON_CHART_COLUMN_COUNT = DASHBOARD_COMPARISON_YEAR_CONTROL_ROW_COUNT + 1;
 const DASHBOARD_BOUNDED_CHART_COLUMN_COUNT = 26;
 const DASHBOARD_TOP_MERCHANT_CHART_COLUMN_COUNT = 2;
@@ -619,16 +618,17 @@ function buildDashboard_(dashboard, transactions, localization) {
   if (dashboard.getMaxColumns() < 24) {
     dashboard.insertColumnsAfter(dashboard.getMaxColumns(), 24 - dashboard.getMaxColumns());
   }
-  if (dashboard.getMaxRows() < DASHBOARD_CONTROL_LAST_ROW) {
-    dashboard.insertRowsAfter(dashboard.getMaxRows(), DASHBOARD_CONTROL_LAST_ROW - dashboard.getMaxRows());
+  if (dashboard.getMaxRows() < DASHBOARD_LEGACY_CONTROL_LAST_ROW) {
+    dashboard.insertRowsAfter(dashboard.getMaxRows(),
+      DASHBOARD_LEGACY_CONTROL_LAST_ROW - dashboard.getMaxRows());
   }
   const selectionState = getDashboardSelectionState_(dashboard);
   const chartLayouts = captureDashboardChartLayouts_(dashboard, labels);
   writeDashboardTechnicalData_(technicalData, transactionsName, dashboard.getName(), localization);
   dashboard.clear();
-  dashboard.getRange('A1:X' + DASHBOARD_CONTROL_LAST_ROW).breakApart();
-  dashboard.getRange('Q3:X' + DASHBOARD_CONTROL_LAST_ROW).removeCheckboxes();
-  dashboard.getRange('Q3:X' + DASHBOARD_CONTROL_LAST_ROW).clearDataValidations();
+  dashboard.getRange('A1:X' + DASHBOARD_LEGACY_CONTROL_LAST_ROW).breakApart();
+  dashboard.getRange('Q3:X' + DASHBOARD_LEGACY_CONTROL_LAST_ROW).removeCheckboxes();
+  dashboard.getRange('Q3:X' + DASHBOARD_LEGACY_CONTROL_LAST_ROW).clearDataValidations();
   dashboard.getCharts().forEach(function (chart) { dashboard.removeChart(chart); });
   dashboard.getRange('A1:X1').merge().setValue(labels.title);
   dashboard.getRange('A2:X2').merge().setValue(labels.subtitle);
@@ -725,13 +725,6 @@ function getDashboardSelectionState_(dashboard) {
     return rows.some(function (row) { return Number(row[0]); });
   }) || [];
   const selectedYears = extractSelectedYears(currentRows);
-  const detailYear = Number(dashboard.getRange('X' + DASHBOARD_DETAIL_YEAR_VALUE_ROW).getValue()) ||
-    Number(dashboard.getRange('X48').getValue()) || Number(dashboard.getRange('X50').getValue()) ||
-    (maxColumns >= 27 ? Number(dashboard.getRange('AA50').getValue()) : 0) ||
-    Number(dashboard.getRange('V30').getValue()) ||
-    Number(dashboard.getRange('V2').getValue()) || Number(dashboard.getRange('V3').getValue());
-  const merchantSort = String(dashboard.getRange('X' + DASHBOARD_MERCHANT_SORT_VALUE_ROW).getValue() ||
-    dashboard.getRange('X51').getValue() || '');
   const yearColors = currentRows.reduce(function (colors, row) {
     const year = Number(row[0]);
     if (year && row[2]) {
@@ -741,9 +734,7 @@ function getDashboardSelectionState_(dashboard) {
   }, {});
   return {
     selectedYears: selectedYears,
-    detailYear: detailYear,
-    yearColors: yearColors,
-    merchantSort: merchantSort
+    yearColors: yearColors
   };
 }
 
@@ -772,13 +763,6 @@ function assertDashboardYearControlCapacity_(years) {
 function writeDashboardYearControls_(dashboard, years, selectionState, labels) {
   assertDashboardYearControlCapacity_(years);
   const selectedYears = selectionState.selectedYears.length ? selectionState.selectedYears : years;
-  const detailYear = years.indexOf(selectionState.detailYear) >= 0 ? selectionState.detailYear : years[years.length - 1];
-  const merchantSortOptions = [
-    labels.merchantSortBySpend || 'By spending',
-    labels.merchantSortAlphabetically || 'Alphabetical'
-  ];
-  const merchantSort = merchantSortOptions.indexOf(selectionState.merchantSort) >= 0 ?
-    selectionState.merchantSort : merchantSortOptions[0];
   const colorOptions = getDashboardYearColorOptions_(labels);
   const colorNames = colorOptions.map(function (option) { return option.name; });
   const colorByName = colorOptions.reduce(function (result, option) {
@@ -786,21 +770,7 @@ function writeDashboardYearControls_(dashboard, years, selectionState, labels) {
     return result;
   }, {});
   dashboard.getRange('V9:X9').merge().setValue(labels.comparisonYears);
-  dashboard.getRange('V' + DASHBOARD_DETAIL_YEAR_HEADER_ROW + ':X' + DASHBOARD_DETAIL_YEAR_HEADER_ROW)
-    .merge().setValue(labels.detailYear);
-  dashboard.getRange('V' + DASHBOARD_MERCHANT_SORT_HEADER_ROW + ':X' + DASHBOARD_MERCHANT_SORT_HEADER_ROW)
-    .merge().setValue(labels.merchantSort || 'Sort merchants');
   dashboard.getRange('V10:X10').setValues([[labels.year, labels.includeYear, labels.color || 'Color']]);
-  dashboard.getRange('V' + DASHBOARD_DETAIL_YEAR_VALUE_ROW + ':W' + DASHBOARD_DETAIL_YEAR_VALUE_ROW)
-    .merge().setValue(labels.selectedYear);
-  dashboard.getRange('X' + DASHBOARD_DETAIL_YEAR_VALUE_ROW).setValue(detailYear);
-  dashboard.getRange('V' + DASHBOARD_MERCHANT_SORT_VALUE_ROW + ':W' + DASHBOARD_MERCHANT_SORT_VALUE_ROW)
-    .merge().setValue(labels.merchantSortBy || 'Sort by');
-  dashboard.getRange('X' + DASHBOARD_MERCHANT_SORT_VALUE_ROW).setValue(merchantSort);
-  dashboard.getRange('X' + DASHBOARD_DETAIL_YEAR_VALUE_ROW).setDataValidation(SpreadsheetApp.newDataValidation()
-    .requireValueInList(years.map(String), true).setAllowInvalid(false).build());
-  dashboard.getRange('X' + DASHBOARD_MERCHANT_SORT_VALUE_ROW).setDataValidation(SpreadsheetApp.newDataValidation()
-    .requireValueInList(merchantSortOptions, true).setAllowInvalid(false).build());
   const yearRows = years.map(function (year, index) {
     const colorName = selectionState.yearColors && selectionState.yearColors[year];
     return [year, selectedYears.indexOf(year) >= 0, colorByName[colorName] ? colorName : colorNames[index % colorNames.length]];
@@ -815,29 +785,11 @@ function writeDashboardYearControls_(dashboard, years, selectionState, labels) {
     .setFontColor('#FFFFFF').setFontWeight('bold').setHorizontalAlignment('center');
   dashboard.getRange('V9:X9').setBackground('#1A1B1F').setFontColor('#FFFFFF')
     .setFontFamily('Montserrat').setFontSize(10).setFontWeight('bold').setHorizontalAlignment('center');
-  dashboard.getRange('V' + DASHBOARD_DETAIL_YEAR_HEADER_ROW + ':X' + DASHBOARD_DETAIL_YEAR_HEADER_ROW)
-    .setBackground('#1A1B1F').setFontColor('#FFFFFF')
-    .setFontFamily('Montserrat').setFontSize(10).setFontWeight('bold').setHorizontalAlignment('center');
-  dashboard.getRange('V' + DASHBOARD_MERCHANT_SORT_HEADER_ROW + ':X' + DASHBOARD_MERCHANT_SORT_HEADER_ROW)
-    .setBackground('#1A1B1F').setFontColor('#FFFFFF')
-    .setFontFamily('Montserrat').setFontSize(10).setFontWeight('bold').setHorizontalAlignment('center');
   dashboard.getRange('V10:X10').setBackground('#EAF7F2').setFontColor('#1A1B1F')
-    .setFontFamily('Montserrat').setFontSize(9).setFontWeight('bold').setHorizontalAlignment('center');
-  dashboard.getRange('V' + DASHBOARD_DETAIL_YEAR_VALUE_ROW + ':W' + DASHBOARD_DETAIL_YEAR_VALUE_ROW)
-    .setBackground('#EAF7F2').setFontColor('#1A1B1F')
-    .setFontFamily('Montserrat').setFontSize(9).setFontWeight('bold').setHorizontalAlignment('center');
-  dashboard.getRange('V' + DASHBOARD_MERCHANT_SORT_VALUE_ROW + ':W' + DASHBOARD_MERCHANT_SORT_VALUE_ROW)
-    .setBackground('#EAF7F2').setFontColor('#1A1B1F')
     .setFontFamily('Montserrat').setFontSize(9).setFontWeight('bold').setHorizontalAlignment('center');
   dashboard.getRange(DASHBOARD_COMPARISON_YEAR_CONTROL_START_ROW, 22, Math.max(1, yearRows.length), 3)
     .setFontFamily('Montserrat')
     .setFontSize(10).setHorizontalAlignment('center');
-  dashboard.getRange('X' + DASHBOARD_DETAIL_YEAR_VALUE_ROW).setBackground('#EAF7F2')
-    .setFontColor('#1A1B1F').setFontFamily('Montserrat')
-    .setFontSize(11).setFontWeight('bold').setHorizontalAlignment('center');
-  dashboard.getRange('X' + DASHBOARD_MERCHANT_SORT_VALUE_ROW).setBackground('#EAF7F2')
-    .setFontColor('#1A1B1F').setFontFamily('Montserrat')
-    .setFontSize(10).setFontWeight('bold').setHorizontalAlignment('center');
 }
 
 const DASHBOARD_YEAR_COLOR_PALETTE = Object.freeze([
@@ -1001,10 +953,13 @@ function getDashboardDataSpecifications_(transactionsName, dashboardName, locali
     DASHBOARD_COMPARISON_YEAR_CONTROL_END_ROW;
   const comparisonYearCheckboxRange = '$W$' + DASHBOARD_COMPARISON_YEAR_CONTROL_START_ROW + ':$W$' +
     DASHBOARD_COMPARISON_YEAR_CONTROL_END_ROW;
-  const detailYearCell = '$X$' + DASHBOARD_DETAIL_YEAR_VALUE_ROW;
-  const merchantSortCell = '$X$' + DASHBOARD_MERCHANT_SORT_VALUE_ROW;
-  const selectedYears = 'IFERROR(TEXTJOIN(" or ",TRUE,FILTER("C = "&' + dashboard +
-    comparisonYearRange + ',' + dashboard + comparisonYearCheckboxRange + '=TRUE)),"C = -1")';
+  const selectedYearPredicate = function (column) {
+    return 'IFERROR(TEXTJOIN(" or ",TRUE,FILTER("' + column + ' = "&' + dashboard +
+      comparisonYearRange + ',' + dashboard + comparisonYearCheckboxRange + '=TRUE)),"' +
+      column + ' = -1")';
+  };
+  const selectedYears = selectedYearPredicate('C');
+  const selectedMerchantYears = selectedYearPredicate('Col3');
   const selectedYearValues = 'FILTER(' + dashboard + comparisonYearRange + ',' + dashboard +
     comparisonYearCheckboxRange + '=TRUE)';
   const withoutPivotHeaders = function (query) {
@@ -1027,8 +982,10 @@ function getDashboardDataSpecifications_(transactionsName, dashboardName, locali
       categorySwitch + ',TRIM(header))))' : 'ARRAYFORMULA(TRIM(INDEX(' + summary + ',1,)))';
   };
   const monthLabels = function (query) {
-    return '=IFERROR(LET(summary,' + query + ',data,FILTER(summary,SEQUENCE(ROWS(summary))>1),labels,' +
-      monthName('INDEX(data,,1)') + ',values,CHOOSECOLS(data,SEQUENCE(1,COLUMNS(data)-1,2,1)),totals,' +
+    return '=IFERROR(LET(summary,' + query + ',data,FILTER(summary,SEQUENCE(ROWS(summary))>1),' +
+      'monthIndexes,SEQUENCE(12),labels,' + monthName('monthIndexes') + ',values,' +
+      'ARRAYFORMULA(IFNA(VLOOKUP(monthIndexes,data,SEQUENCE(1,COLUMNS(summary)-1,2,1),FALSE),0)),' +
+      'totals,' +
       'BYROW(values,LAMBDA(row,TEXT(SUM(row),"#,##0.00")&" EUR")),VSTACK(' +
       localizedHeaders('summary') + ',HSTACK(MAP(labels,totals,LAMBDA(label,total,label&" · "&total)),' +
       'values))),"")';
@@ -1045,14 +1002,20 @@ function getDashboardDataSpecifications_(transactionsName, dashboardName, locali
   const transactionAmount = "'" + transactionsName + "'!G:G";
   const transactionCurrency = "'" + transactionsName + "'!H:H";
   const transactionType = "'" + transactionsName + "'!J:J";
+  const transactionMerchantRows = "'" + transactionsName + "'!M2:M";
+  const transactionAmountRows = "'" + transactionsName + "'!G2:G";
+  const transactionYearRows = "'" + transactionsName + "'!C2:C";
+  const transactionCurrencyRows = "'" + transactionsName + "'!H2:H";
+  const transactionTypeRows = "'" + transactionsName + "'!J2:J";
   const merchantHeader = localization && localization.headers && localization.headers.merchant ?
     localization.headers.merchant : 'Merchant / supplier';
   const amountHeader = localization && localization.headers && localization.headers.amount ?
     localization.headers.amount : 'Amount';
-  const alphabeticalMerchantSort = String(dashboardLabels.merchantSortAlphabetically || 'Alphabetical')
+  const unspecifiedMerchant = String(dashboardLabels.unspecifiedMerchant || 'Unspecified merchant')
     .replace(/"/g, '""');
-  const merchantOrderBy = 'IF(' + dashboard + merchantSortCell + '="' + alphabeticalMerchantSort +
-    '","order by M asc","order by sum(G) desc")';
+  const merchantSource = '{ARRAYFORMULA(IF(LEN(TRIM(' + transactionMerchantRows + '))=0,"' +
+    unspecifiedMerchant + '",' + transactionMerchantRows + ')),' + transactionAmountRows + ',' +
+    transactionYearRows + ',' + transactionCurrencyRows + ',' + transactionTypeRows + '}';
   const monthlyComparison = '=IFERROR(LET(years,' + selectedYearValues +
     ',monthIndexes,SEQUENCE(12),HSTACK(VSTACK("' +
     (localization && localization.headers && localization.headers.month ? localization.headers.month : 'Month') + '\",' + monthName('monthIndexes') + '),' +
@@ -1067,15 +1030,16 @@ function getDashboardDataSpecifications_(transactionsName, dashboardName, locali
       annualChartRows + ')),"")' },
     { anchor: 'A30', formula: monthlyComparison },
     { anchor: 'A60', formula: monthLabels('QUERY(' + ledger +
-      ",\"select D,sum(G) where (J = 'expense' or J = 'income') and H = 'EUR' and C = \"&" + dashboard +
-        detailYearCell + '&" group by D pivot K order by D label sum(G) \'\'",1)') },
+      ",\"select D,sum(G) where (J = 'expense' or J = 'income') and H = 'EUR' and (\"&" + selectedYears +
+        '&") group by D pivot K order by D label sum(G) \'\'",1)') },
     { anchor: 'A90', formula: '=QUERY(' + ledger +
       ",\"select E,sum(G) where (J = 'expense' or J = 'income') and H = 'EUR' and (\"&" + selectedYears +
       "&\") group by E pivot C order by E label sum(G) ''\",1)" },
-    { anchor: 'A120', formula: '=IFERROR(LET(summary,QUERY(' + ledger +
-      ",\"select M,sum(G) where (J = 'expense' or J = 'income') and H = 'EUR' and C = \"&" + dashboard +
-        detailYearCell + '&" and M is not null and M <> \'Unknown\' and M <> \'N/A\' group by M "&' + merchantOrderBy +
-        '&" limit 20 label sum(G) \'\'",0),VSTACK({"' +
+    { anchor: 'A120', formula: '=IFERROR(LET(summary,QUERY(' + merchantSource +
+      ",\"select Col1,sum(Col2) where (Col5 = 'expense' or Col5 = 'income') and Col4 = 'EUR' and (\"&" +
+        selectedMerchantYears +
+        '&") and Col1 <> \'Unknown\' and Col1 <> \'N/A\' group by Col1 order by sum(Col2) desc' +
+        ' limit 20 label sum(Col2) \'\'",0),VSTACK({"' +
         String(merchantHeader).replace(/"/g, '""') + '","' + String(amountHeader).replace(/"/g, '""') +
         '"},HSTACK(INDEX(summary,,1),INDEX(summary,,2)))),"")' }
   ];

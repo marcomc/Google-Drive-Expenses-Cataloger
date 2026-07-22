@@ -177,18 +177,16 @@ spending for a month, year, category, payer, or supplier.
 | Visible control or chart | Behavior |
 | --- | --- |
 | `Anni da confrontare` | Three-cell control at `V9:X100`: year, checkbox, and editable color dropdown. Rows `11:100` support up to 90 comparison years. The chosen color is applied to year-series charts. New ledger years appear automatically after their first successful import. |
-| `Anno di dettaglio` | Three-cell dropdown panel at `V102:X103`, after a spacer below the comparison-year capacity; selects the year used by category and merchant detail charts. |
-| `Ordina esercenti` | Three-cell panel at `V105:X106`, after a spacer below `Anno di dettaglio`; selects either spending total (default) or alphabetical order for the supplier chart. |
 | Spesa annua per categoria | Each selected year has one native horizontal label with its EUR spending total; transfers and opening-balance controls remain excluded. Colors and legend identify categories. |
 | Confronto spese mensili per anno | January through December on the horizontal axis; one connected, color-coded 12-point line per selected year, with zeroes for months without spending. Year colors come from `Anni da confrontare`. |
-| Andamento mensile per categoria | Month names on the horizontal axis; colors and legend identify categories for the detail year. |
+| Andamento mensile per categoria | January through December on the horizontal axis; colors and legend identify categories summed across the selected comparison years. Months without spending remain visible with zero values. |
 | Spesa per pagatore | Payers on the horizontal axis; one column per selected comparison year, using the colors from `Anni da confrontare`. |
-| Top 20 esercenti / fornitori | Suppliers for the detail year, ordered by the `Ordina esercenti` control. Each supplier is a chart row with one differently coloured horizontal bar; the legend is hidden and the chart has the same height as `Andamento mensile per categoria`. |
+| Top 20 esercenti / fornitori | Suppliers summed across the selected comparison years and ordered by spending, highest first. Empty supplier values are grouped as `Unspecified merchant` (localized for the installation). Each supplier is a chart row with one differently coloured horizontal bar; the legend is hidden and the chart has the same height as `Andamento mensile per categoria`. |
 
-All control panels occupy three cells and end at column X, matching the right
-edge of the dashboard. Changing a checkbox, detail-year dropdown, or merchant
-sort dropdown updates the dependent formulas immediately; a managed edit
-trigger reapplies the chosen year colors after checkbox or color changes. More
+The comparison-year control occupies three cells and ends at column X, matching
+the right edge of the dashboard. Changing a checkbox updates every chart
+immediately; a managed edit trigger reapplies the chosen year colors after
+checkbox or color changes. More
 than 90 distinct ledger years exceeds the managed control and chart contract,
 so refresh stops with an explicit error instead of omitting years. The last
 chart replaces the former dog-subcategory chart, while the former
@@ -202,7 +200,6 @@ flowchart LR
   accDescr: Shows that year controls filter dynamic summaries built from the canonical ledger.
   ledger["Transazioni"] --> queries["Protected calculation summaries"]
   comparison["Year checkboxes"] --> queries
-  detail["Detail-year dropdown"] --> queries
   queries --> annual["Annual category comparison"]
   queries --> monthly["Monthly totals by year"]
   queries --> category["Monthly categories"]

@@ -48,10 +48,7 @@ function getEnglishLocalization_() {
       monthlySpend: 'Monthly spending by category', payerSpend: 'Spending by payer',
       topMerchants: 'Top 20 merchants / suppliers', comparisonYears: 'Years to compare', color: 'Color',
       yearColors: { green: 'Green', blue: 'Blue', orange: 'Orange', purple: 'Purple', pink: 'Pink', teal: 'Teal', red: 'Red', lime: 'Lime' },
-      detailYear: 'Detail year', year: 'Year', includeYear: 'Show',
-      selectedYear: 'Show details for',
-      merchantSort: 'Sort merchants', merchantSortBy: 'Sort by',
-      merchantSortBySpend: 'By spending', merchantSortAlphabetically: 'Alphabetical',
+      year: 'Year', includeYear: 'Show', unspecifiedMerchant: 'Unspecified merchant',
       monthNames: ['January', 'February', 'March', 'April', 'May', 'June', 'July',
         'August', 'September', 'October', 'November', 'December']
     },
