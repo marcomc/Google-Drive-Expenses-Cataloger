@@ -264,6 +264,12 @@ assert.match(installerSource, /function captureDashboardChartLayouts_\(dashboard
 assert.match(installerSource, /showTextEvery: 1/);
 assert.match(installerSource,
   /'monthlyComparison'\), labels\.monthlyComparison, 'line', false, \{\s+hAxis: \{ showTextEvery: 1 \}/);
+assert.match(installerSource,
+  /series: getDashboardLineChartSeriesOptions_\(DASHBOARD_COMPARISON_YEAR_CONTROL_ROW_COUNT\)/,
+  'monthly comparison charts must configure point markers for every year series');
+assert.deepEqual(JSON.parse(JSON.stringify(context.getDashboardLineChartSeriesOptions_(3))), {
+  0: { pointSize: 7 }, 1: { pointSize: 7 }, 2: { pointSize: 7 }
+}, 'each monthly comparison series must receive point markers');
 assert.match(installerSource, /const DASHBOARD_COMPARISON_YEAR_CONTROL_ROW_COUNT = 90;/,
   'the comparison chart capacity must match all 90 dashboard year-control rows');
 assert.match(installerSource,
@@ -427,6 +433,13 @@ assert.equal(dashboardControlRanges.has('V102:X102'), false,
 assert.equal(dashboardControlRanges.has('V105:X105'), false,
   'the dashboard must not recreate the removed merchant-sort panel');
 dashboardControlRanges.clear();
+context.writeDashboardYearControls_({
+  getRange: (...arguments_) => getDashboardControlRange_(arguments_.join(':'))
+}, [2023, 2024, 2025], { selectedYears: [] }, dashboardControlLabels);
+assert.deepEqual(dashboardControlRanges.get('11:22:3:3').values.map((row) => row[1]),
+  [true, true, true],
+  'a new dashboard must check every available year by default');
+dashboardControlRanges.clear();
 const thirtyEightYears = Array.from({ length: 38 }, (_, index) => 1987 + index);
 context.writeDashboardYearControls_({
   getRange: (...arguments_) => getDashboardControlRange_(arguments_.join(':'))
@@ -525,9 +538,17 @@ const chartColorUpdates = [];
 function createYearChart(title) {
   return {
     getOptions: () => ({ get: () => title }),
-    modify: () => ({
-      setOption: (key, value) => ({ build: () => ({ title, key, value }) })
-    })
+    modify: () => {
+      const options = {};
+      const builder = {
+        setOption: (key, value) => {
+          options[key] = value;
+          return builder;
+        },
+        build: () => ({ title, options })
+      };
+      return builder;
+    }
   };
 }
 const colorDashboard = {
@@ -544,9 +565,15 @@ assert.deepEqual(JSON.parse(JSON.stringify(context.applyDashboardYearChartColors
   monthlyComparison: 'Monthly comparison', payerSpend: 'Spending by payer',
   yearColors: { green: 'Green', blue: 'Blue', orange: 'Orange', purple: 'Purple' }
 }))), { status: 'UPDATED', updatedCharts: 2, colors: ['#20B486', '#4F7CAC'] });
-assert.deepEqual(JSON.parse(JSON.stringify(chartColorUpdates.map((chart) => chart.value))), [
+assert.deepEqual(JSON.parse(JSON.stringify(chartColorUpdates.map((chart) => chart.options.colors))), [
   ['#20B486', '#4F7CAC'], ['#20B486', '#4F7CAC']
 ]);
+assert.equal(Object.keys(chartColorUpdates[0].options.series).length,
+  90, 'the monthly comparison refresh must cover the complete reserved series block');
+assert.deepEqual(JSON.parse(JSON.stringify(chartColorUpdates[0].options.series[0])), { pointSize: 7 });
+assert.deepEqual(JSON.parse(JSON.stringify(chartColorUpdates[1].options)), {
+  colors: ['#20B486', '#4F7CAC']
+});
 const originalYearColorDependencies = {
   withAutomationTriggerLock_: context.withAutomationTriggerLock_,
   assertCatalogConfiguration_: context.assertCatalogConfiguration_,
@@ -644,6 +671,7 @@ function createDashboardEditEvent(row, column, sheetName = 'Dashboard') {
   };
 }
 let yearControlEditCalls = 0;
+let comparisonChartRebuildCalls = 0;
 yearColorEvents.length = 0;
 context.getLocalization_ = () => ({
   sheetNames: { dashboard: 'Dashboard' }, dashboard: { monthlyComparison: 'Monthly comparison' }
@@ -661,15 +689,22 @@ context.applyDashboardYearChartColors_ = () => {
   yearControlEditCalls += 1;
   return { status: 'UPDATED' };
 };
-assert.equal(context.applyDashboardYearColorsOnEdit(createDashboardEditEvent(11, 23)).status, 'UPDATED');
+context.rebuildDashboardComparisonCharts_ = () => {
+  yearColorEvents.push('comparison-charts-rebuilt');
+  comparisonChartRebuildCalls += 1;
+  return { status: 'REBUILT' };
+};
+assert.equal(context.applyDashboardYearColorsOnEdit(createDashboardEditEvent(11, 23)).status, 'REBUILT');
 assert.equal(context.applyDashboardYearColorsOnEdit(createDashboardEditEvent(11, 24)).status, 'UPDATED');
 assert.equal(context.applyDashboardYearColorsOnEdit(createDashboardEditEvent(48, 24)).status, 'IGNORED');
 assert.equal(context.applyDashboardYearColorsOnEdit(createDashboardEditEvent(10, 24)).status, 'IGNORED');
 assert.equal(context.applyDashboardYearColorsOnEdit(createDashboardEditEvent(11, 22)).status, 'IGNORED');
 assert.equal(context.applyDashboardYearColorsOnEdit(createDashboardEditEvent(11, 23, 'Other')).status, 'IGNORED');
-assert.equal(yearControlEditCalls, 2);
+assert.equal(comparisonChartRebuildCalls, 1,
+  'changing a year checkbox must rebuild dynamic comparison charts instead of retaining stale series');
+assert.equal(yearControlEditCalls, 1);
 assert.deepEqual(yearColorEvents, [
-  'edit-lock-acquired', 'edit-charts-mutated', 'edit-lock-released',
+  'edit-lock-acquired', 'comparison-charts-rebuilt', 'edit-lock-released',
   'edit-lock-acquired', 'edit-charts-mutated', 'edit-lock-released'
 ], 'relevant edits must mutate charts under the lock while irrelevant edits avoid the lock entirely');
 yearColorEvents.length = 0;
@@ -693,7 +728,7 @@ context.applyDashboardYearChartColors_ = () => {
   yearColorEvents.push('edit-charts-mutated');
   throw new Error('chart update failed');
 };
-assert.throws(() => context.applyDashboardYearColorsOnEdit(createDashboardEditEvent(11, 23)),
+assert.throws(() => context.applyDashboardYearColorsOnEdit(createDashboardEditEvent(11, 24)),
   /chart update failed/);
 assert.deepEqual(yearColorEvents,
   ['edit-lock-acquired', 'edit-charts-mutated', 'edit-lock-released'],

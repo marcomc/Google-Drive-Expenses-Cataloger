@@ -658,7 +658,8 @@ function buildDashboard_(dashboard, transactions, localization) {
   insertDashboardChart_(dashboard, getDashboardChartSourceRange_(technicalData, 30, 55,
     DASHBOARD_COMPARISON_CHART_COLUMN_COUNT),
     getDashboardChartLayout_(chartLayouts, 'monthlyComparison'), labels.monthlyComparison, 'line', false, {
-      hAxis: { showTextEvery: 1 }, colors: yearColors
+      hAxis: { showTextEvery: 1 }, colors: yearColors,
+      series: getDashboardLineChartSeriesOptions_(DASHBOARD_COMPARISON_YEAR_CONTROL_ROW_COUNT)
     });
   insertDashboardChart_(dashboard, getDashboardChartSourceRange_(technicalData, 60, 85,
     DASHBOARD_BOUNDED_CHART_COLUMN_COUNT),
@@ -760,9 +761,20 @@ function assertDashboardYearControlCapacity_(years) {
   }
 }
 
+function getDashboardSelectedYearsForRender_(years, selectionState) {
+  const availableYears = (years || []).map(Number).filter(function (year, index, values) {
+    return year && values.indexOf(year) === index;
+  });
+  const retainedYears = selectionState && Array.isArray(selectionState.selectedYears) ?
+    selectionState.selectedYears.map(Number).filter(function (year, index, values) {
+      return availableYears.indexOf(year) >= 0 && values.indexOf(year) === index;
+    }) : [];
+  return retainedYears.length ? retainedYears : availableYears.slice();
+}
+
 function writeDashboardYearControls_(dashboard, years, selectionState, labels) {
   assertDashboardYearControlCapacity_(years);
-  const selectedYears = selectionState.selectedYears.length ? selectionState.selectedYears : years;
+  const selectedYears = getDashboardSelectedYearsForRender_(years, selectionState);
   const colorOptions = getDashboardYearColorOptions_(labels);
   const colorNames = colorOptions.map(function (option) { return option.name; });
   const colorByName = colorOptions.reduce(function (result, option) {
@@ -915,8 +927,44 @@ function applyDashboardYearColorsOnEdit(event) {
     return { status: 'IGNORED' };
   }
   return withAutomationTriggerLock_(function () {
+    if (range.getColumn() <= 23 && lastColumn >= 23) {
+      return rebuildDashboardComparisonCharts_(sheet, localization);
+    }
     return applyDashboardYearChartColors_(sheet, localization.dashboard);
   });
+}
+
+// Google Sheets retains dynamic-series metadata when a chart source shrinks
+// from multiple selected years to one. Recreate just the comparison charts on
+// a year-selection change so the axis always matches the current source data.
+function rebuildDashboardComparisonCharts_(dashboard, localization) {
+  const labels = localization.dashboard;
+  const technicalData = dashboard.getParent().getSheetByName(localization.sheetNames.technicalData);
+  if (!technicalData) {
+    throw new Error('Dashboard technical data sheet is missing.');
+  }
+  const chartLayouts = captureDashboardChartLayouts_(dashboard, labels);
+  const configuredTitles = [labels.monthlyComparison, labels.payerSpend];
+  dashboard.getCharts().forEach(function (chart) {
+    if (configuredTitles.indexOf(chart.getOptions().get('title')) >= 0) {
+      dashboard.removeChart(chart);
+    }
+  });
+  waitForDashboardChartSources_(technicalData);
+  const yearColors = getDashboardSelectedYearChartColors_(dashboard, labels);
+  insertDashboardChart_(dashboard, getDashboardChartSourceRange_(technicalData, 30, 55,
+    DASHBOARD_COMPARISON_CHART_COLUMN_COUNT),
+  getDashboardChartLayout_(chartLayouts, 'monthlyComparison'), labels.monthlyComparison, 'line', false, {
+    hAxis: { showTextEvery: 1 }, colors: yearColors,
+    series: getDashboardLineChartSeriesOptions_(DASHBOARD_COMPARISON_YEAR_CONTROL_ROW_COUNT)
+  });
+  insertDashboardChart_(dashboard, getDashboardChartSourceRange_(technicalData, 90, 115,
+    DASHBOARD_COMPARISON_CHART_COLUMN_COUNT),
+  getDashboardChartLayout_(chartLayouts, 'payerSpend'), labels.payerSpend, 'column', false, {
+    colors: yearColors
+  });
+  const colorUpdate = applyDashboardYearChartColors_(dashboard, labels);
+  return { status: 'REBUILT', rebuiltCharts: 2, colors: colorUpdate.colors };
 }
 
 function applyDashboardYearChartColors_(dashboard, labels) {
@@ -934,8 +982,14 @@ function applyDashboardYearChartColors_(dashboard, labels) {
   const configuredTitles = [labels.monthlyComparison, labels.payerSpend];
   let updatedCharts = 0;
   dashboard.getCharts().forEach(function (chart) {
-    if (configuredTitles.indexOf(chart.getOptions().get('title')) >= 0) {
-      dashboard.updateChart(chart.modify().setOption('colors', colors).build());
+    const title = chart.getOptions().get('title');
+    if (configuredTitles.indexOf(title) >= 0) {
+      const chartBuilder = chart.modify().setOption('colors', colors);
+      if (title === labels.monthlyComparison) {
+        chartBuilder.setOption('series', getDashboardLineChartSeriesOptions_(
+          DASHBOARD_COMPARISON_YEAR_CONTROL_ROW_COUNT));
+      }
+      dashboard.updateChart(chartBuilder.build());
       updatedCharts += 1;
     }
   });
@@ -1231,6 +1285,14 @@ function insertDashboardChart_(dashboard, sourceRange, layout, title, type, swit
     configured = configured.setOption(option, options[option]);
   });
   dashboard.insertChart(configured.build());
+}
+
+function getDashboardLineChartSeriesOptions_(seriesCount) {
+  const series = {};
+  for (let index = 0; index < seriesCount; index += 1) {
+    series[index] = { pointSize: 7 };
+  }
+  return series;
 }
 
 const INSTALLER_PRESENTATION_VERSION = '2';

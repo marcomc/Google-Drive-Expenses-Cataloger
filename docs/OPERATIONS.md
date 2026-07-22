@@ -132,7 +132,9 @@ and chart data are dynamic queries over the canonical ledger; importing a new
 month, year, or category updates them automatically. Use the `Anni da
 confrontare` checkboxes for every chart. The monthly-category and top-supplier
 charts sum the selected years; select only one year when a single-year detail is
-needed. Top suppliers are always ordered by spending, and missing supplier values
+needed. A first installation checks all available ledger years so the default
+dashboard shows the complete historical comparison. Top suppliers are always
+ordered by spending, and missing supplier values
 are shown as one localized unspecified-merchant group. Spending charts use EUR
 `expense` and signed `income` rows, so refunds
 reduce their corresponding category. They do not mix currencies or count

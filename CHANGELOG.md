@@ -35,6 +35,9 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - Preserve user-adjusted dashboard chart positions and ordinary dimensions
   during a refresh; the Top 20 chart height intentionally follows the monthly
   category chart, and new installations use the approved default layout.
+- Check every available ledger year by default on the first dashboard
+  installation while preserving valid user-selected years on later refreshes.
+- Show point markers on every year line in the monthly comparison chart.
 - Show all months and their spending totals in the monthly-category chart, and
   retain the adaptive annual-label format for one or multiple selected years.
 - Use `Anni da confrontare` as the single year filter for every dashboard chart;

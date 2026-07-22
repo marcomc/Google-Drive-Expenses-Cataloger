@@ -176,9 +176,9 @@ spending for a month, year, category, payer, or supplier.
 
 | Visible control or chart | Behavior |
 | --- | --- |
-| `Anni da confrontare` | Three-cell control at `V9:X100`: year, checkbox, and editable color dropdown. Rows `11:100` support up to 90 comparison years. The chosen color is applied to year-series charts. New ledger years appear automatically after their first successful import. |
+| `Anni da confrontare` | Three-cell control at `V9:X100`: year, checkbox, and editable color dropdown. Rows `11:100` support up to 90 comparison years. A first installation checks every available ledger year; later refreshes retain a valid user selection. The chosen color is applied to year-series charts. New ledger years appear automatically after their first successful import. |
 | Spesa annua per categoria | Each selected year has one native horizontal label with its EUR spending total; transfers and opening-balance controls remain excluded. Colors and legend identify categories. |
-| Confronto spese mensili per anno | January through December on the horizontal axis; one connected, color-coded 12-point line per selected year, with zeroes for months without spending. Year colors come from `Anni da confrontare`. |
+| Confronto spese mensili per anno | January through December on the horizontal axis; one connected, color-coded 12-point line with visible markers per selected year, with zeroes for months without spending. Year colors come from `Anni da confrontare`. |
 | Andamento mensile per categoria | January through December on the horizontal axis; colors and legend identify categories summed across the selected comparison years. Months without spending remain visible with zero values. |
 | Spesa per pagatore | Payers on the horizontal axis; one column per selected comparison year, using the colors from `Anni da confrontare`. |
 | Top 20 esercenti / fornitori | Suppliers summed across the selected comparison years and ordered by spending, highest first. Empty supplier values are grouped as `Unspecified merchant` (localized for the installation). Each supplier is a chart row with one differently coloured horizontal bar; the legend is hidden and the chart has the same height as `Andamento mensile per categoria`. |
