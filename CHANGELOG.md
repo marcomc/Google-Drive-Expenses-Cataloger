@@ -75,6 +75,11 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - Prevent dashboard charts from being created before their dynamic sources are
   calculated, and avoid changing their geometry on later refreshes except for
   the intentional Top 20 height synchronization.
+- Validate managed polling and daily automation by clock source and event type,
+  serialize enablement with trigger reconciliation, and make partial cleanup
+  failures converge safely on retry.
+- Resume post-promotion trigger reconciliation on a workflow rerun when the
+  stable deployment already matches that workflow revision.
 
 ## [0.2.1] - 2026-07-18
 

@@ -63,6 +63,9 @@ are not exactly one each. If `main`
 advances after the stable update, the running job still completes this trigger
 repair; the newer revision's deploy will supersede it. Script Properties, Drive
 sources, spreadsheet data, and Gemini credentials are not changed by deployment.
+If promotion succeeds but trigger repair fails, rerunning that workflow resumes
+the repair when the stable deployment still carries the workflow's commit
+label, even if `main` has advanced in the meantime.
 
 For spreadsheet provisioning, schema ownership, and managed-dashboard behavior,
 see [Spreadsheet lifecycle and schema](SPREADSHEET.md).

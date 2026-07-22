@@ -30,9 +30,13 @@
   decisions, confidence, and rationale for every import.
 - After promoting the stable Apps Script deployment, reconcile version-bound
   managed triggers through the non-development executable. Create replacements
-  before deleting stale triggers, require exactly one polling handler, one daily
-  handler, and one dashboard year-color edit trigger, and finish that repair
-  after promotion even if a newer source revision becomes available.
+  before deleting stale triggers, require exactly one polling clock handler, one
+  daily clock handler, and one dashboard year-color edit trigger, and finish or
+  resume that repair after promotion even if a newer source revision becomes
+  available.
+- Serialize trigger installation, removal, and automatic-processing enablement
+  with the workload lock. Attempt every cleanup after a partial failure, report
+  the final observed trigger state, and keep reconciliation retry-safe.
 - Validate the dashboard edit trigger by handler, spreadsheet source, event
   type, and target spreadsheet identity. Use the shared trigger lock for every
   public installer and repair entrypoint; recovery ledger writes must retain

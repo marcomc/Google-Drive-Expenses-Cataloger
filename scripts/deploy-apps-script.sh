@@ -93,17 +93,41 @@ validate_owner_only_api_deployment() {
   fi
 }
 
+reconcile_automation_triggers() {
+  local trigger_status
+
+  trigger_status="$(apps_script_request POST \
+    '{"function":"installAutomationTriggers","parameters":[],"devMode":false}' \
+    "https://script.googleapis.com/v1/scripts/${APPS_SCRIPT_DEPLOYMENT_ID}:run")"
+  jq -e '
+    .done == true and
+    .error == null and
+    .response["@type"] ==
+      "type.googleapis.com/google.apps.script.v1.ExecutionResponse" and
+    .response.result.triggerCounts.processDriveEventQueue == 1 and
+    .response.result.triggerCounts.runDailyExpenseCataloging == 1 and
+    .response.result.dashboardYearColorEditTriggerCount == 1 and
+    .response.result.missingTriggerHandlers == [] and
+    .response.result.duplicateTriggerHandlers == [] and
+    .response.result.invalidTriggerHandlers == []
+  ' <<<"${trigger_status}" >/dev/null
+}
+
+get_current_main_sha() {
+  git fetch --no-tags origin main
+  git rev-parse FETCH_HEAD
+}
+
 ensure_current_main() {
   local current_main_sha
-  git fetch --no-tags origin main
-  current_main_sha="$(git rev-parse FETCH_HEAD)"
+  current_main_sha="$(get_current_main_sha)"
   if [[ "${DEPLOY_COMMIT_SHA}" != "${current_main_sha}" ]]; then
     printf '%s\n' 'A newer main revision exists; skipping stale deployment.'
     exit 0
   fi
 }
 
-ensure_current_main
+initial_main_sha="$(get_current_main_sha)"
 
 deployments="$(clasp -A "${auth_file}" --json deployments)"
 listed_version="$(jq -er --arg id "${APPS_SCRIPT_DEPLOYMENT_ID}" '
@@ -117,13 +141,24 @@ deployment="$(apps_script_request GET '' \
 validate_owner_only_api_deployment "${deployment}" "${listed_version}"
 entry_points="$(jq -ce '.entryPoints' <<<"${deployment}")"
 execution_api="$(jq -ce '.entryPoints[0].executionApi.entryPointConfig' <<<"${deployment}")"
+label="main-${DEPLOY_COMMIT_SHA::12}"
+
+if [[ "${DEPLOY_COMMIT_SHA}" != "${initial_main_sha}" ]]; then
+  if jq -e --arg description "${label}" \
+    '.deploymentConfig.description == $description' <<<"${deployment}" >/dev/null; then
+    printf '%s\n' 'The stable deployment already matches this revision; resuming trigger reconciliation.'
+    reconcile_automation_triggers
+  else
+    printf '%s\n' 'A newer main revision exists; skipping stale deployment.'
+  fi
+  exit 0
+fi
 
 snapshot_dir="${RUNNER_TEMP}/apps-script-snapshot"
 mkdir -m 700 "${snapshot_dir}"
 cp .clasp.json "${snapshot_dir}/.clasp.json"
 (cd "${snapshot_dir}" && clasp -A "${auth_file}" pull)
 time_zone="$(jq -er '.timeZone | select(type == "string" and length > 0)' "${snapshot_dir}/appsscript.json")"
-label="main-${DEPLOY_COMMIT_SHA::12}"
 push_apps_script_source() (
   local original_manifest
   local generated_manifest
@@ -160,20 +195,6 @@ jq -e --argjson entry_points "${entry_points}" \
 
 # Time-driven triggers are bound to the deployment that creates them. Recreate
 # them through the exact stable API executable after it is updated, and install
-# the dashboard edit trigger required by year-series color controls. Do not
-# stale-skip this recovery after a successful update: leaving old triggers
-# would recreate the precise version mismatch this step repairs.
-trigger_status="$(apps_script_request POST \
-  '{"function":"installAutomationTriggers","parameters":[],"devMode":false}' \
-  "https://script.googleapis.com/v1/scripts/${APPS_SCRIPT_DEPLOYMENT_ID}:run")"
-jq -e '
-  .done == true and
-  .error == null and
-  .response["@type"] ==
-    "type.googleapis.com/google.apps.script.v1.ExecutionResponse" and
-  .response.result.triggerCounts.processDriveEventQueue == 1 and
-  .response.result.triggerCounts.runDailyExpenseCataloging == 1 and
-  .response.result.dashboardYearColorEditTriggerCount == 1 and
-  .response.result.missingTriggerHandlers == [] and
-  .response.result.duplicateTriggerHandlers == []
-' <<<"${trigger_status}" >/dev/null
+# the dashboard edit trigger required by year-series color controls. A rerun can
+# resume this step when promotion succeeded but reconciliation did not.
+reconcile_automation_triggers

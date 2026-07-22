@@ -97,11 +97,12 @@ npx --yes @google/clasp@3.3.0 \
 ```
 
 `getSetupStatus` reports whether automatic processing is enabled;
-`validateCatalogerInstallation` additionally reports missing, duplicate, and
-counted managed time-trigger handlers plus the dashboard year-color edit
-trigger count. Neither returns credentials. The Apps Script
-**Triggers** page is the authoritative place to inspect the actual 15-minute
-interval and the version associated with each trigger.
+`validateCatalogerInstallation` additionally reports missing, duplicate,
+invalid, and counted managed time-trigger handlers plus the dashboard year-color
+edit trigger count. A managed time trigger is invalid when it does not use the
+clock source and event type. Neither function returns credentials. The Apps
+Script **Triggers** page is the authoritative place to inspect the actual
+15-minute interval and the version associated with each trigger.
 
 Import the selected folder manually:
 

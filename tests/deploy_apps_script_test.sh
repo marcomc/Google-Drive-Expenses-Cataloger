@@ -162,11 +162,18 @@ if [[ "${url}" == "${execution_url}" ]]; then
     <<<"${payload}" >/dev/null
   printf '%s\n' triggers >>"${TEST_COMMAND_LOG}"
   printf '%s\n' triggers >>"${TEST_ORDER_LOG}"
-  if [[ "${TEST_TRIGGER_RESULT_VALID}" != 'true' ]]; then
-    printf '%s\n' '{"done":true,"response":{"result":{"triggerCounts":{"processDriveEventQueue":1,"runDailyExpenseCataloging":1},"dashboardYearColorEditTriggerCount":0,"missingTriggerHandlers":[],"duplicateTriggerHandlers":[]}}}'
-    exit 0
-  fi
-  printf '%s\n' '{"done":true,"response":{"@type":"type.googleapis.com/google.apps.script.v1.ExecutionResponse","result":{"triggerCounts":{"processDriveEventQueue":1,"runDailyExpenseCataloging":1},"dashboardYearColorEditTriggerCount":1,"missingTriggerHandlers":[],"duplicateTriggerHandlers":[]}}}'
+  case "${TEST_TRIGGER_RESULT_VALID}" in
+    true)
+      printf '%s\n' '{"done":true,"response":{"@type":"type.googleapis.com/google.apps.script.v1.ExecutionResponse","result":{"triggerCounts":{"processDriveEventQueue":1,"runDailyExpenseCataloging":1},"dashboardYearColorEditTriggerCount":1,"missingTriggerHandlers":[],"duplicateTriggerHandlers":[],"invalidTriggerHandlers":[]}}}'
+      ;;
+    false)
+      printf '%s\n' '{"done":true,"response":{"result":{"triggerCounts":{"processDriveEventQueue":1,"runDailyExpenseCataloging":1},"dashboardYearColorEditTriggerCount":0,"missingTriggerHandlers":[],"duplicateTriggerHandlers":[],"invalidTriggerHandlers":[]}}}'
+      ;;
+    error)
+      printf '%s\n' '{"done":true,"error":{"code":10,"message":"trigger repair failed"}}'
+      ;;
+    *) exit 2 ;;
+  esac
   exit 0
 fi
 test "${url}" = "${deployment_url}"
@@ -195,9 +202,10 @@ case "${method}" in
     fi
     jq -cn --arg id "${TEST_GET_RESPONSE_DEPLOYMENT_ID}" \
       --argjson version "${TEST_GET_RESPONSE_VERSION}" \
+      --arg description "${TEST_DEPLOYMENT_DESCRIPTION}" \
       --arg script_id "${response_script_id}" --arg manifest "${response_manifest}" \
       --argjson entry_points "${entry_points}" \
-      '{deploymentId: $id, deploymentConfig: {scriptId: $script_id, versionNumber: $version, manifestFileName: $manifest}, entryPoints: $entry_points}'
+      '{deploymentId: $id, deploymentConfig: {scriptId: $script_id, versionNumber: $version, manifestFileName: $manifest, description: $description}, entryPoints: $entry_points}'
     ;;
   PUT)
     if [[ "${TEST_CURL_FAIL_AT}" == 'PUT' ]]; then
@@ -253,6 +261,7 @@ run_fixture() {
   local refresh_token_on_deployments="${19:-false}"
   local initial_access_token="${20:-sensitive-test-token-do-not-log}"
   local expected_access_token="${21:-${initial_access_token}}"
+  local deployment_description="${22:-previous-release}"
 
   mkdir -p "${fixture_dir}/runner/clasp-auth"
   printf '%s\n' \
@@ -290,6 +299,7 @@ run_fixture() {
       TEST_FAIL_PUSH="${fail_push}" \
       TEST_REFRESH_TOKEN_ON_DEPLOYMENTS="${refresh_token_on_deployments}" \
       TEST_EXPECTED_ACCESS_TOKEN="${expected_access_token}" \
+      TEST_DEPLOYMENT_DESCRIPTION="${deployment_description}" \
       TEST_COMMAND_LOG="${fixture_dir}/commands.log" \
       TEST_ORDER_LOG="${fixture_dir}/order.log" \
       "${PROJECT_ROOT}/scripts/deploy-apps-script.sh"
@@ -347,6 +357,18 @@ mkdir -p "${stale_dir}"
 run_fixture "${stale_dir}" "${STALE_SHA}" "${CURRENT_SHA}" \
   'deployment-1' 'deployment-1' true
 test ! -s "${stale_dir}/commands.log"
+
+resume_repair_dir="${TEST_ROOT}/resume-repair"
+mkdir -p "${resume_repair_dir}"
+run_fixture "${resume_repair_dir}" "${CURRENT_SHA}" "${STALE_SHA}" \
+  'deployment-1' 'deployment-1' true false "${STALE_SHA}" true 99 valid 0 none \
+  'deployment-1' 4 'deployment-1' 5 false false \
+  sensitive-test-token-do-not-log sensitive-test-token-do-not-log 'main-111111111111'
+actual_commands="$(tr '\n' ' ' <"${resume_repair_dir}/commands.log")"
+test "${actual_commands}" = 'triggers '
+actual_order="$(tr '\n' ' ' <"${resume_repair_dir}/order.log")"
+test "${actual_order}" = \
+  'main-check list-deployments auth-refresh auth-refresh triggers '
 
 stale_before_push_dir="${TEST_ROOT}/stale-before-push"
 mkdir -p "${stale_before_push_dir}"
@@ -556,5 +578,23 @@ if [[ "${invalid_trigger_result_status}" -eq 0 ]]; then
   printf '%s\n' 'An invalid trigger execution envelope was accepted.' >&2
   exit 1
 fi
+
+trigger_error_dir="${TEST_ROOT}/trigger-error"
+mkdir -p "${trigger_error_dir}"
+set +e
+(
+  set -e
+  run_fixture "${trigger_error_dir}" "${CURRENT_SHA}" "${CURRENT_SHA}" \
+    'deployment-1' 'deployment-1' true false \
+    "${CURRENT_SHA},${CURRENT_SHA},${CURRENT_SHA}" error
+) >/dev/null 2>&1
+trigger_error_status=$?
+set -e
+if [[ "${trigger_error_status}" -eq 0 ]]; then
+  printf '%s\n' 'An Apps Script trigger reconciliation error was accepted.' >&2
+  exit 1
+fi
+actual_commands="$(tr '\n' ' ' <"${trigger_error_dir}/commands.log")"
+test "${actual_commands}" = 'push version update triggers '
 
 printf '%s\n' 'Apps Script deployment tests passed.'

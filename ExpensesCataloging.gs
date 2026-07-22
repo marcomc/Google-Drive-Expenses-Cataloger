@@ -11,16 +11,19 @@ function runDailyExpenseCataloging() {
 /** Enable scheduled intake only after test fixtures have been isolated. */
 function enableExpenseCataloging() {
   assertCatalogConfiguration_();
-  const triggerStatus = getAutomationTriggerStatus_();
-  const dashboardTriggerStatus = getDashboardYearColorEditTriggerStatus_();
-  if (triggerStatus.missingTriggerHandlers.length > 0 ||
-    triggerStatus.duplicateTriggerHandlers.length > 0 ||
-    dashboardTriggerStatus.triggerCount !== 1 ||
-    dashboardTriggerStatus.totalTriggerCount !== 1) {
-    throw new Error('Managed automation triggers are not healthy. Run installAutomationTriggers first.');
-  }
-  PropertiesService.getScriptProperties().setProperty(CONFIG.PROPERTY_KEYS.AUTO_PROCESSING, 'true');
-  return { status: 'ENABLED' };
+  return withAutomationTriggerLock_(function () {
+    const triggerStatus = getAutomationTriggerStatus_();
+    const dashboardTriggerStatus = getDashboardYearColorEditTriggerStatus_();
+    if (triggerStatus.missingTriggerHandlers.length > 0 ||
+      triggerStatus.duplicateTriggerHandlers.length > 0 ||
+      triggerStatus.invalidTriggerHandlers.length > 0 ||
+      dashboardTriggerStatus.triggerCount !== 1 ||
+      dashboardTriggerStatus.totalTriggerCount !== 1) {
+      throw new Error('Managed automation triggers are not healthy. Run installAutomationTriggers first.');
+    }
+    PropertiesService.getScriptProperties().setProperty(CONFIG.PROPERTY_KEYS.AUTO_PROCESSING, 'true');
+    return { status: 'ENABLED' };
+  });
 }
 
 function disableExpenseCataloging() {

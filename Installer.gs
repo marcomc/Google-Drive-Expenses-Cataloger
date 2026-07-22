@@ -74,11 +74,13 @@ function validateCatalogerInstallation() {
     installed: Boolean(layout.transactions && layout.imports &&
       triggerStatus.missingTriggerHandlers.length === 0 &&
       triggerStatus.duplicateTriggerHandlers.length === 0 &&
+      triggerStatus.invalidTriggerHandlers.length === 0 &&
       dashboardYearColorEditTriggerCount === 1 &&
       dashboardTriggerStatus.totalTriggerCount === 1),
     automaticProcessingEnabled: isAutomaticProcessingEnabled_(),
     missingTriggerHandlers: triggerStatus.missingTriggerHandlers,
     duplicateTriggerHandlers: triggerStatus.duplicateTriggerHandlers,
+    invalidTriggerHandlers: triggerStatus.invalidTriggerHandlers,
     triggerCounts: triggerStatus.triggerCounts,
     dashboardYearColorEditTriggerCount: dashboardYearColorEditTriggerCount,
     spreadsheetUrl: spreadsheet.getUrl()
