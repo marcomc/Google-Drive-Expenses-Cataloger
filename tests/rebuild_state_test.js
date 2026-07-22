@@ -183,7 +183,7 @@ const stageCreationState = {
 };
 const createdStages = [];
 const stageCreationProperties = createPropertyStore({});
-const stageCreationContext = { MimeType: { JSON: 'application/json' } };
+const stageCreationContext = { MimeType: {} };
 vm.createContext(stageCreationContext);
 vm.runInContext(fs.readFileSync('ExpenseCore.gs', 'utf8'), stageCreationContext);
 vm.runInContext(fs.readFileSync('ExpensesCataloging.gs', 'utf8'), stageCreationContext);
@@ -197,7 +197,12 @@ stageCreationContext.DriveApp = {
     if (id === stageCreationState.stagingFolderId) {
       return {
         getFilesByName: () => iterator([]),
-        createFile: (name, payload, mimeType) => createdStages.push({ name, payload, mimeType })
+        createFile: (name, payload, mimeType) => {
+          if (!mimeType) {
+            throw new Error('Argument cannot be null: mimeType');
+          }
+          createdStages.push({ name, payload, mimeType });
+        }
       };
     }
     assert.equal(id, stageSource.folderId);

@@ -2,6 +2,55 @@ const AUTOMATION_TRIGGER_HANDLERS = Object.freeze([
   'processDriveEventQueue',
   'runDailyExpenseCataloging'
 ]);
+const DASHBOARD_YEAR_COLOR_EDIT_TRIGGER_HANDLER = 'applyDashboardYearColorsOnEdit';
+
+function installDashboardYearColorEditTrigger() {
+  return withAutomationTriggerLock_(installDashboardYearColorEditTrigger_);
+}
+
+function installDashboardYearColorEditTrigger_() {
+  const existing = getDashboardYearColorEditTriggers_();
+  ScriptApp.newTrigger(DASHBOARD_YEAR_COLOR_EDIT_TRIGGER_HANDLER)
+    .forSpreadsheet(getSpreadsheetId_()).onEdit().create();
+  const deletionErrors = deleteTriggersBestEffort_(existing);
+  const status = getDashboardYearColorEditTriggerStatus_();
+  if (status.triggerCount !== 1 || status.totalTriggerCount !== 1) {
+    throw new Error('Dashboard edit-trigger reconciliation did not converge. State: ' +
+      JSON.stringify(status) + formatTriggerDeletionErrors_(deletionErrors));
+  }
+  return { triggerCount: status.triggerCount };
+}
+
+function getDashboardYearColorEditTriggers_() {
+  return ScriptApp.getProjectTriggers().filter(function (trigger) {
+    return trigger.getHandlerFunction() === DASHBOARD_YEAR_COLOR_EDIT_TRIGGER_HANDLER &&
+      trigger.getTriggerSource() === ScriptApp.TriggerSource.SPREADSHEETS &&
+      trigger.getEventType() === ScriptApp.EventType.ON_EDIT;
+  });
+}
+
+function getDashboardYearColorEditTriggerCount_() {
+  return getDashboardYearColorEditTriggerStatus_().triggerCount;
+}
+
+function getDashboardYearColorEditTriggerStatus_(spreadsheetId) {
+  const triggers = getDashboardYearColorEditTriggers_();
+  const targetSpreadsheetId = spreadsheetId || getSpreadsheetId_();
+  const triggerCount = triggers.filter(function (trigger) {
+    return trigger.getTriggerSourceId() === targetSpreadsheetId;
+  }).length;
+  return {
+    triggerCount: triggerCount,
+    totalTriggerCount: triggers.length,
+    staleTriggerCount: triggers.length - triggerCount
+  };
+}
+
+function getDashboardYearColorEditTriggersForSpreadsheet_(spreadsheetId) {
+  return getDashboardYearColorEditTriggers_().filter(function (trigger) {
+    return trigger.getTriggerSourceId() === spreadsheetId;
+  });
+}
 
 /**
  * Install an event-polling trigger plus an independent daily safety net.
@@ -13,24 +62,67 @@ function installAutomationTriggers() {
   return withAutomationTriggerLock_(function () {
     const existing = getManagedAutomationTriggers_();
     const created = [];
+    let dashboardTriggerStatus;
     try {
       created.push(ScriptApp.newTrigger('processDriveEventQueue').timeBased().everyMinutes(15).create());
       created.push(ScriptApp.newTrigger('runDailyExpenseCataloging').timeBased()
         .atHour(CONFIG.DAILY_TRIGGER_HOUR).everyDays(1).create());
+      dashboardTriggerStatus = installDashboardYearColorEditTrigger_();
     } catch (error) {
-      created.forEach(function (trigger) { ScriptApp.deleteTrigger(trigger); });
-      throw error;
+      const cleanupErrors = deleteTriggersBestEffort_(created);
+      throw new Error('Could not create replacement automation triggers: ' + error.message +
+        formatTriggerDeletionErrors_(cleanupErrors, 'cleanup failures'));
     }
-    existing.forEach(function (trigger) { ScriptApp.deleteTrigger(trigger); });
-    return getAutomationTriggerStatus_();
+    const deletionErrors = deleteTriggersBestEffort_(existing);
+    const status = getAutomationTriggerStatus_();
+    status.dashboardYearColorEditTriggerCount = dashboardTriggerStatus.triggerCount;
+    assertAutomationTriggerStatusHealthy_(status, deletionErrors);
+    return status;
   });
+}
+
+function deleteTriggersBestEffort_(triggers) {
+  const errors = [];
+  (triggers || []).forEach(function (trigger) {
+    try {
+      ScriptApp.deleteTrigger(trigger);
+    } catch (error) {
+      errors.push(error.message);
+    }
+  });
+  return errors;
+}
+
+function formatTriggerDeletionErrors_(errors, label) {
+  return errors.length > 0 ? '; ' + (label || 'deletion failures') + ': ' + errors.join('; ') : '';
+}
+
+function assertAutomationTriggerStatusHealthy_(status, deletionErrors) {
+  if (status.missingTriggerHandlers.length === 0 &&
+    status.duplicateTriggerHandlers.length === 0 &&
+    status.invalidTriggerHandlers.length === 0) {
+    return;
+  }
+  throw new Error('Managed automation trigger reconciliation did not converge. State: ' +
+    JSON.stringify(status) + formatTriggerDeletionErrors_(deletionErrors));
 }
 
 function removeAutomationTriggers() {
   return withAutomationTriggerLock_(function () {
-    getManagedAutomationTriggers_().forEach(function (trigger) {
-      ScriptApp.deleteTrigger(trigger);
-    });
+    const managedTriggers = getManagedAutomationTriggers_()
+      .concat(getDashboardYearColorEditTriggersForSpreadsheet_(getSpreadsheetId_()));
+    const deletionErrors = deleteTriggersBestEffort_(managedTriggers);
+    const triggerStatus = getAutomationTriggerStatus_();
+    const dashboardTriggerStatus = getDashboardYearColorEditTriggerStatus_();
+    if (triggerStatus.missingTriggerHandlers.length !== AUTOMATION_TRIGGER_HANDLERS.length ||
+      triggerStatus.invalidTriggerHandlers.length > 0 ||
+      dashboardTriggerStatus.triggerCount !== 0) {
+      throw new Error('Could not remove every managed automation trigger. State: ' +
+        JSON.stringify({
+          automation: triggerStatus,
+          dashboard: dashboardTriggerStatus
+        }) + formatTriggerDeletionErrors_(deletionErrors));
+    }
   });
 }
 
@@ -57,9 +149,15 @@ function getAutomationTriggerStatus_() {
     counts[handler] = 0;
     return counts;
   }, {});
+  const invalidTriggerHandlers = [];
   getManagedAutomationTriggers_().forEach(function (trigger) {
     const handler = trigger.getHandlerFunction();
-    triggerCounts[handler] += 1;
+    if (trigger.getTriggerSource() === ScriptApp.TriggerSource.CLOCK &&
+      trigger.getEventType() === ScriptApp.EventType.CLOCK) {
+      triggerCounts[handler] += 1;
+    } else if (invalidTriggerHandlers.indexOf(handler) < 0) {
+      invalidTriggerHandlers.push(handler);
+    }
   });
   const missingTriggerHandlers = AUTOMATION_TRIGGER_HANDLERS.filter(function (handler) {
     return triggerCounts[handler] === 0;
@@ -70,7 +168,8 @@ function getAutomationTriggerStatus_() {
   return {
     triggerCounts: triggerCounts,
     missingTriggerHandlers: missingTriggerHandlers,
-    duplicateTriggerHandlers: duplicateTriggerHandlers
+    duplicateTriggerHandlers: duplicateTriggerHandlers,
+    invalidTriggerHandlers: invalidTriggerHandlers
   };
 }
 

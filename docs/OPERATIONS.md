@@ -6,10 +6,13 @@
 - [Review email](#review-email)
 - [Duplicate behavior](#duplicate-behavior)
 - [Source reconciliation](#source-reconciliation)
+- [Initial balances and monthly checks](#initial-balances-and-monthly-checks)
 - [Dashboard](#dashboard)
+- [Merchant normalization](#merchant-normalization)
 - [Full JSON rebuild](#full-json-rebuild)
 - [Archive name migration](#archive-name-migration)
 - [Recovery](#recovery)
+- [Related documentation](#related-documentation)
 
 ## Normal flow
 
@@ -60,22 +63,113 @@ every imported record.
 
 Every processed JSON document receives a durable reconciliation row. It records
 its Drive file ID, content SHA-256, source-row count, totals per currency, and
-the decision for each source row: `imported`, `duplicate`, or `opening_balance`.
+the decision for each source row: `imported`, `duplicate`, `opening_balance`,
+or `closing_balance`.
 The import can archive only when the source count and monetary totals are fully
 accounted for. A duplicate remains part of the reconciliation even though no
 second ledger row is created.
 
 Per-person balance views use the exact allocation amounts retained by Tricount.
-`Bilancio` entries are opening-balance controls, so they are not spending and
-are not imported into the ledger. They validate the prior balance trajectory
-without being counted twice.
+`Bilancio inizio mese` and unqualified legacy `Bilancio` entries are
+opening-balance controls, so they are not spending and are not imported into
+the ledger. They validate that the prior month's calculated balance reproduces
+the declared carry-over. `Bilancio fine mese` entries are recognized closing
+markers and are also not imported: the historical workflow uses the following
+opening marker as the authoritative checkpoint. Named non-monthly Tricount
+`BALANCE` entries remain participant transfers. All marker rows remain
+accounted for in source reconciliation.
+
+The Tricount JSON has no separate participant-balance summary. The balance is
+reconstructed from each entry's payer, amount, and exact participant
+allocations. Monthly balance reconciliation follows the Tricount source order,
+not only the transaction date: a row in a strict monthly JSON remains inside
+that source period even when its date falls just before or after the month.
+The original date remains unchanged in `Transazioni` and all spending reports.
+
+Cash settlements between participants (including the Tricount custom category
+`Contanti`) remain `transfer` rows in `Transazioni`. They update the individual
+balance trajectory but are excluded from household-spending KPIs, summaries,
+and dashboard charts.
+
+Tricount `INCOME` records, including refunds, retain a negative canonical
+amount and allocation sign. They therefore reverse the appropriate participant
+balance effect and reduce the associated household-spending category and total.
+
+## Initial balances and monthly checks
+
+The import audit writes a readable `Opening balance details` value for every
+detected `Bilancio inizio mese`: date, currency, participant, amount, and
+checkpoint status. `Bilancio fine mese` markers remain visible in the
+source-row decisions as `closing_balance`, but do not create a monthly
+checkpoint or affect the calculated balance. Other `BALANCE` transfers remain
+in the ledger and affect the calculated balance. The same information remains
+available in the structured audit field for the runtime.
+
+`Configurazione` contains one editable initial-balance table per participant
+and currency. For a currency, the automatic rows are the complete net vector
+from the oldest usable `Bilancio inizio mese`; that vector is applied once in
+the cumulative `Movimenti saldi` calculation. Set `Origine` to `Manuale` to
+make an active row override the automatic value. Later monthly `Bilancio inizio
+mese` values do not reset the running balance: `Saldi mensili` compares them
+with the cumulative month-end position. `Bilancio fine mese` does not
+participate in that calculation. Legacy opening markers previously imported as
+ordinary `NORMAL` rows are recovered as controls. A material mismatch blocks
+later checkpoints from being rounded or labelled as matched, preserving the
+chronological audit chain.
+
+During a balance refresh, ledger rows from the pre-allocation schema that have
+an empty `Quote partecipanti` field are restored from the linked Tricount JSON
+or, for a legacy CSV row, from one unambiguous matching JSON in the managed
+archive. This repair never changes classifications or transaction amounts. If
+the source JSON is unavailable or ambiguous, the balance view uses the legacy
+equal-share fallback and the runtime logs the unresolved source ID.
 
 ## Dashboard
 
-The dashboard provides annual, month-by-year, category, subcategory, dog-cost,
-merchant, and payer comparisons. Spending charts exclude `transfer` and
-`opening_balance`; those types remain available in the ledger and their own
-summary.
+The dashboard provides annual category comparison, monthly total comparison by
+year, monthly category detail, payer comparison, and top suppliers. KPI cards
+and chart data are dynamic queries over the canonical ledger; importing a new
+month, year, or category updates them automatically. Use the `Anni da
+confrontare` checkboxes for every chart. The monthly-category and top-supplier
+charts sum the selected years; select only one year when a single-year detail is
+needed. A first installation checks all available ledger years so the default
+dashboard shows the complete historical comparison. Top suppliers are always
+ordered by spending, and missing supplier values
+are shown as one localized unspecified-merchant group. Spending charts use EUR
+`expense` and signed `income` rows, so refunds
+reduce their corresponding category. They do not mix currencies or count
+`transfer` and `opening_balance` records.
+
+The dashboard is a managed Apps Script surface, not a safe home for manual
+content. Its full rebuild behavior and the safe customization boundary are in
+[Spreadsheet lifecycle and schema](SPREADSHEET.md).
+
+The annual category chart uses one native horizontal label per selected year,
+formatted as `year · expense total`. The total excludes transfers and balance
+controls. Hovering a column keeps the category amount as the data point value
+instead of using the annual total as the series value.
+
+## Merchant normalization
+
+Every imported merchant or supplier is normalized at ledger write time: words
+use an initial uppercase letter and lowercase remainder, spaces are preserved
+between words, and hyphenated names use `-` without surrounding spaces. For
+example, `LIDL`, `Lidl`, and `lIdL` all become `Lidl`; `CONAD CITY` becomes
+`Conad City`.
+
+To repair existing ledger rows after deploying this behavior, pause scheduled
+processing, then run the owner-only Apps Script function:
+
+```sh
+npx --yes @google/clasp@3.3.0 \
+  -A .installer/clasp-owner-auth.json \
+  --json run normalizeImportedMerchantNames
+```
+
+It is idempotent and returns the changed-row count plus groups such as `LIDL` /
+`Lidl` that collapse to the same canonical name. Check that result, then run
+`validateCatalogerInstallation` with the same owner authorization before
+re-enabling scheduled processing.
 
 ## Full JSON rebuild
 
@@ -153,3 +247,11 @@ run the controlled import again. If it fails after a ledger write, consult the
 configured archive (`Imported` or `Importazioni`) and the source links before
 retrying. Do not delete rows or source folders blindly: the audit exists to
 make an intentional correction safe.
+
+## Related documentation
+
+- [Project overview and documentation index](../README.md)
+- [Installation guide](INSTALLATION.md)
+- [Spreadsheet lifecycle and schema](SPREADSHEET.md)
+- [Configuration reference](CONFIGURATION.md)
+- [Deployment guide](DEPLOYMENT.md)

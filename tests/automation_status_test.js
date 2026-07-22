@@ -15,22 +15,36 @@ const properties = new Map([
   ['AUTO_PROCESSING', 'true']
 ]);
 const events = [];
+const dashboardTriggerSpreadsheetIds = [];
+const schedules = [];
 let activeTriggers = [];
 let failCreationFor = '';
+let failDeletionFor = '';
 let triggerLockAvailable = true;
 let triggerLockAcquisitions = 0;
 let triggerLockReleases = 0;
 const triggerLockTimeouts = [];
 
-function makeTrigger(handler, id) {
-  return {
+function makeTrigger(handler, id, options = {}) {
+  const dashboardEdit = handler === 'applyDashboardYearColorsOnEdit';
+  const triggerSource = options.triggerSource || (dashboardEdit ? 'SPREADSHEETS' : 'CLOCK');
+  const eventType = options.eventType || (dashboardEdit ? 'ON_EDIT' : 'CLOCK');
+  const sourceId = options.sourceId || (dashboardEdit ? 'spreadsheet-id' : '');
+  const trigger = {
     getHandlerFunction: () => handler,
     getUniqueId: () => id,
+    getTriggerSource: () => triggerSource,
+    getEventType: () => eventType,
+    getTriggerSourceId: () => sourceId,
     deleteTrigger: () => {
       events.push(`delete:${id}`);
-      activeTriggers = activeTriggers.filter((trigger) => trigger.getUniqueId() !== id);
+      if (id === failDeletionFor) {
+        throw new Error(`cannot delete ${id}`);
+      }
+      activeTriggers = activeTriggers.filter((candidate) => candidate !== trigger);
     }
   };
+  return trigger;
 }
 
 const context = {
@@ -41,16 +55,32 @@ const context = {
     })
   },
   ScriptApp: {
+    TriggerSource: { CLOCK: 'CLOCK', SPREADSHEETS: 'SPREADSHEETS' },
+    EventType: { CLOCK: 'CLOCK', ON_EDIT: 'ON_EDIT' },
     getProjectTriggers: () => activeTriggers.slice(),
     deleteTrigger: (trigger) => trigger.deleteTrigger(),
     newTrigger: (handler) => ({
+      forSpreadsheet: (spreadsheetId) => ({
+        onEdit: () => ({
+          create: () => {
+            dashboardTriggerSpreadsheetIds.push(spreadsheetId);
+            return createTrigger(handler, { sourceId: spreadsheetId });
+          }
+        })
+      }),
       timeBased: () => ({
-        everyMinutes: () => ({
-          create: () => createTrigger(handler)
+        everyMinutes: (minutes) => ({
+          create: () => {
+            schedules.push({ handler, minutes });
+            return createTrigger(handler);
+          }
         }),
-        atHour: () => ({
-          everyDays: () => ({
-            create: () => createTrigger(handler)
+        atHour: (hour) => ({
+          everyDays: (days) => ({
+            create: () => {
+              schedules.push({ handler, hour, days });
+              return createTrigger(handler);
+            }
           })
         })
       })
@@ -69,12 +99,12 @@ const context = {
   console
 };
 
-function createTrigger(handler) {
+function createTrigger(handler, options = {}) {
   events.push(`create:${handler}`);
   if (handler === failCreationFor) {
     throw new Error(`cannot create ${handler}`);
   }
-  const trigger = makeTrigger(handler, `new-${handler}`);
+  const trigger = makeTrigger(handler, `new-${handler}`, options);
   activeTriggers.push(trigger);
   return trigger;
 }
@@ -86,6 +116,46 @@ vm.runInContext(fs.readFileSync('Installer.gs', 'utf8'), context);
 vm.runInContext(fs.readFileSync('ExpensesCataloging.gs', 'utf8'), context);
 
 assert.equal(context.getSetupStatus().automaticProcessingEnabled, true);
+assert.equal(context.getSetupStatus().applicationVersion, '0.2.2');
+assert.equal(context.getApplicationVersion(), '0.2.2');
+
+let fallbackUntil = Date.now() + 60000;
+properties.set('GEMINI_AUTO_VERTEX_FALLBACK', 'true');
+properties.set('GEMINI_VERTEX_FALLBACK_UNTIL', String(fallbackUntil));
+let setupStatus = context.getSetupStatus();
+assert.equal(setupStatus.geminiBackend, 'gemini_api');
+assert.equal(setupStatus.geminiEffectiveBackend, 'vertex_ai');
+assert.equal(setupStatus.geminiAutoVertexFallbackEnabled, true);
+assert.equal(setupStatus.geminiVertexFallbackUntil, new Date(fallbackUntil).toISOString());
+
+properties.set('GEMINI_VERTEX_FALLBACK_UNTIL', String(Date.now() - 1));
+setupStatus = context.getSetupStatus();
+assert.equal(setupStatus.geminiEffectiveBackend, 'gemini_api');
+assert.equal(setupStatus.geminiVertexFallbackUntil, '');
+
+properties.set('GEMINI_VERTEX_FALLBACK_UNTIL', String(fallbackUntil));
+properties.set('GEMINI_AUTO_VERTEX_FALLBACK', 'false');
+setupStatus = context.getSetupStatus();
+assert.equal(setupStatus.geminiEffectiveBackend, 'gemini_api');
+assert.equal(setupStatus.geminiAutoVertexFallbackEnabled, false);
+assert.equal(setupStatus.geminiVertexFallbackUntil, new Date(fallbackUntil).toISOString());
+
+properties.set('GEMINI_BACKEND', 'vertex_ai');
+setupStatus = context.getSetupStatus();
+assert.equal(setupStatus.geminiBackend, 'vertex_ai');
+assert.equal(setupStatus.geminiEffectiveBackend, 'vertex_ai');
+properties.set('GEMINI_BACKEND', 'gemini_api');
+properties.delete('GEMINI_AUTO_VERTEX_FALLBACK');
+properties.delete('GEMINI_VERTEX_FALLBACK_UNTIL');
+
+context.assertCatalogConfiguration_ = () => {};
+properties.delete('GOOGLE_CLOUD_PROJECT_ID');
+assert.throws(() => context.enableAutomaticVertexFallback(), /GOOGLE_CLOUD_PROJECT_ID is required/);
+assert.equal(properties.has('GEMINI_AUTO_VERTEX_FALLBACK'), false,
+  'a failed fallback enablement must not leave a Vertex fallback flag behind');
+properties.set('GOOGLE_CLOUD_PROJECT_ID', 'cloud-project');
+assert.equal(context.enableAutomaticVertexFallback().status, 'ENABLED');
+properties.delete('GEMINI_AUTO_VERTEX_FALLBACK');
 
 context.assertCatalogConfiguration_ = () => {};
 context.getRootFolderId_ = () => 'root-folder';
@@ -98,15 +168,48 @@ context.getExpenseSheetLayout_ = () => ({ transactions: {}, imports: {} });
 
 properties.delete('AUTO_PROCESSING');
 assert.equal(context.getSetupStatus().automaticProcessingEnabled, false);
+triggerLockAcquisitions = 0;
+triggerLockReleases = 0;
+triggerLockTimeouts.length = 0;
 activeTriggers = [
   makeTrigger('processDriveEventQueue', 'existing-polling'),
-  makeTrigger('runDailyExpenseCataloging', 'existing-daily')
+  makeTrigger('runDailyExpenseCataloging', 'existing-daily'),
+  makeTrigger('applyDashboardYearColorsOnEdit', 'existing-dashboard-edit')
 ];
 assert.equal(context.validateCatalogerInstallation().installed, true);
 assert.equal(context.enableExpenseCataloging().status, 'ENABLED');
 assert.equal(properties.get('AUTO_PROCESSING'), 'true');
+assert.equal(triggerLockAcquisitions, 1);
+assert.equal(triggerLockReleases, 1);
+assert.deepEqual(triggerLockTimeouts, [280000]);
 assert.equal(context.disableExpenseCataloging().status, 'DISABLED');
 assert.equal(properties.get('AUTO_PROCESSING'), 'false');
+
+activeTriggers = [
+  makeTrigger('processDriveEventQueue', 'existing-polling'),
+  makeTrigger('runDailyExpenseCataloging', 'existing-daily'),
+  makeTrigger('applyDashboardYearColorsOnEdit', 'existing-dashboard-edit'),
+  makeTrigger('applyDashboardYearColorsOnEdit', 'stale-dashboard-edit', {
+    sourceId: 'other-spreadsheet'
+  })
+];
+assert.equal(context.validateCatalogerInstallation().installed, false,
+  'a stale dashboard edit trigger for another spreadsheet must make installation health fail');
+assert.throws(() => context.enableExpenseCataloging(), /Managed automation triggers are not healthy/);
+assert.equal(properties.get('AUTO_PROCESSING'), 'false');
+
+activeTriggers = [
+  makeTrigger('processDriveEventQueue', 'existing-polling'),
+  makeTrigger('runDailyExpenseCataloging', 'existing-daily'),
+  makeTrigger('applyDashboardYearColorsOnEdit', 'wrong-dashboard-sheet', { sourceId: 'other-spreadsheet' })
+];
+assert.equal(context.validateCatalogerInstallation().installed, false,
+  'a dashboard edit trigger for another spreadsheet must not satisfy installation health');
+activeTriggers[2] = makeTrigger('applyDashboardYearColorsOnEdit', 'wrong-dashboard-event', {
+  eventType: 'ON_OPEN'
+});
+assert.equal(context.validateCatalogerInstallation().installed, false,
+  'a non-edit trigger must not satisfy dashboard edit-trigger health');
 
 activeTriggers = [makeTrigger('runDailyExpenseCataloging', 'existing-daily')];
 assert.deepEqual(JSON.parse(JSON.stringify(context.validateCatalogerInstallation())), {
@@ -114,12 +217,30 @@ assert.deepEqual(JSON.parse(JSON.stringify(context.validateCatalogerInstallation
   automaticProcessingEnabled: false,
   missingTriggerHandlers: ['processDriveEventQueue'],
   duplicateTriggerHandlers: [],
+  invalidTriggerHandlers: [],
   triggerCounts: {
     processDriveEventQueue: 0,
     runDailyExpenseCataloging: 1
   },
+  dashboardYearColorEditTriggerCount: 0,
   spreadsheetUrl: 'https://example.test/spreadsheet'
 });
+assert.throws(() => context.enableExpenseCataloging(), /Managed automation triggers are not healthy/);
+assert.equal(properties.get('AUTO_PROCESSING'), 'false');
+
+activeTriggers = [
+  makeTrigger('processDriveEventQueue', 'existing-polling'),
+  makeTrigger('runDailyExpenseCataloging', 'existing-daily')
+];
+assert.throws(() => context.enableExpenseCataloging(), /Managed automation triggers are not healthy/);
+assert.equal(properties.get('AUTO_PROCESSING'), 'false');
+
+activeTriggers = [
+  makeTrigger('processDriveEventQueue', 'existing-polling'),
+  makeTrigger('runDailyExpenseCataloging', 'existing-daily'),
+  makeTrigger('applyDashboardYearColorsOnEdit', 'existing-dashboard-edit-one'),
+  makeTrigger('applyDashboardYearColorsOnEdit', 'existing-dashboard-edit-two')
+];
 assert.throws(() => context.enableExpenseCataloging(), /Managed automation triggers are not healthy/);
 assert.equal(properties.get('AUTO_PROCESSING'), 'false');
 
@@ -134,22 +255,51 @@ assert.deepEqual(JSON.parse(JSON.stringify(duplicateStatus.duplicateTriggerHandl
   'processDriveEventQueue'
 ]);
 
+activeTriggers = [
+  makeTrigger('processDriveEventQueue', 'wrong-polling-trigger', {
+    triggerSource: 'SPREADSHEETS',
+    eventType: 'ON_EDIT'
+  }),
+  makeTrigger('runDailyExpenseCataloging', 'existing-daily'),
+  makeTrigger('applyDashboardYearColorsOnEdit', 'existing-dashboard-edit')
+];
+const invalidStatus = context.validateCatalogerInstallation();
+assert.equal(invalidStatus.installed, false);
+assert.deepEqual(JSON.parse(JSON.stringify(invalidStatus.invalidTriggerHandlers)), [
+  'processDriveEventQueue'
+]);
+assert.throws(() => context.enableExpenseCataloging(), /Managed automation triggers are not healthy/);
+
 events.length = 0;
+schedules.length = 0;
 triggerLockAcquisitions = 0;
 triggerLockReleases = 0;
 triggerLockTimeouts.length = 0;
 activeTriggers = [
   makeTrigger('processDriveEventQueue', 'existing-polling'),
-  makeTrigger('runDailyExpenseCataloging', 'existing-daily')
+  makeTrigger('runDailyExpenseCataloging', 'existing-daily'),
+  makeTrigger('applyDashboardYearColorsOnEdit', 'existing-dashboard-edit')
 ];
-context.installAutomationTriggers();
+assert.deepEqual(JSON.parse(JSON.stringify(context.installAutomationTriggers())), {
+  triggerCounts: { processDriveEventQueue: 1, runDailyExpenseCataloging: 1 },
+  missingTriggerHandlers: [], duplicateTriggerHandlers: [],
+  invalidTriggerHandlers: [],
+  dashboardYearColorEditTriggerCount: 1
+});
 assert.deepEqual(events, [
   'create:processDriveEventQueue',
   'create:runDailyExpenseCataloging',
+  'create:applyDashboardYearColorsOnEdit',
+  'delete:existing-dashboard-edit',
   'delete:existing-polling',
   'delete:existing-daily'
 ]);
+assert.deepEqual(schedules, [
+  { handler: 'processDriveEventQueue', minutes: 15 },
+  { handler: 'runDailyExpenseCataloging', hour: 7, days: 1 }
+]);
 assert.deepEqual(activeTriggers.map((trigger) => trigger.getHandlerFunction()).sort(), [
+  'applyDashboardYearColorsOnEdit',
   'processDriveEventQueue',
   'runDailyExpenseCataloging'
 ]);
@@ -157,9 +307,67 @@ assert.equal(triggerLockAcquisitions, 1);
 assert.equal(triggerLockReleases, 1);
 assert.deepEqual(triggerLockTimeouts, [280000]);
 
+events.length = 0;
+activeTriggers = [];
+triggerLockAcquisitions = 0;
+triggerLockReleases = 0;
+triggerLockTimeouts.length = 0;
+assert.deepEqual(JSON.parse(JSON.stringify(context.installDashboardYearColorEditTrigger())), {
+  triggerCount: 1
+});
+assert.deepEqual(events, ['create:applyDashboardYearColorsOnEdit']);
+assert.deepEqual(activeTriggers.map((trigger) => trigger.getHandlerFunction()), [
+  'applyDashboardYearColorsOnEdit'
+]);
+assert.equal(triggerLockAcquisitions, 1);
+assert.equal(triggerLockReleases, 1);
+assert.deepEqual(triggerLockTimeouts, [280000]);
+
+events.length = 0;
+activeTriggers = [
+  makeTrigger('applyDashboardYearColorsOnEdit', 'old-dashboard-edit'),
+  makeTrigger('applyDashboardYearColorsOnEdit', 'duplicate-dashboard-edit')
+];
+context.installDashboardYearColorEditTrigger();
+assert.deepEqual(events, [
+  'create:applyDashboardYearColorsOnEdit',
+  'delete:old-dashboard-edit',
+  'delete:duplicate-dashboard-edit'
+]);
+assert.equal(context.getDashboardYearColorEditTriggerCount_(), 1);
+events.length = 0;
+activeTriggers = [
+  makeTrigger('applyDashboardYearColorsOnEdit', 'stale-dashboard-sheet', { sourceId: 'old-spreadsheet' }),
+  makeTrigger('applyDashboardYearColorsOnEdit', 'unrelated-dashboard-event', { eventType: 'ON_OPEN' })
+];
+context.installDashboardYearColorEditTrigger();
+assert.deepEqual(events, [
+  'create:applyDashboardYearColorsOnEdit',
+  'delete:stale-dashboard-sheet'
+], 'reconciliation must remove stale spreadsheet edit triggers without deleting unrelated event types');
+assert.equal(context.getDashboardYearColorEditTriggerCount_(), 1);
+assert.equal(activeTriggers.some((trigger) => trigger.getUniqueId() === 'unrelated-dashboard-event'), true);
+properties.set('SPREADSHEET_ID', 'replacement-spreadsheet');
+context.installDashboardYearColorEditTrigger();
+assert.equal(dashboardTriggerSpreadsheetIds.at(-1), 'replacement-spreadsheet',
+  'trigger reconciliation must bind a replacement to the configured spreadsheet');
+properties.set('SPREADSHEET_ID', 'spreadsheet-id');
+
+triggerLockAcquisitions = 0;
+triggerLockReleases = 0;
+triggerLockAvailable = false;
+assert.throws(() => context.installDashboardYearColorEditTrigger(), /Could not acquire the automation trigger lock/);
+triggerLockAvailable = true;
+
 triggerLockAvailable = false;
 assert.throws(() => context.installAutomationTriggers(), /Could not acquire the automation trigger lock/);
-assert.equal(triggerLockReleases, 1);
+assert.equal(triggerLockReleases, 0);
+properties.set('AUTO_PROCESSING', 'true');
+assert.deepEqual(JSON.parse(JSON.stringify(context.runDailyExpenseCataloging())), {
+  status: 'LOCKED',
+  source: 'daily'
+});
+properties.set('AUTO_PROCESSING', 'false');
 triggerLockAvailable = true;
 
 events.length = 0;
@@ -167,16 +375,45 @@ triggerLockAcquisitions = 0;
 triggerLockReleases = 0;
 activeTriggers = [
   makeTrigger('processDriveEventQueue', 'existing-polling'),
-  makeTrigger('runDailyExpenseCataloging', 'existing-daily')
+  makeTrigger('runDailyExpenseCataloging', 'existing-daily'),
+  makeTrigger('applyDashboardYearColorsOnEdit', 'existing-dashboard-edit'),
+  makeTrigger('applyDashboardYearColorsOnEdit', 'other-spreadsheet-dashboard-edit', {
+    sourceId: 'other-spreadsheet'
+  }),
+  makeTrigger('applyDashboardYearColorsOnEdit', 'unrelated-dashboard-event', {
+    eventType: 'ON_OPEN'
+  })
 ];
 context.removeAutomationTriggers();
 assert.deepEqual(events, [
   'delete:existing-polling',
-  'delete:existing-daily'
+  'delete:existing-daily',
+  'delete:existing-dashboard-edit'
 ]);
-assert.deepEqual(activeTriggers, []);
+assert.deepEqual(activeTriggers.map((trigger) => trigger.getUniqueId()).sort(), [
+  'other-spreadsheet-dashboard-edit',
+  'unrelated-dashboard-event'
+], 'trigger removal must preserve another spreadsheet and unrelated event types');
 assert.equal(triggerLockAcquisitions, 1);
 assert.equal(triggerLockReleases, 1);
+
+events.length = 0;
+activeTriggers = [
+  makeTrigger('processDriveEventQueue', 'existing-polling'),
+  makeTrigger('runDailyExpenseCataloging', 'existing-daily'),
+  makeTrigger('applyDashboardYearColorsOnEdit', 'existing-dashboard-edit')
+];
+failDeletionFor = 'existing-polling';
+assert.throws(() => context.removeAutomationTriggers(), /Could not remove every managed/);
+assert.deepEqual(events, [
+  'delete:existing-polling',
+  'delete:existing-daily',
+  'delete:existing-dashboard-edit'
+]);
+assert.deepEqual(activeTriggers.map((trigger) => trigger.getUniqueId()), ['existing-polling']);
+failDeletionFor = '';
+context.removeAutomationTriggers();
+assert.deepEqual(activeTriggers, []);
 
 events.length = 0;
 activeTriggers = [
@@ -194,3 +431,67 @@ assert.deepEqual(activeTriggers.map((trigger) => trigger.getUniqueId()).sort(), 
   'existing-daily',
   'existing-polling'
 ]);
+
+events.length = 0;
+activeTriggers = [
+  makeTrigger('processDriveEventQueue', 'existing-polling'),
+  makeTrigger('runDailyExpenseCataloging', 'existing-daily'),
+  makeTrigger('applyDashboardYearColorsOnEdit', 'existing-dashboard-edit')
+];
+failCreationFor = 'applyDashboardYearColorsOnEdit';
+assert.throws(() => context.installAutomationTriggers(), /cannot create applyDashboardYearColorsOnEdit/);
+assert.deepEqual(events, [
+  'create:processDriveEventQueue',
+  'create:runDailyExpenseCataloging',
+  'create:applyDashboardYearColorsOnEdit',
+  'delete:new-processDriveEventQueue',
+  'delete:new-runDailyExpenseCataloging'
+]);
+assert.deepEqual(activeTriggers.map((trigger) => trigger.getUniqueId()).sort(), [
+  'existing-daily', 'existing-dashboard-edit', 'existing-polling'
+]);
+failCreationFor = '';
+
+events.length = 0;
+activeTriggers = [
+  makeTrigger('processDriveEventQueue', 'existing-polling'),
+  makeTrigger('runDailyExpenseCataloging', 'existing-daily'),
+  makeTrigger('applyDashboardYearColorsOnEdit', 'existing-dashboard-edit')
+];
+failDeletionFor = 'existing-daily';
+assert.throws(() => context.installAutomationTriggers(), /did not converge/);
+assert.deepEqual(events.slice(-2), [
+  'delete:existing-polling',
+  'delete:existing-daily'
+]);
+assert.deepEqual(
+  JSON.parse(JSON.stringify(context.getAutomationTriggerStatus_().duplicateTriggerHandlers)),
+  ['runDailyExpenseCataloging']
+);
+failDeletionFor = '';
+assert.deepEqual(JSON.parse(JSON.stringify(context.installAutomationTriggers())), {
+  triggerCounts: { processDriveEventQueue: 1, runDailyExpenseCataloging: 1 },
+  missingTriggerHandlers: [], duplicateTriggerHandlers: [],
+  invalidTriggerHandlers: [],
+  dashboardYearColorEditTriggerCount: 1
+});
+
+events.length = 0;
+activeTriggers = [
+  makeTrigger('processDriveEventQueue', 'existing-polling'),
+  makeTrigger('runDailyExpenseCataloging', 'existing-daily'),
+  makeTrigger('applyDashboardYearColorsOnEdit', 'existing-dashboard-edit')
+];
+failDeletionFor = 'existing-dashboard-edit';
+assert.throws(() => context.installAutomationTriggers(), /cannot delete existing-dashboard-edit/);
+assert.equal(context.getDashboardYearColorEditTriggerCount_(), 2,
+  'a failed stale-trigger deletion must retain both old and replacement coverage');
+failDeletionFor = '';
+assert.deepEqual(JSON.parse(JSON.stringify(context.installAutomationTriggers())), {
+  triggerCounts: { processDriveEventQueue: 1, runDailyExpenseCataloging: 1 },
+  missingTriggerHandlers: [], duplicateTriggerHandlers: [],
+  invalidTriggerHandlers: [],
+  dashboardYearColorEditTriggerCount: 1
+});
+assert.equal(context.getDashboardYearColorEditTriggerCount_(), 1,
+  'a retry after partial trigger deletion must converge to one edit trigger');

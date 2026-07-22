@@ -37,9 +37,18 @@ date-derived year and month, payer, beneficiaries, amount and currency,
 transaction type, source type/status, source and custom categories, exact
 participant allocations, exchange rate, provenance, AI confidence, and an
 immutable duplicate fingerprint. Transfers are excluded from spending totals.
-Tricount `Bilancio` entries are opening-balance controls rather than ledger
-rows. `Source reconciliations` proves that every JSON entry and amount has an
-explicit durable outcome (imported, duplicate, or opening-balance marker).
+Tricount `INCOME` records retain their negative canonical sign and are
+categorized as refunds: they reduce the corresponding category, month, and
+year spending totals while also affecting participant balances.
+Tricount `Bilancio inizio mese` entries are opening-balance controls rather
+than ledger rows. `Bilancio fine mese` entries are recognized closing markers
+and are ignored by spending and balance calculations. `Source reconciliations`
+proves that every JSON entry and amount has an explicit durable outcome
+(imported, duplicate, opening-balance marker, or closing-balance marker).
+The editable initial-balance table in `Configurazione` supplies the earliest
+usable multi-participant baseline once per currency; later `Bilancio inizio
+mese` entries remain reconciliation checks. See the [spreadsheet lifecycle and
+schema](docs/SPREADSHEET.md).
 
 ## Setup
 
@@ -58,14 +67,24 @@ Before the first live import, move candidate source files and folders to
 `_Test-fixtures`. Return one or a few untouched source units to the root for
 each controlled test.
 Tests cover a new import, an exact re-import, a partially overlapping JSON
-source, exact custom allocations, and opening-balance classification.
+source, exact custom allocations, and opening- and closing-balance
+classification.
 No source folder is deleted.
 
 ## Documentation
 
-See [installation](docs/INSTALLATION.md), [configuration](docs/CONFIGURATION.md),
-and [operations](docs/OPERATIONS.md). The planned work is in [TODO.md](TODO.md)
-and the delivered changes are in [CHANGELOG.md](CHANGELOG.md).
+Use the documentation by task:
+
+| Document | Use it for |
+| --- | --- |
+| [Installation guide](docs/INSTALLATION.md) | Provisioning or adopting a Drive root and spreadsheet |
+| [Spreadsheet lifecycle and schema](docs/SPREADSHEET.md) | Tab ownership, default layout, dashboard behavior, and safe customization |
+| [Configuration reference](docs/CONFIGURATION.md) | Local configuration, Script Properties, Drive policy, and taxonomy |
+| [Operations guide](docs/OPERATIONS.md) | Imports, audits, rebuilds, archival, and recovery |
+| [Deployment guide](docs/DEPLOYMENT.md) | Promoting an approved Apps Script revision |
+
+The planned work is in [TODO.md](TODO.md) and delivered changes are in
+[CHANGELOG.md](CHANGELOG.md).
 
 ## Deployment
 

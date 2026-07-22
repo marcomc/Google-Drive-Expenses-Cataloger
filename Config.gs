@@ -1,4 +1,5 @@
 const CONFIG = Object.freeze({
+  APP_VERSION: '0.2.2',
   DEFAULT_MODEL: 'gemini-3.5-flash',
   DAILY_TRIGGER_HOUR: 7,
   MAX_RUNTIME_MS: 280000,
@@ -13,7 +14,7 @@ const CONFIG = Object.freeze({
     GEMINI_BACKEND: 'GEMINI_BACKEND',
     GEMINI_MODEL: 'GEMINI_MODEL',
     GEMINI_AUTO_VERTEX_FALLBACK: 'GEMINI_AUTO_VERTEX_FALLBACK',
-  GEMINI_VERTEX_FALLBACK_UNTIL: 'GEMINI_VERTEX_FALLBACK_UNTIL',
+    GEMINI_VERTEX_FALLBACK_UNTIL: 'GEMINI_VERTEX_FALLBACK_UNTIL',
     JSON_REBUILD_STATE: 'JSON_REBUILD_STATE',
     VERTEX_AI_LOCATION: 'VERTEX_AI_LOCATION',
     NOTIFICATION_RECIPIENT: 'NOTIFICATION_RECIPIENT',
@@ -30,8 +31,12 @@ function getSetupStatus() {
   const property = CONFIG.PROPERTY_KEYS;
   const properties = PropertiesService.getScriptProperties();
   return {
+    applicationVersion: CONFIG.APP_VERSION,
     geminiApiKeyConfigured: Boolean(properties.getProperty(property.GEMINI_API_KEY)),
     geminiBackend: getGeminiBackend_(),
+    geminiEffectiveBackend: getEffectiveGeminiBackend_(),
+    geminiAutoVertexFallbackEnabled: isAutomaticVertexFallbackEnabled_(),
+    geminiVertexFallbackUntil: getTemporaryVertexFallbackUntilIso_(),
     rootFolderConfigured: Boolean(properties.getProperty(property.ROOT_FOLDER_ID)),
     spreadsheetConfigured: Boolean(properties.getProperty(property.SPREADSHEET_ID)),
     automationConfigConfigured: Boolean(properties.getProperty(property.AUTOMATION_CONFIG_JSON)),
@@ -40,9 +45,16 @@ function getSetupStatus() {
   };
 }
 
+function getApplicationVersion() {
+  return CONFIG.APP_VERSION;
+}
+
 /** Enable the configured Vertex project when Gemini Developer API quota is exhausted. */
 function enableAutomaticVertexFallback() {
   assertCatalogConfiguration_();
+  if (!getScriptProperty_(CONFIG.PROPERTY_KEYS.GOOGLE_CLOUD_PROJECT_ID)) {
+    throw new Error('GOOGLE_CLOUD_PROJECT_ID is required for Vertex AI.');
+  }
   PropertiesService.getScriptProperties().setProperty(
     CONFIG.PROPERTY_KEYS.GEMINI_AUTO_VERTEX_FALLBACK,
     'true'
@@ -116,6 +128,9 @@ function validateAutomationConfig_(config) {
     Array.isArray(config.categories)) {
     throw new Error('categories must be an object.');
   }
+  if (Object.keys(config.categories).length > 25) {
+    throw new Error('categories supports at most 25 dashboard series.');
+  }
   Object.keys(config.categories).forEach(function (category) {
     if (!Array.isArray(config.categories[category]) ||
       config.categories[category].length === 0) {
@@ -133,13 +148,26 @@ function getGeminiBackend_() {
 }
 
 function getEffectiveGeminiBackend_() {
-  const until = Number(getScriptProperty_(CONFIG.PROPERTY_KEYS.GEMINI_VERTEX_FALLBACK_UNTIL));
-  if (getGeminiBackend_() === 'gemini_api' &&
-    getScriptProperty_(CONFIG.PROPERTY_KEYS.GEMINI_AUTO_VERTEX_FALLBACK) === 'true' &&
-    until > Date.now()) {
+  const primaryBackend = getGeminiBackend_();
+  if (primaryBackend === 'gemini_api' &&
+    isAutomaticVertexFallbackEnabled_() && getTemporaryVertexFallbackUntil_()) {
     return 'vertex_ai';
   }
-  return getGeminiBackend_();
+  return primaryBackend;
+}
+
+function isAutomaticVertexFallbackEnabled_() {
+  return getScriptProperty_(CONFIG.PROPERTY_KEYS.GEMINI_AUTO_VERTEX_FALLBACK) === 'true';
+}
+
+function getTemporaryVertexFallbackUntil_() {
+  const until = Number(getScriptProperty_(CONFIG.PROPERTY_KEYS.GEMINI_VERTEX_FALLBACK_UNTIL));
+  return isFinite(until) && until > Date.now() ? until : 0;
+}
+
+function getTemporaryVertexFallbackUntilIso_() {
+  const until = getTemporaryVertexFallbackUntil_();
+  return until ? new Date(until).toISOString() : '';
 }
 
 function getGeminiModel_() {

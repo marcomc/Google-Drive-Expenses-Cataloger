@@ -2,4 +2,5 @@
 .installer/
 config.local.json
 node_modules/
+output/
 
