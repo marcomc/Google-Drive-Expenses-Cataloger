@@ -80,6 +80,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
   failures converge safely on retry.
 - Resume post-promotion trigger reconciliation on a workflow rerun when the
   stable deployment already matches that workflow revision.
+- Preserve unqualified legacy Tricount `Bilancio` entries as opening-balance
+  controls while retaining named non-monthly `BALANCE` settlements as transfers.
 
 ## [0.2.1] - 2026-07-18
 

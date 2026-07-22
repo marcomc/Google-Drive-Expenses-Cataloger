@@ -94,7 +94,9 @@
   bar charts, keep items as category rows in one numeric series and use
   point-level style overrides when bars require distinct colours.
 - Keep transfers visible in the ledger but exclude them from spending aggregates.
-  Treat Tricount `Bilancio` entries as opening-balance controls, not spending.
+  Treat month-start and unqualified legacy Tricount `Bilancio` entries as
+  opening-balance controls, not spending; retain named non-monthly `BALANCE`
+  settlements as transfers.
 - Use one category and one subcategory for an expense, and keep merchant or
   supplier separate. Tags are out of scope until an explicit design change.
 

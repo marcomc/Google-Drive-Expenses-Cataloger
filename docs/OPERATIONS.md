@@ -70,13 +70,14 @@ accounted for. A duplicate remains part of the reconciliation even though no
 second ledger row is created.
 
 Per-person balance views use the exact allocation amounts retained by Tricount.
-`Bilancio inizio mese` entries are opening-balance controls, so they are not
-spending and are not imported into the ledger. They validate that the prior
-month's calculated balance reproduces the declared carry-over. `Bilancio fine
-mese` entries are recognized closing markers and are also not imported: the
-historical workflow uses the following opening marker as the authoritative
-checkpoint. Other Tricount `BALANCE` entries remain participant transfers.
-All marker rows remain accounted for in source reconciliation.
+`Bilancio inizio mese` and unqualified legacy `Bilancio` entries are
+opening-balance controls, so they are not spending and are not imported into
+the ledger. They validate that the prior month's calculated balance reproduces
+the declared carry-over. `Bilancio fine mese` entries are recognized closing
+markers and are also not imported: the historical workflow uses the following
+opening marker as the authoritative checkpoint. Named non-monthly Tricount
+`BALANCE` entries remain participant transfers. All marker rows remain
+accounted for in source reconciliation.
 
 The Tricount JSON has no separate participant-balance summary. The balance is
 reconstructed from each entry's payer, amount, and exact participant

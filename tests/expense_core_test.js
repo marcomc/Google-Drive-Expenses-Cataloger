@@ -147,6 +147,10 @@ assert.equal(context.mapTricountTransactionType_('NORMAL', 'Bilancio in io mese'
   'opening_balance');
 assert.equal(context.mapTricountTransactionType_('NORMAL', 'Bilancio fine mese', ''),
   'closing_balance');
+assert.equal(context.mapTricountTransactionType_('BALANCE', 'Bilancio', ''),
+  'opening_balance');
+assert.equal(context.mapTricountTransactionType_('BALANCE', '', 'Bilancio ⚖️'),
+  'opening_balance');
 assert.equal(context.mapTricountTransactionType_('BALANCE', 'Bilancio generico', 'Bilancio ⚖️'),
   'transfer');
 assert.equal(context.mapTricountTransactionType_('NORMAL', 'Marco - contanti', 'Contanti 💶'),

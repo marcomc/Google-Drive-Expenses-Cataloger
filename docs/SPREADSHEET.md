@@ -94,17 +94,18 @@ tab; the other tabs are audit, configuration, or derived reporting surfaces.
 ## Initial-balance model
 
 Normal intake treats neither balance marker as spending and inserts neither
-into `Transazioni`. `Bilancio inizio mese` is the only balance marker used as a
-checkpoint. For each currency, all opening records on the earliest usable date
-form one multi-participant opening-balance vector. It is applied once to the
-cumulative calculation; subsequent opening records are checkpoints in
-`Saldi mensili`. The cumulative trajectory must reproduce each following
-opening vector when all real transactions are included and balance markers are
-excluded. `Bilancio fine mese` is recognized and ignored entirely by the
-spending and balance calculations because its following opening marker is the
-authoritative checkpoint. Legacy opening markers that were originally exported
-as `NORMAL` and imported into `Transazioni` are normalized back into controls
-and excluded from the cumulative movement.
+into `Transazioni`. `Bilancio inizio mese` and unqualified legacy `Bilancio`
+markers are opening-balance controls. For each currency, all opening records on
+the earliest usable date form one multi-participant opening-balance vector. It
+is applied once to the cumulative calculation; subsequent opening records are
+checkpoints in `Saldi mensili`. The cumulative trajectory must reproduce each
+following opening vector when all real transactions are included and balance
+markers are excluded. `Bilancio fine mese` is recognized and ignored entirely
+by the spending and balance calculations because its following opening marker
+is the authoritative checkpoint. Legacy opening markers that were originally
+exported as `NORMAL` and imported into `Transazioni` are normalized back into
+controls and excluded from the cumulative movement. Named non-monthly
+`BALANCE` settlements remain transfers.
 
 Spending reports always use the original transaction date. Balance
 reconciliation instead assigns rows from a strict monthly

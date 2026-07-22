@@ -280,6 +280,9 @@ function mapTricountTransactionType_(sourceNativeType, description, customCatego
   if (/\bbilancio\s+fine\s+mese\b/i.test(marker)) {
     return 'closing_balance';
   }
+  if (isTricountUnqualifiedBalanceMarker_(description, customCategory)) {
+    return 'opening_balance';
+  }
   if (nativeType === 'INCOME') {
     return 'income';
   }
@@ -294,6 +297,15 @@ function mapTricountTransactionType_(sourceNativeType, description, customCatego
     return 'income';
   }
   return 'expense';
+}
+
+function isTricountUnqualifiedBalanceMarker_(description, customCategory) {
+  const values = [description, customCategory].map(function (value) {
+    return String(value || '').replace(/\uFE0F/g, '').trim();
+  }).filter(Boolean);
+  return values.length > 0 && values.every(function (value) {
+    return /^bilancio(?:\s*⚖)?$/i.test(value);
+  });
 }
 
 function isTricountCashSettlementCategory_(customCategory) {
