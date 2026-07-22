@@ -1124,7 +1124,9 @@ function normalizeExpenseJsonWithAi_(records, file, folder, policy, config, recu
     const batchIndex = Math.floor(start / batchSize);
     const staged = stageController ? stageController.load(batchIndex, batch) : null;
     if (staged) {
-      staged.forEach(function (record) { normalized.push(record); });
+      staged.forEach(function (record) {
+        normalized.push(Object.assign({}, record, { merchant: normalizeMerchantName_(record.merchant) }));
+      });
       continue;
     }
     const response = callGeminiJson_(buildExpenseJsonNormalizationPrompt_(batch, file, folder, policy, config));
@@ -1158,6 +1160,7 @@ function buildExpenseJsonNormalizationPrompt_(records, file, folder, policy, con
     'Classify a tangible good sold by a retailer or marketplace, whether new or used, as a product purchase based on the item and its recipient or use, not as an activity or service. Books, puzzles, games, and similar durable goods are not Leisure and travel / Entertainment solely because they are recreational. Use Personal and gifts / Personal purchase, or Personal and gifts / Gift only when the source or prior human correction supports gifting.',
     'Keep a specific merchant when the description supports one. If no specific merchant is stated, infer only a defensible merchant type from the description and category: tobacco, cigarettes, or cigars means Tabaccheria; metano fuel means Distributore di metano; a veterinary visit means Veterinario.',
     'Never return Unknown, N/A, or another placeholder for merchant. Return an empty merchant when neither a specific merchant nor a defensible merchant type is supported.',
+    'Always record Amazon and its country-domain variants (for example Amazon.it, Amazon.com, and Amazon.co.uk) as exactly "amazon".',
     'Policy: ' + policy,
     'Source folder: ' + folder.getName() + '; JSON: ' + file.getName(),
     'Entries: ' + JSON.stringify(records)

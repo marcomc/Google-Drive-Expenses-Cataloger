@@ -578,6 +578,10 @@ function normalizeMerchantName_(value) {
   if (!source) {
     return '';
   }
+  if (/^amazon$/i.test(source) ||
+    /^(?:https?:\/\/)?(?:www\.)?amazon(?:\.[a-z]{2,63})+(?:[/?#.,:;\s]|$)/i.test(source)) {
+    return 'amazon';
+  }
   return source.split('-').map(function (hyphenPart) {
     return hyphenPart.split(' ').map(function (word) {
       const lower = word.toLocaleLowerCase();

@@ -65,6 +65,11 @@ assert.equal(context.normalizeMerchantName_('LIDL'), 'Lidl');
 assert.equal(context.normalizeMerchantName_('Conad'), 'Conad');
 assert.equal(context.normalizeMerchantName_('CONAD CITY'), 'Conad City');
 assert.equal(context.normalizeMerchantName_('  MCDONALD\'S  -  ITALIA '), "Mcdonald's-Italia");
+['Amazon', 'Amazon.it', 'amazon.com', 'Amazon.co.uk', 'Amazon.com.au', 'Amazon.uk',
+  'https://www.amazon.it/orders'].forEach(merchant => {
+  assert.equal(context.normalizeMerchantName_(merchant), 'amazon');
+});
+assert.equal(context.normalizeMerchantName_('Amazonas'), 'Amazonas');
 assert.equal(context.normalizeMerchantName_(''), '');
 const merchantNormalization = context.normalizeMerchantValues_([
   ['LIDL'], ['Lidl'], ['CONAD'], ['Conad'], [''], ['COOP-ALLEANZA']

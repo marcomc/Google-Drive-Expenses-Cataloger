@@ -337,12 +337,14 @@ assert.throws(() => nativeNormalizeExpenseJsonWithAi(
   folder('batch-folder', 'Batch'), '', batchConfig, true, batchController
 ), /batch 2 timeout/);
 assert.equal(batchGeminiCalls, 2);
+batchStages[0][0].merchant = 'Amazon.it';
 const resumedBatchRecords = nativeNormalizeExpenseJsonWithAi(
   batchRecords, file('batch-json', 'transactions-hostello-batch.json'),
   folder('batch-folder', 'Batch'), '', batchConfig, true, batchController
 );
 assert.equal(batchGeminiCalls, 3);
 assert.deepEqual(resumedBatchRecords.map(record => record.sourceTransactionId), ['batch-1', 'batch-2']);
+assert.deepEqual(resumedBatchRecords.map(record => record.merchant), ['amazon', '']);
 
 const incomeRefundRecord = {
   sourceTransactionId: 'income-refund', transactionType: 'income', amount: -10,
