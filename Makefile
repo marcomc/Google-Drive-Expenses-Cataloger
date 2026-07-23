@@ -5,8 +5,8 @@ MARKDOWNLINT_CONFIG ?= .markdownlint.json
 SHELLCHECK ?= shellcheck
 
 .DEFAULT_GOAL := help
-.NOTPARALLEL: install update install-debug install-reset
-.PHONY: help install update install-check install-debug install-reset
+.NOTPARALLEL: install update apply-defaults install-debug install-reset
+.PHONY: help install update apply-defaults install-check install-debug install-reset
 .PHONY: test lint lint-shell lint-md check
 
 help: ## Show available commands
@@ -17,6 +17,9 @@ install: ## Install, resume, or safely reconcile this instance
 
 update: ## Alias for the idempotent installer
 	@$(INSTALLER)
+
+apply-defaults: ## Deliberately apply current installer defaults
+	@$(INSTALLER) --apply-defaults
 
 install-check: ## Check local prerequisites
 	@$(INSTALLER) --check

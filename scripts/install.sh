@@ -52,27 +52,18 @@ install_check() {
 }
 
 ensure_local_config() {
-  local locale recipient gemini_model temporary_file
+  local locale recipient
   if [[ ! -f "${CONFIG_FILE}" ]]; then
     cp "${PROJECT_ROOT}/config.example.json" "${CONFIG_FILE}"
     die "Created config.local.json; replace its placeholders, then rerun."
   fi
   jq empty "${CONFIG_FILE}" >/dev/null || die 'config.local.json is invalid JSON.'
-  if ! jq -e 'has("gemini_model")' "${CONFIG_FILE}" >/dev/null; then
-    temporary_file="$(mktemp "${PROJECT_ROOT}/config.local.XXXXXX")"
-    jq --arg gemini_model "${DEFAULT_GEMINI_MODEL}" \
-      '.gemini_model = $gemini_model' "${CONFIG_FILE}" >"${temporary_file}"
-    mv "${temporary_file}" "${CONFIG_FILE}"
-    info "Added gemini_model=${DEFAULT_GEMINI_MODEL} to config.local.json."
-  fi
   locale="$(jq -r '.locale // empty' "${CONFIG_FILE}")"
   recipient="$(jq -r '.notification_recipient // empty' "${CONFIG_FILE}")"
-  gemini_model="$(jq -r '.gemini_model // empty' "${CONFIG_FILE}")"
   # shellcheck disable=SC2310 # Predicate functions intentionally signal invalid input with nonzero status.
   is_supported_locale "${locale}" || die 'config.local.json locale must be en or it.'
   # shellcheck disable=SC2310 # Predicate functions intentionally signal invalid input with nonzero status.
   is_valid_email "${recipient}" || die 'config.local.json requires notification_recipient.'
-  [[ -n "${gemini_model}" ]] || die 'config.local.json requires gemini_model.'
 }
 
 prompt_if_empty() {
@@ -320,20 +311,32 @@ run_bootstrap() {
 }
 
 get_desired_settings() {
-  local configured_time_zone configured_gemini_model
+  local configured_time_zone configured_gemini_model legacy_gemini_model
   ensure_local_config
   configured_time_zone="$(jq -r '.time_zone // empty' "${CONFIG_FILE}")"
   configured_gemini_model="$(jq -r '.gemini_model // empty' "${CONFIG_FILE}")"
   : "${GDEC_TIME_ZONE:=${configured_time_zone:-Europe/Rome}}"
-  : "${GDEC_GEMINI_MODEL:=${configured_gemini_model:-${DEFAULT_GEMINI_MODEL}}}"
+  legacy_gemini_model="$(state_get '.geminiModel // "gemini-3.5-flash"')"
+  : "${GDEC_GEMINI_MODEL:=${configured_gemini_model:-${legacy_gemini_model}}}"
   # shellcheck disable=SC2310 # Predicate functions intentionally signal invalid input with nonzero status.
   is_valid_time_zone "${GDEC_TIME_ZONE}" || die 'Invalid GDEC_TIME_ZONE.'
 }
 
+set_configured_gemini_model() {
+  local gemini_model="$1"
+  local temporary_file
+  temporary_file="$(mktemp "${PROJECT_ROOT}/config.local.XXXXXX")"
+  jq --arg gemini_model "${gemini_model}" '.gemini_model = $gemini_model' \
+    "${CONFIG_FILE}" >"${temporary_file}"
+  mv "${temporary_file}" "${CONFIG_FILE}"
+}
+
 installation_needs_resume() {
   local deployment_id gemini_secret_version installation_state mode project_id secret_name
+  local secret_probe secret_probe_status
   installation_state="$(jq -r '.installationState // empty' "${STATE_FILE}")" ||
     die 'Installer state is invalid.'
+  [[ "${installation_state}" == 'complete' ]] && return 1
   [[ "${installation_state}" == 'pending' ]] && return 0
   mode="$(state_get '.geminiMode')"
   deployment_id="$(jq -r '.deploymentId // empty' "${STATE_FILE}")"
@@ -342,7 +345,16 @@ installation_needs_resume() {
   [[ -n "${gemini_secret_version}" ]] || return 1
   project_id="$(state_get '.projectId')"
   secret_name="${gemini_secret_version%/versions/*}"
-  gcloud secrets describe "${secret_name##*/}" --project="${project_id}" >/dev/null 2>&1
+  set +e
+  secret_probe="$(gcloud secrets describe "${secret_name##*/}" --project="${project_id}" 2>&1)"
+  secret_probe_status=$?
+  set -e
+  [[ "${secret_probe_status}" -eq 0 ]] && return 0
+  if [[ "${secret_probe}" == *'NOT_FOUND'* || "${secret_probe}" == *'not found'* ]]; then
+    return 1
+  fi
+  printf '%s\n' "${secret_probe}" >&2
+  die 'Could not determine whether the temporary Gemini secret is still available.'
 }
 
 reconcile_installation() {
@@ -353,6 +365,17 @@ reconcile_installation() {
   state_set geminiModel "${GDEC_GEMINI_MODEL}"
   state_set installationState 'complete'
   info "Installation reconciled with Gemini model ${GDEC_GEMINI_MODEL} and timezone ${GDEC_TIME_ZONE}."
+}
+
+apply_installer_defaults() {
+  [[ -f "${STATE_FILE}" ]] || die 'No existing installer state exists.'
+  get_desired_settings
+  run_bootstrap true true "${DEFAULT_GEMINI_MODEL}" "${GDEC_TIME_ZONE}"
+  state_set timeZone "${GDEC_TIME_ZONE}"
+  state_set geminiModel "${DEFAULT_GEMINI_MODEL}"
+  state_set installationState 'complete'
+  set_configured_gemini_model "${DEFAULT_GEMINI_MODEL}"
+  info 'Current installer defaults were applied successfully.'
 }
 
 remove_transfer_secret() {
@@ -376,6 +399,11 @@ main() {
   case "${MODE}" in
     check) install_check; return ;;
     reset) reset_state; return ;;
+    apply-defaults)
+      install_check
+      apply_installer_defaults
+      return
+      ;;
     install) ;;
     *) die 'Unsupported mode.' ;;
   esac
@@ -404,6 +432,7 @@ main() {
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --check) MODE='check' ;;
+    --apply-defaults) MODE='apply-defaults' ;;
     --reset) MODE='reset' ;;
     --debug) ;;
     *) die "Unknown option: $1" ;;

@@ -35,6 +35,11 @@ alias.
 Set `time_zone` and `gemini_model` in `config.local.json`, or override either
 one for a single run with `GDEC_TIME_ZONE` and `GDEC_GEMINI_MODEL`.
 
+For an existing configuration that predates `gemini_model`, ordinary updates
+preserve the legacy model. Apply all current installer defaults deliberately
+with `make apply-defaults`; it preserves the credential and automatic
+processing state.
+
 ## Script Properties
 
 | Property | Purpose |
