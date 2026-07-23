@@ -364,7 +364,11 @@ installation_needs_provisioning() {
   local gemini_secret_version installation_state mode
   installation_state="$(jq -r '.installationState // empty' "${STATE_FILE}")" ||
     die 'Installer state is invalid.'
-  [[ "${installation_state}" == 'provisioning' ]] && return 0
+  if [[ "${installation_state}" == 'provisioning' ]]; then
+    gemini_secret_version="$(jq -r '.geminiSecretVersion // empty' "${STATE_FILE}")"
+    [[ -z "${gemini_secret_version}" ]]
+    return
+  fi
   [[ "${installation_state}" == 'pending' ]] || return 1
   mode="$(state_get '.geminiMode')"
   [[ "${mode}" == 'vertex_ai' ]] && return 1

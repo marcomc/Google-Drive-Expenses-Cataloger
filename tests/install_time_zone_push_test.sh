@@ -38,6 +38,8 @@ elif [[ "$*" == 'secrets describe deleted-transfer-secret --project=test-project
 elif [[ "$*" == 'secrets describe completed-transfer-secret --project=test-project' ]]; then
   printf '%s\n' 'completed installations must not probe transfer secrets' >&2
   exit 23
+elif [[ "$*" == 'secrets describe provisioned-transfer-secret --project=test-project' ]]; then
+  exit 0
 elif [[ "${TEST_PROVISIONING_RETRY:-false}" == 'true' ]]; then
   exit 0
 fi
@@ -57,13 +59,23 @@ case " $* " in
     ;;
   *' --json deploy '*) printf '%s\n' '{"deploymentId":"test-deployment"}' ;;
   *' --json run bootstrapCatalogerInstallation '*)
-    jq -e --arg expected_time_zone "${TEST_EXPECT_TIME_ZONE:-Pacific/Auckland}" \
-      --arg expected_model "${TEST_EXPECT_MODEL-gemini-3.5-flash}" \
-      '.[0].geminiSecretVersion == "" and
-      .[0].reuseExistingGeminiApiKey == true and
-      .[0].preserveAutomaticProcessing == true and
-      .[0].geminiModel == $expected_model and
-      .[0].timeZone == $expected_time_zone' <<<"${!#}" >/dev/null
+    if [[ "${TEST_EXPECT_TRANSFER_RESUME:-false}" == 'true' ]]; then
+      jq -e --arg expected_time_zone "${TEST_EXPECT_TIME_ZONE:-Pacific/Auckland}" \
+        --arg expected_model "${TEST_EXPECT_MODEL-gemini-3.5-flash}" \
+        '.[0].geminiSecretVersion != "" and
+        .[0].reuseExistingGeminiApiKey == false and
+        .[0].preserveAutomaticProcessing == false and
+        .[0].geminiModel == $expected_model and
+        .[0].timeZone == $expected_time_zone' <<<"${!#}" >/dev/null
+    else
+      jq -e --arg expected_time_zone "${TEST_EXPECT_TIME_ZONE:-Pacific/Auckland}" \
+        --arg expected_model "${TEST_EXPECT_MODEL-gemini-3.5-flash}" \
+        '.[0].geminiSecretVersion == "" and
+        .[0].reuseExistingGeminiApiKey == true and
+        .[0].preserveAutomaticProcessing == true and
+        .[0].geminiModel == $expected_model and
+        .[0].timeZone == $expected_time_zone' <<<"${!#}" >/dev/null
+    fi
     printf '%s\n' '{"response":{"installed":true}}'
     ;;
   *)
@@ -121,7 +133,8 @@ probe_failure_fixture="$(mktemp -d)"
 complete_fixture="$(mktemp -d)"
 pending_defaults_fixture="$(mktemp -d)"
 vertex_resume_fixture="$(mktemp -d)"
-trap 'rm -rf "${success_fixture}" "${failure_fixture}" "${migration_fixture}" "${migration_failure_fixture}" "${probe_failure_fixture}" "${complete_fixture}" "${pending_defaults_fixture}" "${vertex_resume_fixture}"' EXIT
+provisioned_resume_fixture="$(mktemp -d)"
+trap 'rm -rf "${success_fixture}" "${failure_fixture}" "${migration_fixture}" "${migration_failure_fixture}" "${probe_failure_fixture}" "${complete_fixture}" "${pending_defaults_fixture}" "${vertex_resume_fixture}" "${provisioned_resume_fixture}"' EXIT
 make_fixture "${success_fixture}"
 jq 'del(.gemini_model)' "${success_fixture}/config.local.json" >"${success_fixture}/config.local.migrated.json"
 mv "${success_fixture}/config.local.migrated.json" "${success_fixture}/config.local.json"
@@ -176,6 +189,21 @@ mv "${vertex_resume_fixture}/.installer/state.updated.json" \
 )
 assert_manifest_restored "${vertex_resume_fixture}"
 assert_installation_state "${vertex_resume_fixture}"
+
+make_fixture "${provisioned_resume_fixture}"
+jq '.installationState = "provisioning" |
+  .geminiModel = "gemini-3.6-flash" |
+  .geminiSecretVersion = "projects/test-project/secrets/provisioned-transfer-secret/versions/latest"' \
+  "${provisioned_resume_fixture}/.installer/state.json" >"${provisioned_resume_fixture}/.installer/state.updated.json"
+mv "${provisioned_resume_fixture}/.installer/state.updated.json" \
+  "${provisioned_resume_fixture}/.installer/state.json"
+(
+  cd "${provisioned_resume_fixture}"
+  PATH="${provisioned_resume_fixture}/fake-bin:${PATH}" TEST_EXPECT_MODEL='gemini-3.6-flash' \
+    TEST_EXPECT_TRANSFER_RESUME=true ./scripts/install.sh
+)
+assert_manifest_restored "${provisioned_resume_fixture}"
+assert_installation_state "${provisioned_resume_fixture}"
 
 make_fixture "${complete_fixture}"
 jq '.installationState = "complete" |
