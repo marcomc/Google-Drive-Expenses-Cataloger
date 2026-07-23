@@ -118,7 +118,7 @@ collect_settings() {
   state_set notificationRecipient "${GDEC_NOTIFICATION_RECIPIENT}"
   state_set geminiModel "${GDEC_GEMINI_MODEL}"
   state_set billingAccountId "${GDEC_BILLING_ACCOUNT_ID#billingAccounts/}"
-  state_set installationState 'pending'
+  state_set installationState 'provisioning'
 }
 
 push_script_with_configured_time_zone() (
@@ -361,10 +361,13 @@ installation_needs_resume() {
 }
 
 installation_needs_provisioning() {
-  local gemini_secret_version installation_state
+  local gemini_secret_version installation_state mode
   installation_state="$(jq -r '.installationState // empty' "${STATE_FILE}")" ||
     die 'Installer state is invalid.'
+  [[ "${installation_state}" == 'provisioning' ]] && return 0
   [[ "${installation_state}" == 'pending' ]] || return 1
+  mode="$(state_get '.geminiMode')"
+  [[ "${mode}" == 'vertex_ai' ]] && return 1
   gemini_secret_version="$(jq -r '.geminiSecretVersion // empty' "${STATE_FILE}")"
   [[ -z "${gemini_secret_version}" ]]
 }
@@ -374,6 +377,7 @@ provision_initial_installation() {
   create_gemini_api_key
   create_and_push_script
   transfer_gemini_key
+  state_set installationState 'pending'
   info 'Source was pushed. Complete the clasp browser authorization, then rerun make install.'
 }
 

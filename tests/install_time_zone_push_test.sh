@@ -120,7 +120,8 @@ migration_failure_fixture="$(mktemp -d)"
 probe_failure_fixture="$(mktemp -d)"
 complete_fixture="$(mktemp -d)"
 pending_defaults_fixture="$(mktemp -d)"
-trap 'rm -rf "${success_fixture}" "${failure_fixture}" "${migration_fixture}" "${migration_failure_fixture}" "${probe_failure_fixture}" "${complete_fixture}" "${pending_defaults_fixture}"' EXIT
+vertex_resume_fixture="$(mktemp -d)"
+trap 'rm -rf "${success_fixture}" "${failure_fixture}" "${migration_fixture}" "${migration_failure_fixture}" "${probe_failure_fixture}" "${complete_fixture}" "${pending_defaults_fixture}" "${vertex_resume_fixture}"' EXIT
 make_fixture "${success_fixture}"
 jq 'del(.gemini_model)' "${success_fixture}/config.local.json" >"${success_fixture}/config.local.migrated.json"
 mv "${success_fixture}/config.local.migrated.json" "${success_fixture}/config.local.json"
@@ -163,6 +164,18 @@ grep -q 'Installation is incomplete; run make install after the browser handoff.
   "${pending_defaults_fixture}/output.log"
 assert_manifest_restored "${pending_defaults_fixture}"
 assert_installer_model "${pending_defaults_fixture}" ''
+
+make_fixture "${vertex_resume_fixture}"
+jq 'del(.geminiSecretVersion) | .geminiMode = "vertex_ai" | .installationState = "pending"' \
+  "${vertex_resume_fixture}/.installer/state.json" >"${vertex_resume_fixture}/.installer/state.updated.json"
+mv "${vertex_resume_fixture}/.installer/state.updated.json" \
+  "${vertex_resume_fixture}/.installer/state.json"
+(
+  cd "${vertex_resume_fixture}"
+  PATH="${vertex_resume_fixture}/fake-bin:${PATH}" TEST_EXPECT_MODEL='gemini-3.6-flash' ./scripts/install.sh
+)
+assert_manifest_restored "${vertex_resume_fixture}"
+assert_installation_state "${vertex_resume_fixture}"
 
 make_fixture "${complete_fixture}"
 jq '.installationState = "complete" |
