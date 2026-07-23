@@ -5,27 +5,24 @@ MARKDOWNLINT_CONFIG ?= .markdownlint.json
 SHELLCHECK ?= shellcheck
 
 .DEFAULT_GOAL := help
-.NOTPARALLEL: install install-resume install-debug install-resume-debug install-reset
-.PHONY: help install install-resume install-check install-debug install-resume-debug install-reset
+.NOTPARALLEL: install update install-debug install-reset
+.PHONY: help install update install-check install-debug install-reset
 .PHONY: test lint lint-shell lint-md check
 
 help: ## Show available commands
 	@awk 'BEGIN {FS = ":.*## "; printf "Usage: make <target>\n\nTargets:\n"} /^[a-zA-Z0-9_-]+:.*## / {printf "  %-22s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-install: ## Start the interactive installer
+install: ## Install, resume, or safely reconcile this instance
 	@$(INSTALLER)
 
-install-resume: ## Resume after the browser handoff
-	@$(INSTALLER) --resume
+update: ## Alias for the idempotent installer
+	@$(INSTALLER)
 
 install-check: ## Check local prerequisites
 	@$(INSTALLER) --check
 
 install-debug: ## Start the installer with non-secret diagnostics
 	@$(INSTALLER) --debug
-
-install-resume-debug: ## Resume with non-secret diagnostics
-	@$(INSTALLER) --resume --debug
 
 install-reset: ## Remove private installer state only
 	@$(INSTALLER) --reset

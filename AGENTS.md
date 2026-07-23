@@ -117,6 +117,10 @@
 - Reconfiguration paths must not retry deleted credential-transfer secrets.
   Reuse an existing stable credential only through an explicit, validated
   bootstrap option and test the default credential backend.
+- When installer defaults are written to durable Script Properties, preserve
+  the selected value during unrelated reconfiguration. Provide an explicit
+  migration command for deliberate default upgrades, and test success and
+  failure state transitions for both paths.
 - Keep Apps Script mocks faithful to the supported runtime API: do not invent
   enum members, and make service stubs reject missing required arguments.
 

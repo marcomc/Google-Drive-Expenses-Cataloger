@@ -25,6 +25,10 @@ vm.runInContext(fs.readFileSync('Installer.gs', 'utf8'), context);
 
 assert.equal(context.getGeminiModel_(), 'gemini-3.6-flash',
   'new installations must default to Gemini 3.6 Flash');
+properties.set('GEMINI_MODEL', 'gemini-3.5-flash');
+assert.equal(context.getGeminiModel_(), 'gemini-3.5-flash',
+  'an explicitly configured model must override the new default');
+properties.delete('GEMINI_MODEL');
 
 const dashboardFormulas = context.getDashboardDataSpecifications_('Transazioni');
 assert.equal(dashboardFormulas.map((specification) => specification.anchor).join(','),

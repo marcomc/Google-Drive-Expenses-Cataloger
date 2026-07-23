@@ -10,7 +10,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
 ### Changed
 
 - Use the stable `gemini-3.6-flash` model as the default for Apps Script
-  processing and new installations.
+  processing and new installations. `make install` now also safely reconciles
+  completed installations.
 
 ## [0.2.2] - 2026-07-20
 

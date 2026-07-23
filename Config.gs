@@ -1,5 +1,5 @@
 const CONFIG = Object.freeze({
-  APP_VERSION: '0.2.2',
+  APP_VERSION: '0.3.0',
   DEFAULT_MODEL: 'gemini-3.6-flash',
   DAILY_TRIGGER_HOUR: 7,
   MAX_RUNTIME_MS: 280000,

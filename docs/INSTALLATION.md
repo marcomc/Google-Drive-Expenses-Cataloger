@@ -57,11 +57,16 @@ written to repository files or long-lived installer state.
 ## Browser handoff
 
 Complete the clasp authorization with the owner account and enable the Apps
-Script API when prompted. Then resume:
+Script API when prompted. Then run the same command again:
 
 ```sh
-make install-resume
+make install
 ```
+
+`make install` is idempotent: after completion it reconciles source, managed
+Drive policy, configuration, triggers, timezone, and Gemini model without
+creating a new project, spreadsheet, or Gemini credential. `make update` is an
+equivalent explicit name.
 
 The bootstrap creates or adopts the spreadsheet resources, Script Properties,
 the Drive policy, ignored fixture/archive folders, and managed trigger set. Automatic

@@ -1314,7 +1314,7 @@ function callGeminiDeveloperApi_(parts) {
       method: 'post', contentType: 'application/json', muteHttpExceptions: true,
       headers: { 'x-goog-api-key': getScriptProperty_(CONFIG.PROPERTY_KEYS.GEMINI_API_KEY) },
       payload: JSON.stringify({ contents: [{ role: 'user', parts: parts }],
-        generationConfig: { responseMimeType: 'application/json', temperature: 0,
+        generationConfig: { responseMimeType: 'application/json',
           maxOutputTokens: CONFIG.GEMINI_MAX_OUTPUT_TOKENS } })
     });
   }, 'Gemini Developer API');
@@ -1331,7 +1331,7 @@ function callVertexAi_(parts) {
       method: 'post', contentType: 'application/json', muteHttpExceptions: true,
       headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
       payload: JSON.stringify({ contents: [{ role: 'user', parts: parts }],
-        generationConfig: { responseMimeType: 'application/json', temperature: 0,
+        generationConfig: { responseMimeType: 'application/json',
           maxOutputTokens: CONFIG.GEMINI_MAX_OUTPUT_TOKENS } })
     });
   }, 'Vertex AI');
