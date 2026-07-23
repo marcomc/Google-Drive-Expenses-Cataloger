@@ -460,9 +460,13 @@ main() {
     fi
     # shellcheck disable=SC2310 # This predicate distinguishes resumable and completed installations.
     if installation_needs_resume; then
-      ensure_local_config
-      run_bootstrap
+      get_desired_settings
+      run_bootstrap false false "${GDEC_GEMINI_MODEL}" "${GDEC_TIME_ZONE}"
       remove_transfer_secret
+      state_set timeZone "${GDEC_TIME_ZONE}"
+      if [[ -n "${GDEC_GEMINI_MODEL}" ]]; then
+        state_set geminiModel "${GDEC_GEMINI_MODEL}"
+      fi
       state_set installationState 'complete'
       info 'Installation resumed and completed. The Gemini API key remains only in Bitwarden and Script Properties.'
     else

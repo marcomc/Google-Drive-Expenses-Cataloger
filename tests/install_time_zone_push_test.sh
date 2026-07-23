@@ -191,18 +191,24 @@ assert_manifest_restored "${vertex_resume_fixture}"
 assert_installation_state "${vertex_resume_fixture}"
 
 make_fixture "${provisioned_resume_fixture}"
+jq '.time_zone = "Europe/Paris" | .gemini_model = "gemini-2.5-flash"' \
+  "${provisioned_resume_fixture}/config.local.json" >"${provisioned_resume_fixture}/config.local.updated.json"
+mv "${provisioned_resume_fixture}/config.local.updated.json" \
+  "${provisioned_resume_fixture}/config.local.json"
 jq '.installationState = "provisioning" |
-  .geminiModel = "gemini-3.6-flash" |
+  .geminiModel = "gemini-3.5-flash" |
   .geminiSecretVersion = "projects/test-project/secrets/provisioned-transfer-secret/versions/latest"' \
   "${provisioned_resume_fixture}/.installer/state.json" >"${provisioned_resume_fixture}/.installer/state.updated.json"
 mv "${provisioned_resume_fixture}/.installer/state.updated.json" \
   "${provisioned_resume_fixture}/.installer/state.json"
 (
   cd "${provisioned_resume_fixture}"
-  PATH="${provisioned_resume_fixture}/fake-bin:${PATH}" TEST_EXPECT_MODEL='gemini-3.6-flash' \
+  PATH="${provisioned_resume_fixture}/fake-bin:${PATH}" TEST_EXPECT_MODEL='gemini-2.5-flash' \
+    TEST_EXPECT_TIME_ZONE='Europe/Paris' \
     TEST_EXPECT_TRANSFER_RESUME=true ./scripts/install.sh
 )
 assert_manifest_restored "${provisioned_resume_fixture}"
+assert_installer_model "${provisioned_resume_fixture}" 'gemini-2.5-flash'
 assert_installation_state "${provisioned_resume_fixture}"
 
 make_fixture "${complete_fixture}"
