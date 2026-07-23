@@ -401,7 +401,7 @@ require_completed_installation() {
   local installation_state
   installation_state="$(jq -r '.installationState // empty' "${STATE_FILE}")" ||
     die 'Installer state is invalid.'
-  if [[ "${installation_state}" == 'pending' ]]; then
+  if [[ "${installation_state}" == 'pending' || "${installation_state}" == 'provisioning' ]]; then
     die 'Installation is incomplete; run make install after the browser handoff.'
   fi
   # shellcheck disable=SC2310 # This predicate distinguishes resumable and completed installations.

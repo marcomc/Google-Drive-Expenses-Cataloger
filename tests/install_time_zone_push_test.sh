@@ -132,9 +132,10 @@ migration_failure_fixture="$(mktemp -d)"
 probe_failure_fixture="$(mktemp -d)"
 complete_fixture="$(mktemp -d)"
 pending_defaults_fixture="$(mktemp -d)"
+provisioning_defaults_fixture="$(mktemp -d)"
 vertex_resume_fixture="$(mktemp -d)"
 provisioned_resume_fixture="$(mktemp -d)"
-trap 'rm -rf "${success_fixture}" "${failure_fixture}" "${migration_fixture}" "${migration_failure_fixture}" "${probe_failure_fixture}" "${complete_fixture}" "${pending_defaults_fixture}" "${vertex_resume_fixture}" "${provisioned_resume_fixture}"' EXIT
+trap 'rm -rf "${success_fixture}" "${failure_fixture}" "${migration_fixture}" "${migration_failure_fixture}" "${probe_failure_fixture}" "${complete_fixture}" "${pending_defaults_fixture}" "${provisioning_defaults_fixture}" "${vertex_resume_fixture}" "${provisioned_resume_fixture}"' EXIT
 make_fixture "${success_fixture}"
 jq 'del(.gemini_model)' "${success_fixture}/config.local.json" >"${success_fixture}/config.local.migrated.json"
 mv "${success_fixture}/config.local.migrated.json" "${success_fixture}/config.local.json"
@@ -177,6 +178,25 @@ grep -q 'Installation is incomplete; run make install after the browser handoff.
   "${pending_defaults_fixture}/output.log"
 assert_manifest_restored "${pending_defaults_fixture}"
 assert_installer_model "${pending_defaults_fixture}" ''
+
+make_fixture "${provisioning_defaults_fixture}"
+jq 'del(.geminiSecretVersion) | .installationState = "provisioning"' \
+  "${provisioning_defaults_fixture}/.installer/state.json" \
+  >"${provisioning_defaults_fixture}/.installer/state.updated.json"
+mv "${provisioning_defaults_fixture}/.installer/state.updated.json" \
+  "${provisioning_defaults_fixture}/.installer/state.json"
+set +e
+(
+  cd "${provisioning_defaults_fixture}"
+  PATH="${provisioning_defaults_fixture}/fake-bin:${PATH}" ./scripts/install.sh --apply-defaults
+) >"${provisioning_defaults_fixture}/output.log" 2>&1
+provisioning_defaults_status=$?
+set -e
+[[ "${provisioning_defaults_status}" -eq 1 ]]
+grep -q 'Installation is incomplete; run make install after the browser handoff.' \
+  "${provisioning_defaults_fixture}/output.log"
+assert_manifest_restored "${provisioning_defaults_fixture}"
+assert_installer_model "${provisioning_defaults_fixture}" ''
 
 make_fixture "${vertex_resume_fixture}"
 jq 'del(.geminiSecretVersion) | .geminiMode = "vertex_ai" | .installationState = "pending"' \
