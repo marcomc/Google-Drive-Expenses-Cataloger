@@ -124,7 +124,7 @@ function validateInstallerOptions_(options) {
     spreadsheetId: String(options.spreadsheetId || '').trim(),
     spreadsheetTitle: String(options.spreadsheetTitle).trim(),
     notificationRecipient: String(options.notificationRecipient).trim(),
-    geminiBackend: options.geminiBackend, geminiModel: String(options.geminiModel).trim(),
+    geminiBackend: options.geminiBackend, geminiModel: String(options.geminiModel || '').trim(),
     autoVertexFallback: options.autoVertexFallback === true,
     vertexLocation: String(options.vertexLocation).trim(),
     automationConfig: automationConfig, agentsPolicy: String(options.agentsPolicy),
