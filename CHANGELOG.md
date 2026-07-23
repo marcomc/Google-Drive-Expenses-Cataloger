@@ -5,6 +5,13 @@ All notable changes to this project are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - 2026-07-23 - Gemini 3.6 Flash
+
+### Changed
+
+- Use the stable `gemini-3.6-flash` model as the default for Apps Script
+  processing and new installations.
+
 ## [0.2.2] - 2026-07-20
 
 ### Added

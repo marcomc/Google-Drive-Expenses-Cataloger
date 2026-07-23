@@ -34,6 +34,7 @@ Change the timezone of an installed instance explicitly with
 | --- | --- |
 | `GEMINI_API_KEY` | Private Gemini Developer API credential. |
 | `GEMINI_BACKEND` | `gemini_api` or `vertex_ai`. |
+| `GEMINI_MODEL` | Model ID; new installations default to `gemini-3.6-flash`. |
 | `GEMINI_AUTO_VERTEX_FALLBACK` | Enables temporary Vertex fallback after quota exhaustion; disabled unless explicitly selected. |
 | `GOOGLE_CLOUD_PROJECT_ID` | Cataloger Cloud project; it requires billing only for Vertex AI. |
 | `ROOT_FOLDER_ID` | `Spese` folder ID. |

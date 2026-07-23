@@ -23,6 +23,9 @@ vm.runInContext(fs.readFileSync('Config.gs', 'utf8'), context);
 vm.runInContext(fs.readFileSync('BalanceViews.gs', 'utf8'), context);
 vm.runInContext(fs.readFileSync('Installer.gs', 'utf8'), context);
 
+assert.equal(context.getGeminiModel_(), 'gemini-3.6-flash',
+  'new installations must default to Gemini 3.6 Flash');
+
 const dashboardFormulas = context.getDashboardDataSpecifications_('Transazioni');
 assert.equal(dashboardFormulas.map((specification) => specification.anchor).join(','),
   'A1,A30,A60,A90,A120');
@@ -813,7 +816,7 @@ const options = {
   spreadsheetTitle: 'Expenses',
   notificationRecipient: 'test@example.com',
   geminiBackend: 'gemini_api',
-  geminiModel: 'gemini-3.5-flash',
+  geminiModel: 'gemini-3.6-flash',
   vertexLocation: 'global',
   agentsPolicy: 'policy',
   timeZone: 'Europe/Rome',

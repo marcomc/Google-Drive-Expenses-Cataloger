@@ -278,7 +278,7 @@ run_bootstrap() {
     --arg spreadsheetTitle 'HoStello - Spese' \
     --arg notificationRecipient "${notification_recipient}" \
     --arg geminiBackend "${gemini_backend}" \
-    --arg geminiModel 'gemini-3.5-flash' \
+    --arg geminiModel 'gemini-3.6-flash' \
     --arg vertexLocation 'global' \
     --arg geminiSecretVersion "${secret_version}" \
     --arg agentsPolicy "$(<"${PROJECT_ROOT}/AGENTS.example.md")" \
