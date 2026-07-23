@@ -29,7 +29,6 @@ function bootstrapCatalogerInstallation(options) {
     properties.getProperty(CONFIG.PROPERTY_KEYS.AUTO_PROCESSING) === 'true' ? 'true' : 'false';
   const values = {
     GEMINI_BACKEND: validated.geminiBackend,
-    GEMINI_MODEL: validated.geminiModel,
     GEMINI_AUTO_VERTEX_FALLBACK: String(validated.autoVertexFallback),
     VERTEX_AI_LOCATION: validated.vertexLocation,
     NOTIFICATION_RECIPIENT: validated.notificationRecipient,
@@ -40,6 +39,9 @@ function bootstrapCatalogerInstallation(options) {
     AUTO_PROCESSING: automaticProcessing,
     INSTALLER_COMPLETED_AT: new Date().toISOString()
   };
+  if (validated.geminiModel) {
+    values.GEMINI_MODEL = validated.geminiModel;
+  }
   if (validated.geminiApiKey) {
     values.GEMINI_API_KEY = validated.geminiApiKey;
   }
@@ -102,7 +104,7 @@ function validateInstallerOptions_(options) {
     throw new Error('Installer options must be an object.');
   }
   ['projectId', 'rootFolderId', 'spreadsheetTitle', 'notificationRecipient',
-    'geminiBackend', 'geminiModel', 'vertexLocation', 'agentsPolicy', 'timeZone'].forEach(
+    'geminiBackend', 'vertexLocation', 'agentsPolicy', 'timeZone'].forEach(
     function (key) {
       if (!String(options[key] || '').trim()) {
         throw new Error('Installer option is required: ' + key);
@@ -112,6 +114,9 @@ function validateInstallerOptions_(options) {
   if (['gemini_api', 'vertex_ai'].indexOf(options.geminiBackend) < 0) {
     throw new Error('geminiBackend must be gemini_api or vertex_ai.');
   }
+  if (!String(options.geminiModel || '').trim() && options.reuseExistingGeminiApiKey !== true) {
+    throw new Error('geminiModel is required for a new installation.');
+  }
   validateAutomationConfig_(options.automationConfig);
   const automationConfig = normalizeAutomationConfig_(options.automationConfig);
   return {
@@ -119,7 +124,7 @@ function validateInstallerOptions_(options) {
     spreadsheetId: String(options.spreadsheetId || '').trim(),
     spreadsheetTitle: String(options.spreadsheetTitle).trim(),
     notificationRecipient: String(options.notificationRecipient).trim(),
-    geminiBackend: options.geminiBackend, geminiModel: String(options.geminiModel).trim(),
+    geminiBackend: options.geminiBackend, geminiModel: String(options.geminiModel || '').trim(),
     autoVertexFallback: options.autoVertexFallback === true,
     vertexLocation: String(options.vertexLocation).trim(),
     automationConfig: automationConfig, agentsPolicy: String(options.agentsPolicy),

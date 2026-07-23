@@ -10,6 +10,7 @@ readonly STATE_DIR="${PROJECT_ROOT}/.installer"
 readonly STATE_FILE="${STATE_DIR}/state.json"
 readonly CONFIG_FILE="${PROJECT_ROOT}/config.local.json"
 readonly CLASP=(npx --yes @google/clasp@3.3.0)
+readonly DEFAULT_GEMINI_MODEL='gemini-3.6-flash'
 
 # shellcheck source=lib/install-common.sh
 source "${PROJECT_ROOT}/scripts/lib/install-common.sh"
@@ -51,8 +52,7 @@ install_check() {
 }
 
 ensure_local_config() {
-  local locale
-  local recipient
+  local locale recipient
   if [[ ! -f "${CONFIG_FILE}" ]]; then
     cp "${PROJECT_ROOT}/config.example.json" "${CONFIG_FILE}"
     die "Created config.local.json; replace its placeholders, then rerun."
@@ -80,12 +80,14 @@ collect_settings() {
   local recipient
   local root_folder_id
   local spreadsheet_id
-  local configured_time_zone
+  local configured_time_zone configured_gemini_model
   ensure_local_config
   : "${GDEC_PROJECT_NAME:=Google Drive Expenses Cataloger}"
   : "${GDEC_GEMINI_MODE:=gemini_api_with_vertex_fallback}"
   configured_time_zone="$(jq -r '.time_zone // empty' "${CONFIG_FILE}")"
+  configured_gemini_model="$(jq -r '.gemini_model // empty' "${CONFIG_FILE}")"
   : "${GDEC_TIME_ZONE:=${configured_time_zone:-Europe/Rome}}"
+  : "${GDEC_GEMINI_MODEL:=${configured_gemini_model:-${DEFAULT_GEMINI_MODEL}}}"
   recipient="$(jq -r '.notification_recipient' "${CONFIG_FILE}")"
   : "${GDEC_NOTIFICATION_RECIPIENT:=${recipient}}"
   : "${GDEC_ROOT_FOLDER:=}"
@@ -114,12 +116,14 @@ collect_settings() {
   state_set geminiMode "${GDEC_GEMINI_MODE}"
   state_set timeZone "${GDEC_TIME_ZONE}"
   state_set notificationRecipient "${GDEC_NOTIFICATION_RECIPIENT}"
+  state_set geminiModel "${GDEC_GEMINI_MODEL}"
   state_set billingAccountId "${GDEC_BILLING_ACCOUNT_ID#billingAccounts/}"
+  state_set installationState 'provisioning'
 }
 
 push_script_with_configured_time_zone() (
   local time_zone manifest_backup manifest_tmp
-  time_zone="$(state_get '.timeZone')"
+  time_zone="${1:-$(state_get '.timeZone')}"
   manifest_backup="$(mktemp "${PROJECT_ROOT}/appsscript.backup.XXXXXX")"
   manifest_tmp="$(mktemp "${PROJECT_ROOT}/appsscript.XXXXXX")"
   if ! cp "${PROJECT_ROOT}/appsscript.json" "${manifest_backup}"; then
@@ -244,7 +248,7 @@ transfer_gemini_key() {
 
 run_bootstrap() {
   local options parameters secret_version mode project_id root_folder_id spreadsheet_id
-  local notification_recipient time_zone config_json gemini_backend auto_vertex_fallback
+  local notification_recipient time_zone config_json gemini_backend gemini_model auto_vertex_fallback
   local bootstrap_output bootstrap_status preserve_automatic_processing reuse_existing_gemini_api_key
   [[ -f "${STATE_FILE}" ]] || die 'No resumable installer state exists.'
   reuse_existing_gemini_api_key="${1:-false}"
@@ -262,7 +266,12 @@ run_bootstrap() {
   root_folder_id="$(state_get '.rootFolderId')"
   spreadsheet_id="$(state_get '.spreadsheetId')"
   notification_recipient="$(state_get '.notificationRecipient')"
-  time_zone="$(state_get '.timeZone')"
+  if [[ "$#" -ge 3 ]]; then
+    gemini_model="$3"
+  else
+    gemini_model="$(state_get '.geminiModel // "gemini-3.5-flash"')"
+  fi
+  time_zone="${4:-$(state_get '.timeZone')}"
   config_json="$(jq --arg time_zone "${time_zone}" '.time_zone = $time_zone' "${CONFIG_FILE}")"
   gemini_backend='gemini_api'
   auto_vertex_fallback='false'
@@ -278,7 +287,7 @@ run_bootstrap() {
     --arg spreadsheetTitle 'HoStello - Spese' \
     --arg notificationRecipient "${notification_recipient}" \
     --arg geminiBackend "${gemini_backend}" \
-    --arg geminiModel 'gemini-3.5-flash' \
+    --arg geminiModel "${gemini_model}" \
     --arg vertexLocation 'global' \
     --arg geminiSecretVersion "${secret_version}" \
     --arg agentsPolicy "$(<"${PROJECT_ROOT}/AGENTS.example.md")" \
@@ -289,7 +298,7 @@ run_bootstrap() {
     --argjson autoVertexFallback "${auto_vertex_fallback}" \
     '{projectId:$projectId,rootFolderId:$rootFolderId,spreadsheetId:$spreadsheetId,spreadsheetTitle:$spreadsheetTitle,notificationRecipient:$notificationRecipient,geminiBackend:$geminiBackend,geminiModel:$geminiModel,vertexLocation:$vertexLocation,geminiSecretVersion:$geminiSecretVersion,agentsPolicy:$agentsPolicy,timeZone:$timeZone,automationConfig:$automationConfig,reuseExistingGeminiApiKey:$reuseExistingGeminiApiKey,preserveAutomaticProcessing:$preserveAutomaticProcessing,autoVertexFallback:$autoVertexFallback}')"
   parameters="$(jq -cn --argjson options "${options}" '[ $options ]')"
-  push_script_with_configured_time_zone
+  push_script_with_configured_time_zone "${time_zone}"
   ensure_api_executable_deployment
   set +e
   bootstrap_output="$(
@@ -305,17 +314,112 @@ run_bootstrap() {
   fi
 }
 
-reconfigure_time_zone() {
-  local configured_time_zone
-  [[ -f "${STATE_FILE}" ]] || die 'No completed installer state exists.'
+get_desired_settings() {
+  local configured_time_zone configured_gemini_model legacy_gemini_model
   ensure_local_config
   configured_time_zone="$(jq -r '.time_zone // empty' "${CONFIG_FILE}")"
+  configured_gemini_model="$(jq -r '.gemini_model // empty' "${CONFIG_FILE}")"
   : "${GDEC_TIME_ZONE:=${configured_time_zone:-Europe/Rome}}"
+  legacy_gemini_model="$(jq -r '.geminiModel // empty' "${STATE_FILE}")"
+  : "${GDEC_GEMINI_MODEL:=${configured_gemini_model:-${legacy_gemini_model}}}"
   # shellcheck disable=SC2310 # Predicate functions intentionally signal invalid input with nonzero status.
   is_valid_time_zone "${GDEC_TIME_ZONE}" || die 'Invalid GDEC_TIME_ZONE.'
+}
+
+set_configured_gemini_model() {
+  local gemini_model="$1"
+  local temporary_file
+  temporary_file="$(mktemp "${PROJECT_ROOT}/config.local.XXXXXX")"
+  jq --arg gemini_model "${gemini_model}" '.gemini_model = $gemini_model' \
+    "${CONFIG_FILE}" >"${temporary_file}"
+  mv "${temporary_file}" "${CONFIG_FILE}"
+}
+
+installation_needs_resume() {
+  local deployment_id gemini_secret_version installation_state mode project_id secret_name
+  local secret_probe secret_probe_status
+  installation_state="$(jq -r '.installationState // empty' "${STATE_FILE}")" ||
+    die 'Installer state is invalid.'
+  [[ "${installation_state}" == 'complete' ]] && return 1
+  mode="$(state_get '.geminiMode')"
+  deployment_id="$(jq -r '.deploymentId // empty' "${STATE_FILE}")"
+  [[ "${mode}" == 'vertex_ai' ]] && [[ -z "${deployment_id}" ]] && return 0
+  gemini_secret_version="$(jq -r '.geminiSecretVersion // empty' "${STATE_FILE}")"
+  [[ -n "${gemini_secret_version}" ]] || return 1
+  project_id="$(state_get '.projectId')"
+  secret_name="${gemini_secret_version%/versions/*}"
+  set +e
+  secret_probe="$(gcloud secrets describe "${secret_name##*/}" --project="${project_id}" 2>&1)"
+  secret_probe_status=$?
+  set -e
+  [[ "${secret_probe_status}" -eq 0 ]] && return 0
+  if [[ "${secret_probe}" == *'NOT_FOUND'* || "${secret_probe}" == *'not found'* ]]; then
+    return 1
+  fi
+  printf '%s\n' "${secret_probe}" >&2
+  die 'Could not determine whether the temporary Gemini secret is still available.'
+}
+
+installation_needs_provisioning() {
+  local gemini_secret_version installation_state mode
+  installation_state="$(jq -r '.installationState // empty' "${STATE_FILE}")" ||
+    die 'Installer state is invalid.'
+  if [[ "${installation_state}" == 'provisioning' ]]; then
+    gemini_secret_version="$(jq -r '.geminiSecretVersion // empty' "${STATE_FILE}")"
+    [[ -z "${gemini_secret_version}" ]]
+    return
+  fi
+  [[ "${installation_state}" == 'pending' ]] || return 1
+  mode="$(state_get '.geminiMode')"
+  [[ "${mode}" == 'vertex_ai' ]] && return 1
+  gemini_secret_version="$(jq -r '.geminiSecretVersion // empty' "${STATE_FILE}")"
+  [[ -z "${gemini_secret_version}" ]]
+}
+
+provision_initial_installation() {
+  ensure_cloud_project
+  create_gemini_api_key
+  create_and_push_script
+  transfer_gemini_key
+  state_set installationState 'pending'
+  info 'Source was pushed. Complete the clasp browser authorization, then rerun make install.'
+}
+
+reconcile_installation() {
+  [[ -f "${STATE_FILE}" ]] || die 'No existing installer state exists.'
+  get_desired_settings
+  run_bootstrap true true "${GDEC_GEMINI_MODEL}" "${GDEC_TIME_ZONE}"
   state_set timeZone "${GDEC_TIME_ZONE}"
-  run_bootstrap true true
-  info "Timezone reconfigured: ${GDEC_TIME_ZONE}"
+  if [[ -n "${GDEC_GEMINI_MODEL}" ]]; then
+    state_set geminiModel "${GDEC_GEMINI_MODEL}"
+  fi
+  state_set installationState 'complete'
+  info "Installation reconciled with Gemini model ${GDEC_GEMINI_MODEL} and timezone ${GDEC_TIME_ZONE}."
+}
+
+require_completed_installation() {
+  local installation_state
+  installation_state="$(jq -r '.installationState // empty' "${STATE_FILE}")" ||
+    die 'Installer state is invalid.'
+  if [[ "${installation_state}" == 'pending' || "${installation_state}" == 'provisioning' ]]; then
+    die 'Installation is incomplete; run make install after the browser handoff.'
+  fi
+  # shellcheck disable=SC2310 # This predicate distinguishes resumable and completed installations.
+  if installation_needs_resume; then
+    die 'Installation is incomplete; run make install after the browser handoff.'
+  fi
+}
+
+apply_installer_defaults() {
+  [[ -f "${STATE_FILE}" ]] || die 'No existing installer state exists.'
+  require_completed_installation
+  get_desired_settings
+  run_bootstrap true true "${DEFAULT_GEMINI_MODEL}" "${GDEC_TIME_ZONE}"
+  state_set timeZone "${GDEC_TIME_ZONE}"
+  state_set geminiModel "${DEFAULT_GEMINI_MODEL}"
+  state_set installationState 'complete'
+  set_configured_gemini_model "${DEFAULT_GEMINI_MODEL}"
+  info 'Current installer defaults were applied successfully.'
 }
 
 remove_transfer_secret() {
@@ -326,6 +430,7 @@ remove_transfer_secret() {
   project_id="$(state_get '.projectId')"
   secret_name="${secret_version%/versions/*}"
   gcloud secrets delete "${secret_name##*/}" --project="${project_id}" --quiet
+  state_set geminiSecretVersion ''
 }
 
 reset_state() {
@@ -338,36 +443,45 @@ main() {
   case "${MODE}" in
     check) install_check; return ;;
     reset) reset_state; return ;;
+    apply-defaults)
+      install_check
+      apply_installer_defaults
+      return
+      ;;
     install) ;;
-    resume)
-      install_check
-      ensure_local_config
-      run_bootstrap
-      remove_transfer_secret
-      info 'Installation complete. The Gemini API key remains only in Bitwarden and Script Properties.'
-      return
-      ;;
-    reconfigure-time-zone)
-      install_check
-      reconfigure_time_zone
-      return
-      ;;
     *) die 'Unsupported mode.' ;;
   esac
   install_check
+  if [[ -f "${STATE_FILE}" ]]; then
+    # shellcheck disable=SC2310 # This predicate distinguishes interrupted provisioning from browser-handoff resume.
+    if installation_needs_provisioning; then
+      provision_initial_installation
+      return
+    fi
+    # shellcheck disable=SC2310 # This predicate distinguishes resumable and completed installations.
+    if installation_needs_resume; then
+      get_desired_settings
+      run_bootstrap false false "${GDEC_GEMINI_MODEL}" "${GDEC_TIME_ZONE}"
+      remove_transfer_secret
+      state_set timeZone "${GDEC_TIME_ZONE}"
+      if [[ -n "${GDEC_GEMINI_MODEL}" ]]; then
+        state_set geminiModel "${GDEC_GEMINI_MODEL}"
+      fi
+      state_set installationState 'complete'
+      info 'Installation resumed and completed. The Gemini API key remains only in Bitwarden and Script Properties.'
+    else
+      reconcile_installation
+    fi
+    return
+  fi
   collect_settings
-  ensure_cloud_project
-  create_gemini_api_key
-  create_and_push_script
-  transfer_gemini_key
-  info 'Source was pushed. Complete the clasp browser authorization, then rerun with --resume.'
+  provision_initial_installation
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --check) MODE='check' ;;
-    --resume) MODE='resume' ;;
-    --reconfigure-time-zone) MODE='reconfigure-time-zone' ;;
+    --apply-defaults) MODE='apply-defaults' ;;
     --reset) MODE='reset' ;;
     --debug) ;;
     *) die "Unknown option: $1" ;;

@@ -1,6 +1,7 @@
 {
   "locale": "en",
   "time_zone": "Europe/Rome",
+  "gemini_model": "gemini-3.6-flash",
   "intake_keyword": "HoStello",
   "excluded_root_folder_names": [
     "Ricevute",

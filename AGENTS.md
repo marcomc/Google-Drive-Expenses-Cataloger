@@ -89,6 +89,10 @@
   persisted selections, and checkbox validation as one layout contract. During
   a control move, migrate legacy state and remove validation metadata from
   former managed cells.
+- When rendering comparison-year controls, normalize a retained selection
+  against the available ledger years and select every available year when no
+  valid retained selection remains. Preserve valid selections on later
+  refreshes and cover the first-install default with a regression.
 - Every dashboard KPI renderer must explicitly set number formats in every
   value-type branch because content refreshes preserve old formats. For ranked
   bar charts, keep items as category rows in one numeric series and use
@@ -113,6 +117,10 @@
 - Reconfiguration paths must not retry deleted credential-transfer secrets.
   Reuse an existing stable credential only through an explicit, validated
   bootstrap option and test the default credential backend.
+- When installer defaults are written to durable Script Properties, preserve
+  the selected value during unrelated reconfiguration. Provide an explicit
+  migration command for deliberate default upgrades, and test success and
+  failure state transitions for both paths.
 - Keep Apps Script mocks faithful to the supported runtime API: do not invent
   enum members, and make service stubs reject missing required arguments.
 

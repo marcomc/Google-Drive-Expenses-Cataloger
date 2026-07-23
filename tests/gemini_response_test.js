@@ -288,4 +288,26 @@ assert.throws(
 );
 assert.equal(fetchCount, 3);
 assert.deepEqual(sleepDelays, [500, 1500]);
+
+const generationRequests = [];
+context.UrlFetchApp = {
+  fetch: (url, options) => {
+    generationRequests.push({ url, options: JSON.parse(JSON.stringify(options)) });
+    return httpResponse(200, generationResponse('STOP', '{"accepted":true}'));
+  }
+};
+properties.set('GEMINI_API_KEY', 'test-key');
+context.callGeminiDeveloperApi_([{ text: 'classify this expense' }]);
+properties.set('GOOGLE_CLOUD_PROJECT_ID', 'test-project');
+context.ScriptApp = { getOAuthToken: () => 'test-token' };
+context.callVertexAi_([{ text: 'classify this expense' }]);
+assert.equal(generationRequests.length, 2);
+generationRequests.forEach(({ options }) => {
+  assert.deepEqual(options.payload && JSON.parse(options.payload).generationConfig, {
+    responseMimeType: 'application/json', maxOutputTokens: 16384
+  }, 'Gemini 3.6 requests must omit deprecated sampling parameters');
+});
+assert.match(generationRequests[0].url, /models\/gemini-3\.6-flash:generateContent$/);
+assert.match(generationRequests[1].url,
+  /publishers\/google\/models\/gemini-3\.6-flash:generateContent$/);
 console.log('Gemini response tests passed.');
