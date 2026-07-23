@@ -1049,5 +1049,15 @@ context.bootstrapCatalogerInstallation({
   preserveAutomaticProcessing: true
 });
 assert.equal(properties.get('AUTO_PROCESSING'), 'true');
+properties.set('GEMINI_MODEL', 'gemini-3.5-flash-manual');
+context.bootstrapCatalogerInstallation({
+  ...options,
+  geminiBackend: 'vertex_ai',
+  geminiModel: '',
+  reuseExistingGeminiApiKey: true,
+  preserveAutomaticProcessing: true
+});
+assert.equal(properties.get('GEMINI_MODEL'), 'gemini-3.5-flash-manual',
+  'legacy reconciliation must preserve a model that was selected in Script Properties');
 
 console.log('installer tests passed');

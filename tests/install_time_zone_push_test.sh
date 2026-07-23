@@ -38,6 +38,8 @@ elif [[ "$*" == 'secrets describe deleted-transfer-secret --project=test-project
 elif [[ "$*" == 'secrets describe completed-transfer-secret --project=test-project' ]]; then
   printf '%s\n' 'completed installations must not probe transfer secrets' >&2
   exit 23
+elif [[ "${TEST_PROVISIONING_RETRY:-false}" == 'true' ]]; then
+  exit 0
 fi
 EOF
   cat >"${fixture_dir}/fake-bin/npx" <<'EOF'
@@ -45,6 +47,7 @@ EOF
 set -euo pipefail
 case " $* " in
   *' --version '*) printf '%s\n' '3.3.0' ;;
+  *' create --type standalone '*) printf '%s\n' '{"scriptId":"test-script"}' >.clasp.json ;;
   *' push --force '*)
     jq -e --arg expected_time_zone "${TEST_EXPECT_TIME_ZONE:-Pacific/Auckland}" \
       '.timeZone == $expected_time_zone' appsscript.json >/dev/null
@@ -55,7 +58,7 @@ case " $* " in
   *' --json deploy '*) printf '%s\n' '{"deploymentId":"test-deployment"}' ;;
   *' --json run bootstrapCatalogerInstallation '*)
     jq -e --arg expected_time_zone "${TEST_EXPECT_TIME_ZONE:-Pacific/Auckland}" \
-      --arg expected_model "${TEST_EXPECT_MODEL:-gemini-3.5-flash}" \
+      --arg expected_model "${TEST_EXPECT_MODEL-gemini-3.5-flash}" \
       '.[0].geminiSecretVersion == "" and
       .[0].reuseExistingGeminiApiKey == true and
       .[0].preserveAutomaticProcessing == true and
@@ -123,10 +126,10 @@ jq 'del(.gemini_model)' "${success_fixture}/config.local.json" >"${success_fixtu
 mv "${success_fixture}/config.local.migrated.json" "${success_fixture}/config.local.json"
 (
   cd "${success_fixture}"
-  PATH="${success_fixture}/fake-bin:${PATH}" ./scripts/install.sh
+  PATH="${success_fixture}/fake-bin:${PATH}" TEST_EXPECT_MODEL='' ./scripts/install.sh
 )
 assert_manifest_restored "${success_fixture}"
-assert_installer_model "${success_fixture}" 'gemini-3.5-flash'
+assert_installer_model "${success_fixture}" ''
 assert_installation_state "${success_fixture}"
 assert_no_configured_model "${success_fixture}"
 

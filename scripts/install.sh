@@ -266,7 +266,11 @@ run_bootstrap() {
   root_folder_id="$(state_get '.rootFolderId')"
   spreadsheet_id="$(state_get '.spreadsheetId')"
   notification_recipient="$(state_get '.notificationRecipient')"
-  gemini_model="${3:-$(state_get '.geminiModel // "gemini-3.5-flash"')}"
+  if [[ "$#" -ge 3 ]]; then
+    gemini_model="$3"
+  else
+    gemini_model="$(state_get '.geminiModel // "gemini-3.5-flash"')"
+  fi
   time_zone="${4:-$(state_get '.timeZone')}"
   config_json="$(jq --arg time_zone "${time_zone}" '.time_zone = $time_zone' "${CONFIG_FILE}")"
   gemini_backend='gemini_api'
@@ -316,7 +320,7 @@ get_desired_settings() {
   configured_time_zone="$(jq -r '.time_zone // empty' "${CONFIG_FILE}")"
   configured_gemini_model="$(jq -r '.gemini_model // empty' "${CONFIG_FILE}")"
   : "${GDEC_TIME_ZONE:=${configured_time_zone:-Europe/Rome}}"
-  legacy_gemini_model="$(state_get '.geminiModel // "gemini-3.5-flash"')"
+  legacy_gemini_model="$(jq -r '.geminiModel // empty' "${STATE_FILE}")"
   : "${GDEC_GEMINI_MODEL:=${configured_gemini_model:-${legacy_gemini_model}}}"
   # shellcheck disable=SC2310 # Predicate functions intentionally signal invalid input with nonzero status.
   is_valid_time_zone "${GDEC_TIME_ZONE}" || die 'Invalid GDEC_TIME_ZONE.'
@@ -337,7 +341,6 @@ installation_needs_resume() {
   installation_state="$(jq -r '.installationState // empty' "${STATE_FILE}")" ||
     die 'Installer state is invalid.'
   [[ "${installation_state}" == 'complete' ]] && return 1
-  [[ "${installation_state}" == 'pending' ]] && return 0
   mode="$(state_get '.geminiMode')"
   deployment_id="$(jq -r '.deploymentId // empty' "${STATE_FILE}")"
   [[ "${mode}" == 'vertex_ai' ]] && [[ -z "${deployment_id}" ]] && return 0
@@ -357,17 +360,42 @@ installation_needs_resume() {
   die 'Could not determine whether the temporary Gemini secret is still available.'
 }
 
+installation_needs_provisioning() {
+  local gemini_secret_version installation_state
+  installation_state="$(jq -r '.installationState // empty' "${STATE_FILE}")" ||
+    die 'Installer state is invalid.'
+  [[ "${installation_state}" == 'pending' ]] || return 1
+  gemini_secret_version="$(jq -r '.geminiSecretVersion // empty' "${STATE_FILE}")"
+  [[ -z "${gemini_secret_version}" ]]
+}
+
+provision_initial_installation() {
+  ensure_cloud_project
+  create_gemini_api_key
+  create_and_push_script
+  transfer_gemini_key
+  info 'Source was pushed. Complete the clasp browser authorization, then rerun make install.'
+}
+
 reconcile_installation() {
   [[ -f "${STATE_FILE}" ]] || die 'No existing installer state exists.'
   get_desired_settings
   run_bootstrap true true "${GDEC_GEMINI_MODEL}" "${GDEC_TIME_ZONE}"
   state_set timeZone "${GDEC_TIME_ZONE}"
-  state_set geminiModel "${GDEC_GEMINI_MODEL}"
+  if [[ -n "${GDEC_GEMINI_MODEL}" ]]; then
+    state_set geminiModel "${GDEC_GEMINI_MODEL}"
+  fi
   state_set installationState 'complete'
   info "Installation reconciled with Gemini model ${GDEC_GEMINI_MODEL} and timezone ${GDEC_TIME_ZONE}."
 }
 
 require_completed_installation() {
+  local installation_state
+  installation_state="$(jq -r '.installationState // empty' "${STATE_FILE}")" ||
+    die 'Installer state is invalid.'
+  if [[ "${installation_state}" == 'pending' ]]; then
+    die 'Installation is incomplete; run make install after the browser handoff.'
+  fi
   # shellcheck disable=SC2310 # This predicate distinguishes resumable and completed installations.
   if installation_needs_resume; then
     die 'Installation is incomplete; run make install after the browser handoff.'
@@ -417,6 +445,11 @@ main() {
   esac
   install_check
   if [[ -f "${STATE_FILE}" ]]; then
+    # shellcheck disable=SC2310 # This predicate distinguishes interrupted provisioning from browser-handoff resume.
+    if installation_needs_provisioning; then
+      provision_initial_installation
+      return
+    fi
     # shellcheck disable=SC2310 # This predicate distinguishes resumable and completed installations.
     if installation_needs_resume; then
       ensure_local_config
@@ -430,11 +463,7 @@ main() {
     return
   fi
   collect_settings
-  ensure_cloud_project
-  create_gemini_api_key
-  create_and_push_script
-  transfer_gemini_key
-  info 'Source was pushed. Complete the clasp browser authorization, then rerun make install.'
+  provision_initial_installation
 }
 
 while [[ $# -gt 0 ]]; do
