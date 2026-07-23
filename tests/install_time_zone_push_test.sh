@@ -116,7 +116,8 @@ migration_fixture="$(mktemp -d)"
 migration_failure_fixture="$(mktemp -d)"
 probe_failure_fixture="$(mktemp -d)"
 complete_fixture="$(mktemp -d)"
-trap 'rm -rf "${success_fixture}" "${failure_fixture}" "${migration_fixture}" "${migration_failure_fixture}" "${probe_failure_fixture}" "${complete_fixture}"' EXIT
+pending_defaults_fixture="$(mktemp -d)"
+trap 'rm -rf "${success_fixture}" "${failure_fixture}" "${migration_fixture}" "${migration_failure_fixture}" "${probe_failure_fixture}" "${complete_fixture}" "${pending_defaults_fixture}"' EXIT
 make_fixture "${success_fixture}"
 jq 'del(.gemini_model)' "${success_fixture}/config.local.json" >"${success_fixture}/config.local.migrated.json"
 mv "${success_fixture}/config.local.migrated.json" "${success_fixture}/config.local.json"
@@ -141,6 +142,24 @@ set -e
 [[ "${failure_status}" -eq 17 ]]
 assert_manifest_restored "${failure_fixture}"
 assert_installer_model "${failure_fixture}" ''
+
+make_fixture "${pending_defaults_fixture}"
+jq '.installationState = "pending"' "${pending_defaults_fixture}/.installer/state.json" \
+  >"${pending_defaults_fixture}/.installer/state.updated.json"
+mv "${pending_defaults_fixture}/.installer/state.updated.json" \
+  "${pending_defaults_fixture}/.installer/state.json"
+set +e
+(
+  cd "${pending_defaults_fixture}"
+  PATH="${pending_defaults_fixture}/fake-bin:${PATH}" ./scripts/install.sh --apply-defaults
+) >"${pending_defaults_fixture}/output.log" 2>&1
+pending_defaults_status=$?
+set -e
+[[ "${pending_defaults_status}" -eq 1 ]]
+grep -q 'Installation is incomplete; run make install after the browser handoff.' \
+  "${pending_defaults_fixture}/output.log"
+assert_manifest_restored "${pending_defaults_fixture}"
+assert_installer_model "${pending_defaults_fixture}" ''
 
 make_fixture "${complete_fixture}"
 jq '.installationState = "complete" |

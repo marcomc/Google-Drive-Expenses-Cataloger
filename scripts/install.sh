@@ -367,8 +367,16 @@ reconcile_installation() {
   info "Installation reconciled with Gemini model ${GDEC_GEMINI_MODEL} and timezone ${GDEC_TIME_ZONE}."
 }
 
+require_completed_installation() {
+  # shellcheck disable=SC2310 # This predicate distinguishes resumable and completed installations.
+  if installation_needs_resume; then
+    die 'Installation is incomplete; run make install after the browser handoff.'
+  fi
+}
+
 apply_installer_defaults() {
   [[ -f "${STATE_FILE}" ]] || die 'No existing installer state exists.'
+  require_completed_installation
   get_desired_settings
   run_bootstrap true true "${DEFAULT_GEMINI_MODEL}" "${GDEC_TIME_ZONE}"
   state_set timeZone "${GDEC_TIME_ZONE}"
