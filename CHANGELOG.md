@@ -5,6 +5,14 @@ All notable changes to this project are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [Semantic Versioning](https://semver.org/).
 
+## [0.3.1] - 2026-08-01
+
+### Added
+
+- Document OAuth `invalid_grant` recovery for CI and add a deployment preflight
+  diagnostic when the stored refresh token is invalid or expired.
+- Add regression coverage for the invalid OAuth refresh-token path.
+
 ## [0.3.0] - 2026-07-23 - Gemini 3.6 Flash
 
 ### Changed

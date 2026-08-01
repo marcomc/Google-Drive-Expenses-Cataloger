@@ -64,8 +64,12 @@ for argument in "$@"; do
 done
 test "${auth_file}" = "${RUNNER_TEMP}/clasp-auth/.clasprc.json"
 test -f "${auth_file}"
-case "${command_name}" in
+  case "${command_name}" in
   deployments)
+    if [[ "${TEST_DEPLOYMENT_SCENARIO}" == 'oauth-invalid-grant' ]]; then
+      printf '%s\n' 'invalid_grant' >&2
+      exit 9
+    fi
     deployments_count="$(cat "${TEST_CLASP_DEPLOYMENTS_COUNT_FILE}")"
     deployments_count="$((deployments_count + 1))"
     printf '%s\n' "${deployments_count}" >"${TEST_CLASP_DEPLOYMENTS_COUNT_FILE}"
@@ -329,6 +333,25 @@ run_fixture "${refreshed_token_dir}" "${CURRENT_SHA}" "${CURRENT_SHA}" \
   'deployment-1' 'deployment-1' true false \
   "${CURRENT_SHA},${CURRENT_SHA},${CURRENT_SHA}" true 99 valid 0 none \
   'deployment-1' 4 'deployment-1' 5 false true expired-test-token refreshed-test-token
+
+invalid_grant_dir="${TEST_ROOT}/oauth-invalid-grant"
+mkdir -p "${invalid_grant_dir}"
+set +e
+(
+  set -e
+  run_fixture "${invalid_grant_dir}" "${CURRENT_SHA}" "${CURRENT_SHA}" \
+    'deployment-1' 'deployment-1' true false \
+    "${CURRENT_SHA},${CURRENT_SHA},${CURRENT_SHA}" true 99 \
+    'oauth-invalid-grant'
+) >"${invalid_grant_dir}/output.log" 2>&1
+invalid_grant_status=$?
+set -e
+if [[ "${invalid_grant_status}" -eq 0 ]]; then
+  printf '%s\n' 'An invalid OAuth refresh token was accepted.' >&2
+  exit 1
+fi
+grep -q 'OAuth refresh token is invalid or expired' \
+  "${invalid_grant_dir}/output.log"
 
 failed_push_dir="${TEST_ROOT}/failed-push"
 mkdir -p "${failed_push_dir}"
