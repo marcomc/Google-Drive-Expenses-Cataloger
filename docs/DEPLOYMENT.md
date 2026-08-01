@@ -5,6 +5,7 @@
 - [Flow](#flow)
 - [Required secrets](#required-secrets)
 - [Secret handoff](#secret-handoff)
+- [Renew expired OAuth authorization](#renew-expired-oauth-authorization)
 - [Repository settings](#repository-settings)
 - [Related documentation](#related-documentation)
 
@@ -91,6 +92,58 @@ jq -r '.deploymentId' .installer/state.json | pbcopy
 Save the values as `CLASP_AUTH_JSON`, `CLASP_PROJECT_JSON`, and
 `APPS_SCRIPT_DEPLOYMENT_ID`, respectively. Once they are saved, set the GitHub
 environment secrets from the local files; do not commit any of them.
+
+## Renew expired OAuth authorization
+
+If the deployment reports `invalid_grant`, the stored refresh token is invalid
+or expired. For an external OAuth app left in `Testing`, Google can expire
+authorizations requesting non-basic scopes after seven days. This is an OAuth
+credential problem, not a reason to recreate the Apps Script project or stable
+deployment.
+
+1. In Google Cloud Console, open **Google Auth Platform > Audience** for the
+   project and move an external app to **In production**. This changes consent
+   publication status only; it does not publish Apps Script code or change Drive
+   and spreadsheet sharing.
+2. Under **Clients**, reuse the existing **Desktop** OAuth client used by CI.
+   If its secret cannot be downloaded, add a replacement secret. Keep the old
+   secret enabled until the replacement passes validation; remove the old one
+   only afterward if it is no longer needed.
+3. Create an isolated `clasp` authorization with the Apps Script owner account:
+
+   ```bash
+   REPAIR_DIR="$(mktemp -d)"
+   chmod 700 "$REPAIR_DIR"
+   clasp -A "$REPAIR_DIR/.clasprc.json" login \
+     --creds "/secure/path/oauth-client.json" \
+     --use-project-scopes \
+     --include-clasp-scopes
+   chmod 600 "$REPAIR_DIR/.clasprc.json"
+   ```
+
+   If Google displays the unverified-app warning, the owner must explicitly
+   approve the app through **Advanced**. Never use the global clasp profile for
+   CI credentials.
+4. Before replacing the GitHub secret, verify the target with the same
+   deployment API checks used by CI. Confirm the configured script ID and stable
+   deployment ID, a numbered version, the `appsscript` manifest, one
+   `EXECUTION_API` entry point, and `MYSELF` access.
+5. Replace only `CLASP_AUTH_JSON` in the production environment:
+
+   ```bash
+   gh secret set CLASP_AUTH_JSON --env production <"$REPAIR_DIR/.clasprc.json"
+   gh secret list --env production --json name,updatedAt \
+     --jq '.[] | select(.name == "CLASP_AUTH_JSON")'
+   ```
+
+   Do not change `CLASP_PROJECT_JSON` or `APPS_SCRIPT_DEPLOYMENT_ID` unless
+   independent validation proves that they are wrong.
+6. Remove the temporary credential material. With explicit approval, rerun only
+   the failed workflow job using `gh run rerun <run-id> --failed`; this step can
+   publish Apps Script source.
+
+Never print the OAuth client secret, authorization code, refresh token, or full
+`.clasprc.json`. Do not pass credentials in command arguments or commit them.
 
 ## Repository settings
 
