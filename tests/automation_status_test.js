@@ -116,8 +116,8 @@ vm.runInContext(fs.readFileSync('Installer.gs', 'utf8'), context);
 vm.runInContext(fs.readFileSync('ExpensesCataloging.gs', 'utf8'), context);
 
 assert.equal(context.getSetupStatus().automaticProcessingEnabled, true);
-assert.equal(context.getSetupStatus().applicationVersion, '0.3.0');
-assert.equal(context.getApplicationVersion(), '0.3.0');
+assert.equal(context.getSetupStatus().applicationVersion, '0.3.1');
+assert.equal(context.getApplicationVersion(), '0.3.1');
 
 let fallbackUntil = Date.now() + 60000;
 properties.set('GEMINI_AUTO_VERTEX_FALLBACK', 'true');
