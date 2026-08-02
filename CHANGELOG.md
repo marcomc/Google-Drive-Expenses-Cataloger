@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [Semantic Versioning](https://semver.org/).
 
+## [0.3.2] - 2026-08-02
+
+### Fixed
+
+- Preserve the source-period annotation of an already-classified Tricount
+  opening-balance control while rebuilding monthly balance views. This keeps
+  late-dated `Bilancio in io mese` markers in their intended month instead of
+  reassigning them to the preceding calendar month.
+
 ## [0.3.1] - 2026-08-01
 
 ### Added

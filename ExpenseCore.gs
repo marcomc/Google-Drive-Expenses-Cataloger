@@ -691,7 +691,8 @@ function normalizeStoredBalanceControlRecord_(record) {
   }
   const transactionType = mapTricountTransactionType_(record.sourceNativeType, record.description,
     record.sourceCustomCategory);
-  return Object.assign({}, record, { transactionType: transactionType });
+  return String(record.transactionType || '') === transactionType ? record :
+    Object.assign({}, record, { transactionType: transactionType });
 }
 
 function getHistoricalBalanceTransferCandidates_(checks) {
