@@ -269,6 +269,25 @@ assert.equal(sourcePeriods.ineligible, undefined, 'an ineligible source has no m
 assert.equal(context.getOpeningBalanceMonthKey_(sourceChecks[0].record), '2025-04',
   'opening-marker correction uses the mapped period for a configured non-default keyword');
 
+const lateMonthOpeningChecks = context.mergeLedgerOpeningBalanceChecks_([{
+  record: {
+    date: '2025-05-31', currency: 'EUR', payer: 'Marco', amount: 318.82,
+    sourceFileId: 'june-source', sourceFileName: 'transactions-hostello-202506.json',
+    sourceNativeType: 'BALANCE', sourceCustomCategory: 'Bilancio ⚖️',
+    description: 'Bilancio in io mese', transactionType: 'opening_balance',
+    allocations: [{ participant: 'Laura', amount: 318.82 }]
+  }
+}], []);
+const lateMonthSourcePeriods = context.buildLedgerBalanceSourcePeriods_([
+  { id: 'june-source', name: 'transactions-hostello-202506.json' }
+], lateMonthOpeningChecks, { intake_keyword: 'HoStello' });
+context.applyLedgerBalancePeriods_(
+  lateMonthOpeningChecks.flatMap(context.getOpeningBalanceRecordsFromCheck_), lateMonthSourcePeriods
+);
+assert.deepEqual(JSON.parse(JSON.stringify(context.buildDeclaredMonthlyBalanceControls_(lateMonthOpeningChecks)
+  .map((row) => row.slice(0, 2)))), [[2025, 5], [2025, 5]],
+'a late month-opening marker must retain its source period when balance controls are rebuilt');
+
 const sourceOrderedLedger = [{
   id: 'november-movement', date: '2023-11-15', year: 2023, month: 11, currency: 'EUR',
   payer: 'Laura', amount: 791.48, transactionType: 'expense', sourceFile: 'november.json', sourceRow: 1,

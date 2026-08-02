@@ -45,6 +45,8 @@
   the expected script, deployment, manifest, and version identities plus
   exactly one owner-only Execution API entry point. Reject mixed or public
   entry-point configurations.
+- For each release version, reconcile the changelog with `CONFIG.APP_VERSION`,
+  runtime status output, and exact-version status regressions before review.
 - Run post-promotion trigger repair under the same workload-aware lock as
   normal processing, within its configured execution budget. Invoke the
   configured stable deployment explicitly and validate the provider's actual
