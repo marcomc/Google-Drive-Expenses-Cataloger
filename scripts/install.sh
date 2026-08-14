@@ -269,7 +269,7 @@ run_bootstrap() {
   if [[ "$#" -ge 3 ]]; then
     gemini_model="$3"
   else
-    gemini_model="$(state_get '.geminiModel // "gemini-3.7-flash"')"
+    gemini_model="$(state_get ".geminiModel // \"${DEFAULT_GEMINI_MODEL}\"")"
   fi
   time_zone="${4:-$(state_get '.timeZone')}"
   config_json="$(jq --arg time_zone "${time_zone}" '.time_zone = $time_zone' "${CONFIG_FILE}")"

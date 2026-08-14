@@ -127,6 +127,8 @@
   the selected value during unrelated reconfiguration. Provide an explicit
   migration command for deliberate default upgrades, and test success and
   failure state transitions for both paths.
+- Derive installer fallback values from canonical default constants instead of
+  duplicating model or configuration literals in resume paths.
 - Keep Apps Script mocks faithful to the supported runtime API: do not invent
   enum members, and make service stubs reject missing required arguments.
 
