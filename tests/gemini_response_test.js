@@ -305,9 +305,9 @@ assert.equal(generationRequests.length, 2);
 generationRequests.forEach(({ options }) => {
   assert.deepEqual(options.payload && JSON.parse(options.payload).generationConfig, {
     responseMimeType: 'application/json', maxOutputTokens: 16384
-  }, 'Gemini 3.6 requests must omit deprecated sampling parameters');
+  }, 'Gemini 3.7 requests must omit deprecated sampling parameters');
 });
-assert.match(generationRequests[0].url, /models\/gemini-3\.6-flash:generateContent$/);
+assert.match(generationRequests[0].url, /models\/gemini-3\.7-flash:generateContent$/);
 assert.match(generationRequests[1].url,
-  /publishers\/google\/models\/gemini-3\.6-flash:generateContent$/);
+  /publishers\/google\/models\/gemini-3\.7-flash:generateContent$/);
 console.log('Gemini response tests passed.');

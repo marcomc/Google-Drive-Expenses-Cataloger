@@ -61,7 +61,7 @@ case " $* " in
   *' --json run bootstrapCatalogerInstallation '*)
     if [[ "${TEST_EXPECT_TRANSFER_RESUME:-false}" == 'true' ]]; then
       jq -e --arg expected_time_zone "${TEST_EXPECT_TIME_ZONE:-Pacific/Auckland}" \
-        --arg expected_model "${TEST_EXPECT_MODEL-gemini-3.5-flash}" \
+        --arg expected_model "${TEST_EXPECT_MODEL-gemini-3.7-flash}" \
         '.[0].geminiSecretVersion != "" and
         .[0].reuseExistingGeminiApiKey == false and
         .[0].preserveAutomaticProcessing == false and
@@ -69,7 +69,7 @@ case " $* " in
         .[0].timeZone == $expected_time_zone' <<<"${!#}" >/dev/null
     else
       jq -e --arg expected_time_zone "${TEST_EXPECT_TIME_ZONE:-Pacific/Auckland}" \
-        --arg expected_model "${TEST_EXPECT_MODEL-gemini-3.5-flash}" \
+        --arg expected_model "${TEST_EXPECT_MODEL-gemini-3.7-flash}" \
         '.[0].geminiSecretVersion == "" and
         .[0].reuseExistingGeminiApiKey == true and
         .[0].preserveAutomaticProcessing == true and
@@ -115,7 +115,7 @@ assert_configured_model() {
   local actual_model fixture_dir
   fixture_dir="$1"
   actual_model="$(jq -r '.gemini_model // empty' "${fixture_dir}/config.local.json")"
-  [[ "${actual_model}" == 'gemini-3.6-flash' ]]
+  [[ "${actual_model}" == 'gemini-3.7-flash' ]]
 }
 
 assert_no_configured_model() {
@@ -205,7 +205,7 @@ mv "${vertex_resume_fixture}/.installer/state.updated.json" \
   "${vertex_resume_fixture}/.installer/state.json"
 (
   cd "${vertex_resume_fixture}"
-  PATH="${vertex_resume_fixture}/fake-bin:${PATH}" TEST_EXPECT_MODEL='gemini-3.6-flash' ./scripts/install.sh
+  PATH="${vertex_resume_fixture}/fake-bin:${PATH}" TEST_EXPECT_MODEL='gemini-3.7-flash' ./scripts/install.sh
 )
 assert_manifest_restored "${vertex_resume_fixture}"
 assert_installation_state "${vertex_resume_fixture}"
@@ -216,7 +216,7 @@ jq '.time_zone = "Europe/Paris" | .gemini_model = "gemini-2.5-flash"' \
 mv "${provisioned_resume_fixture}/config.local.updated.json" \
   "${provisioned_resume_fixture}/config.local.json"
 jq '.installationState = "provisioning" |
-  .geminiModel = "gemini-3.5-flash" |
+  .geminiModel = "gemini-3.6-flash" |
   .geminiSecretVersion = "projects/test-project/secrets/provisioned-transfer-secret/versions/latest"' \
   "${provisioned_resume_fixture}/.installer/state.json" >"${provisioned_resume_fixture}/.installer/state.updated.json"
 mv "${provisioned_resume_fixture}/.installer/state.updated.json" \
@@ -238,10 +238,10 @@ jq '.installationState = "complete" |
 mv "${complete_fixture}/.installer/state.updated.json" "${complete_fixture}/.installer/state.json"
 (
   cd "${complete_fixture}"
-  PATH="${complete_fixture}/fake-bin:${PATH}" TEST_EXPECT_MODEL='gemini-3.6-flash' ./scripts/install.sh
+  PATH="${complete_fixture}/fake-bin:${PATH}" TEST_EXPECT_MODEL='gemini-3.7-flash' ./scripts/install.sh
 )
 assert_manifest_restored "${complete_fixture}"
-assert_installer_model "${complete_fixture}" 'gemini-3.6-flash'
+assert_installer_model "${complete_fixture}" 'gemini-3.7-flash'
 assert_installation_state "${complete_fixture}"
 
 make_fixture "${probe_failure_fixture}"
@@ -261,11 +261,11 @@ jq 'del(.gemini_model)' "${migration_fixture}/config.local.json" >"${migration_f
 mv "${migration_fixture}/config.local.migrated.json" "${migration_fixture}/config.local.json"
 (
   cd "${migration_fixture}"
-  PATH="${migration_fixture}/fake-bin:${PATH}" TEST_EXPECT_MODEL='gemini-3.6-flash' \
+  PATH="${migration_fixture}/fake-bin:${PATH}" TEST_EXPECT_MODEL='gemini-3.7-flash' \
     ./scripts/install.sh --apply-defaults
 )
 assert_manifest_restored "${migration_fixture}"
-assert_installer_model "${migration_fixture}" 'gemini-3.6-flash'
+assert_installer_model "${migration_fixture}" 'gemini-3.7-flash'
 assert_installation_state "${migration_fixture}"
 assert_configured_model "${migration_fixture}"
 

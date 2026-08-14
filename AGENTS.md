@@ -103,6 +103,10 @@
   Treat month-start and unqualified legacy Tricount `Bilancio` entries as
   opening-balance controls, not spending; retain named non-monthly `BALANCE`
   settlements as transfers.
+- When balance-control normalization already matches a record's classification,
+  return that record unchanged. Clone only for an actual reclassification so
+  later in-place source-period annotations survive rereads and rebuilds; cover
+  a late-dated opening marker whose source period differs from its date.
 - Use one category and one subcategory for an expense, and keep merchant or
   supplier separate. Tags are out of scope until an explicit design change.
 

@@ -10,7 +10,7 @@ readonly STATE_DIR="${PROJECT_ROOT}/.installer"
 readonly STATE_FILE="${STATE_DIR}/state.json"
 readonly CONFIG_FILE="${PROJECT_ROOT}/config.local.json"
 readonly CLASP=(npx --yes @google/clasp@3.3.0)
-readonly DEFAULT_GEMINI_MODEL='gemini-3.6-flash'
+readonly DEFAULT_GEMINI_MODEL='gemini-3.7-flash'
 
 # shellcheck source=lib/install-common.sh
 source "${PROJECT_ROOT}/scripts/lib/install-common.sh"
@@ -269,7 +269,7 @@ run_bootstrap() {
   if [[ "$#" -ge 3 ]]; then
     gemini_model="$3"
   else
-    gemini_model="$(state_get '.geminiModel // "gemini-3.5-flash"')"
+    gemini_model="$(state_get '.geminiModel // "gemini-3.7-flash"')"
   fi
   time_zone="${4:-$(state_get '.timeZone')}"
   config_json="$(jq --arg time_zone "${time_zone}" '.time_zone = $time_zone' "${CONFIG_FILE}")"
