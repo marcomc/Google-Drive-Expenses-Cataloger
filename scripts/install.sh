@@ -321,7 +321,7 @@ get_desired_settings() {
   configured_gemini_model="$(jq -r '.gemini_model // empty' "${CONFIG_FILE}")"
   : "${GDEC_TIME_ZONE:=${configured_time_zone:-Europe/Rome}}"
   legacy_gemini_model="$(jq -r '.geminiModel // empty' "${STATE_FILE}")"
-  : "${GDEC_GEMINI_MODEL:=${configured_gemini_model:-${legacy_gemini_model}}}"
+  : "${GDEC_GEMINI_MODEL:=${configured_gemini_model:-${legacy_gemini_model:-${DEFAULT_GEMINI_MODEL}}}}"
   # shellcheck disable=SC2310 # Predicate functions intentionally signal invalid input with nonzero status.
   is_valid_time_zone "${GDEC_TIME_ZONE}" || die 'Invalid GDEC_TIME_ZONE.'
 }

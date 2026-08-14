@@ -141,10 +141,11 @@ jq 'del(.gemini_model)' "${success_fixture}/config.local.json" >"${success_fixtu
 mv "${success_fixture}/config.local.migrated.json" "${success_fixture}/config.local.json"
 (
   cd "${success_fixture}"
-  PATH="${success_fixture}/fake-bin:${PATH}" TEST_EXPECT_MODEL='' ./scripts/install.sh
+  PATH="${success_fixture}/fake-bin:${PATH}" \
+    TEST_EXPECT_MODEL='gemini-3.7-flash' ./scripts/install.sh
 )
 assert_manifest_restored "${success_fixture}"
-assert_installer_model "${success_fixture}" ''
+assert_installer_model "${success_fixture}" 'gemini-3.7-flash'
 assert_installation_state "${success_fixture}"
 assert_no_configured_model "${success_fixture}"
 
