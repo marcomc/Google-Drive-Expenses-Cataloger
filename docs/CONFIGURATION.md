@@ -18,7 +18,7 @@ bootstrap.
 | --- | --- |
 | `locale` | `en` by default, or `it` for this installation. |
 | `time_zone` | IANA timezone used by Apps Script and the spreadsheet; defaults to `Europe/Rome`. |
-| `gemini_model` | Gemini model ID; defaults to `gemini-3.6-flash`. |
+| `gemini_model` | Gemini model ID; defaults to `gemini-3.7-flash`. |
 | `intake_keyword` | Required marker in every eligible `transactions-*.json` filename; folder names do not qualify a source. |
 | `excluded_root_folder_names` | Direct-root folders that the scanner ignores. |
 | `archive_folder_name` | Archive root: `Imported` for English or `Importazioni` for Italian; legacy `_Imported` is always ignored. |
@@ -46,7 +46,7 @@ processing state.
 | --- | --- |
 | `GEMINI_API_KEY` | Private Gemini Developer API credential. |
 | `GEMINI_BACKEND` | `gemini_api` or `vertex_ai`. |
-| `GEMINI_MODEL` | Model ID; new installations default to `gemini-3.6-flash`. |
+| `GEMINI_MODEL` | Model ID; new installations default to `gemini-3.7-flash`. |
 | `GEMINI_AUTO_VERTEX_FALLBACK` | Enables temporary Vertex fallback after quota exhaustion; disabled unless explicitly selected. |
 | `GOOGLE_CLOUD_PROJECT_ID` | Cataloger Cloud project; it requires billing only for Vertex AI. |
 | `ROOT_FOLDER_ID` | `Spese` folder ID. |

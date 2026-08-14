@@ -10,7 +10,7 @@ readonly STATE_DIR="${PROJECT_ROOT}/.installer"
 readonly STATE_FILE="${STATE_DIR}/state.json"
 readonly CONFIG_FILE="${PROJECT_ROOT}/config.local.json"
 readonly CLASP=(npx --yes @google/clasp@3.3.0)
-readonly DEFAULT_GEMINI_MODEL='gemini-3.6-flash'
+readonly DEFAULT_GEMINI_MODEL='gemini-3.7-flash'
 
 # shellcheck source=lib/install-common.sh
 source "${PROJECT_ROOT}/scripts/lib/install-common.sh"
@@ -269,7 +269,7 @@ run_bootstrap() {
   if [[ "$#" -ge 3 ]]; then
     gemini_model="$3"
   else
-    gemini_model="$(state_get '.geminiModel // "gemini-3.5-flash"')"
+    gemini_model="$(state_get ".geminiModel // \"${DEFAULT_GEMINI_MODEL}\"")"
   fi
   time_zone="${4:-$(state_get '.timeZone')}"
   config_json="$(jq --arg time_zone "${time_zone}" '.time_zone = $time_zone' "${CONFIG_FILE}")"
@@ -321,7 +321,7 @@ get_desired_settings() {
   configured_gemini_model="$(jq -r '.gemini_model // empty' "${CONFIG_FILE}")"
   : "${GDEC_TIME_ZONE:=${configured_time_zone:-Europe/Rome}}"
   legacy_gemini_model="$(jq -r '.geminiModel // empty' "${STATE_FILE}")"
-  : "${GDEC_GEMINI_MODEL:=${configured_gemini_model:-${legacy_gemini_model}}}"
+  : "${GDEC_GEMINI_MODEL:=${configured_gemini_model:-${legacy_gemini_model:-${DEFAULT_GEMINI_MODEL}}}}"
   # shellcheck disable=SC2310 # Predicate functions intentionally signal invalid input with nonzero status.
   is_valid_time_zone "${GDEC_TIME_ZONE}" || die 'Invalid GDEC_TIME_ZONE.'
 }
