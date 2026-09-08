@@ -24,7 +24,8 @@ function getEnglishLocalization_() {
       accountedTotals: 'Accounted totals by currency', reconciliationStatus: 'Reconciliation status',
       sourceDecisions: 'Source-row decisions', sourceTransactionId: 'Source transaction ID',
       sourceNativeType: 'Source transaction type', sourceStatus: 'Source status',
-      sourceCustomCategory: 'Source custom category', allocationDetails: 'Participant allocations',
+      sourceCustomCategory: 'Source custom category', incomeReportingType: 'Income reporting type',
+      allocationDetails: 'Participant allocations',
       exchangeRate: 'Exchange rate', sourceCreatedAt: 'Source created at', sourceUpdatedAt: 'Source updated at'
     },
     initialBalanceConfiguration: {

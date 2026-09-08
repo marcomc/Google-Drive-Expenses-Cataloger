@@ -159,15 +159,24 @@ flowchart LR
 `Dashboard` is a managed reporting surface. It presents KPI cards and five
 charts sourced from formula blocks in the visible, protected `Calculation data`
 sheet (localized as `Dati tecnici` in Italian installations). The source blocks
-recalculate from `Transazioni` when the ledger changes. Spending charts use
-EUR rows whose type is `expense` or signed `income`: an income is a categorized
-refund and reduces its category total. Transfers and opening-balance controls
-remain excluded. The dashboard itself contains only user-facing controls and
-charts; no technical tables are hidden in remote columns.
+recalculate from `Transazioni` when the ledger changes. Spending charts and
+spending KPI cards use EUR `expense` rows and `income` rows whose derived
+income-reporting type is `refund`. Signed income that is pre-existing cash or
+an unrelated receipt remains visible in `Transazioni`, but is excluded from
+spending reports. Transfers and opening-balance controls remain excluded. The
+dashboard itself contains only user-facing controls and charts; no technical
+tables are hidden in remote columns.
 
-The top area has three equally sized, horizontally aligned KPI groups: all-time,
-current-calendar-year, and latest-imported-month spending. The current-year pair
-uses a distinct purple palette; the latest-month pair uses green.
+`Trattamento report entrata` / `Income reporting type` is a controlled ledger
+override with `refund` and `non_spending` values. The importer seeds it
+conservatively and preserves a valid existing value during later repairs, so a
+confirmed purchase refund can be included without treating every incoming
+payment as a reduction in spending.
+
+The top area has six equally sized KPI cards: all-time spending, expense count,
+current-calendar-year spending, current-calendar-year transaction count, latest
+imported month, and latest-month spending. Current-year spending uses a distinct
+purple palette and latest-month cards use green.
 
 Cash settlements recorded in Tricount (for example with the custom category
 `Contanti`) are classified as `transfer`: they remain visible in

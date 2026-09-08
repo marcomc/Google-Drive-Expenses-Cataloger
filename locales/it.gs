@@ -24,7 +24,8 @@ function getItalianLocalization_() {
       accountedTotals: 'Totali contabilizzati per valuta', reconciliationStatus: 'Stato riconciliazione',
       sourceDecisions: 'Decisioni righe sorgente', sourceTransactionId: 'ID transazione sorgente',
       sourceNativeType: 'Tipo transazione sorgente', sourceStatus: 'Stato sorgente',
-      sourceCustomCategory: 'Categoria personalizzata sorgente', allocationDetails: 'Quote partecipanti',
+      sourceCustomCategory: 'Categoria personalizzata sorgente', incomeReportingType: 'Trattamento report entrata',
+      allocationDetails: 'Quote partecipanti',
       exchangeRate: 'Tasso di cambio', sourceCreatedAt: 'Creato nella sorgente', sourceUpdatedAt: 'Aggiornato nella sorgente'
     },
     initialBalanceConfiguration: {

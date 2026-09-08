@@ -91,9 +91,15 @@ Cash settlements between participants (including the Tricount custom category
 balance trajectory but are excluded from household-spending KPIs, summaries,
 and dashboard charts.
 
-Tricount `INCOME` records, including refunds, retain a negative canonical
-amount and allocation sign. They therefore reverse the appropriate participant
-balance effect and reduce the associated household-spending category and total.
+Tricount `INCOME` records retain a negative canonical amount and allocation
+sign. A conservative reporting type separates purchase refunds from funding
+and unrelated receipts. A Tricount custom category exactly named `Rimborso
+acquisto`, or a known current merchant (Amazon, Lidl, or Pro Life) together
+with `rimborso` in the description, seeds `refund`; all other income starts as
+`non_spending`. The ledger's reporting-type value is authoritative after
+import, so an operator can correct or classify another genuine refund without
+a later backfill overwriting it. Every income row remains visible and affects
+participant balances.
 
 ## Initial balances and monthly checks
 
@@ -134,11 +140,11 @@ confrontare` checkboxes for every chart. The monthly-category and top-supplier
 charts sum the selected years; select only one year when a single-year detail is
 needed. A first installation checks all available ledger years so the default
 dashboard shows the complete historical comparison. Top suppliers are always
-ordered by spending, and missing supplier values
-are shown as one localized unspecified-merchant group. Spending charts use EUR
-`expense` and signed `income` rows, so refunds
-reduce their corresponding category. They do not mix currencies or count
-`transfer` and `opening_balance` records.
+ordered by spending, and missing supplier values are shown as one localized
+unspecified-merchant group. Spending charts use EUR `expense` rows plus income
+classified as a purchase `refund`; funding and unrelated receipts remain
+ledger-only. The dashboard does not mix currencies or count `transfer` and
+`opening_balance` records.
 
 The dashboard is a managed Apps Script surface, not a safe home for manual
 content. Its full rebuild behavior and the safe customization boundary are in

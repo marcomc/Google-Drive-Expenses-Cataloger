@@ -35,13 +35,13 @@ assert.deepEqual(JSON.parse(JSON.stringify(context.applyIncomeRefundClassificati
 
 const incomeHeaders = ['Transaction type', 'Category', 'Subcategory', 'Merchant', 'Confidence', 'Rationale',
   'Date', 'Payer', 'Beneficiaries', 'Amount', 'Currency', 'Description', 'Source category',
-  'Source custom category'];
+  'Source custom category', 'Income reporting type'];
 const incomeColumns = Object.fromEntries(incomeHeaders.map((header, index) => [header, index]));
 const incomeRows = [
-  ['income', '', '', '', '', '', '2026-04-01', 'Laura', 'Marco', -25, 'EUR', 'Historic refund', 'OTHER', ''],
+  ['income', '', '', '', '', '', '2026-04-01', 'Laura', 'Marco', -25, 'EUR', 'Historic refund', 'OTHER', '', 'refund'],
   ['income', 'Food and drink', 'Restaurant', 'Bar', 0.9, 'Already categorized', '2026-04-02', 'Laura', 'Marco',
-    -15, 'EUR', 'Known refund', 'FOOD_AND_DRINK', ''],
-  ['expense', '', '', '', '', '', '2026-04-03', 'Marco', 'Laura', 30, 'EUR', 'Expense', 'OTHER', '']
+    -15, 'EUR', 'Known refund', 'FOOD_AND_DRINK', '', 'refund'],
+  ['expense', '', '', '', '', '', '2026-04-03', 'Marco', 'Laura', 30, 'EUR', 'Expense', 'OTHER', '', '']
 ];
 const incomeUpdates = [];
 const incomeTransactions = {
@@ -71,7 +71,7 @@ context.getLocalization_ = () => ({ headers: {
   transactionType: 'Transaction type', category: 'Category', subcategory: 'Subcategory', merchant: 'Merchant',
   confidence: 'Confidence', rationale: 'Rationale', date: 'Date', payer: 'Payer', beneficiaries: 'Beneficiaries',
   amount: 'Amount', currency: 'Currency', description: 'Description', sourceCategory: 'Source category',
-  sourceCustomCategory: 'Source custom category'
+  sourceCustomCategory: 'Source custom category', incomeReportingType: 'Income reporting type'
 }, sheetNames: { dashboard: 'Dashboard' } });
 context.buildExpenseJsonNormalizationPrompt_ = (records) => records;
 context.callGeminiJson_ = (records) => {
@@ -90,7 +90,7 @@ assert.deepEqual(JSON.parse(JSON.stringify(context.categorizeIncomeRefunds())), 
 assert.equal(geminiIncomeCalls, 1);
 assert.equal(incomeUpdates.length, 1);
 assert.deepEqual(incomeRows[0].slice(incomeColumns.Date),
-  ['2026-04-01', 'Laura', 'Marco', -25, 'EUR', 'Historic refund', 'OTHER', ''],
+  ['2026-04-01', 'Laura', 'Marco', -25, 'EUR', 'Historic refund', 'OTHER', '', 'refund'],
   'classification must leave immutable ledger and source values untouched');
 assert.equal(dashboardRefreshes, 1);
 assert.equal(presentationRefreshes, 1);

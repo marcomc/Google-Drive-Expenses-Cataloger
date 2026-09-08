@@ -73,6 +73,46 @@ assert.match(dashboardFormulas[0].formula, allPivotValueColumns,
 assert.match(dashboardFormulas[2].formula,
   /VLOOKUP\(monthIndexes,data,SEQUENCE\(1,COLUMNS\(summary\)-1,2,1\),FALSE\)/,
   'monthly category data must preserve every dynamic pivot column while filling missing months');
+assert.ok(dashboardFormulas.every((specification) =>
+  specification.formula.includes("'income'") ? specification.formula.includes("'refund'") : true),
+  'spending charts may include income only when it is classified as a purchase refund');
+const incomeReportingHeaders = ['Transaction type', 'Source transaction type', 'Description',
+  'Source custom category', 'Income reporting type'];
+const incomeReportingRows = [
+  ['expense', 'NORMAL', 'Spesa', '', 'refund'],
+  ['income', 'INCOME', 'Amazon rimborso', '', ''],
+  ['income', 'INCOME', 'Risparmi delle vacanze', 'Contanti 💶', ''],
+  ['income', 'INCOME', 'Rimborso deposito', '', 'refund']
+];
+let incomeReportingWrite;
+const incomeReportingSheet = {
+  getLastRow: () => incomeReportingRows.length + 1,
+  getRange: (row, column, rowCount, columnCount) => {
+    if (row === 2 && column === 1) {
+      assert.equal(rowCount, incomeReportingRows.length);
+      assert.equal(columnCount, incomeReportingHeaders.length);
+      return { getValues: () => incomeReportingRows };
+    }
+    assert.equal(column, 5);
+    return { setValues: (values) => { incomeReportingWrite = values; } };
+  }
+};
+context.getIncomeReportingType_ = (nativeType, description, customCategory) => {
+  if (String(nativeType).toUpperCase() !== 'INCOME') {
+    return '';
+  }
+  return String(customCategory).includes('Contanti') ? 'non_spending' :
+    (/rimborso/i.test(String(description)) ? 'refund' : 'non_spending');
+};
+assert.equal(context.synchronizeIncomeReportingTypes_(incomeReportingSheet, incomeReportingHeaders, {
+  headers: {
+    transactionType: 'Transaction type', sourceNativeType: 'Source transaction type',
+    description: 'Description', sourceCustomCategory: 'Source custom category',
+    incomeReportingType: 'Income reporting type'
+  }
+}), 3);
+assert.deepEqual(JSON.parse(JSON.stringify(incomeReportingWrite)),
+  [[''], ['refund'], ['non_spending'], ['refund']]);
 const installerSource = fs.readFileSync('Installer.gs', 'utf8');
 const originalRefreshDependencies = {
   withAutomationTriggerLock_: context.withAutomationTriggerLock_,
@@ -867,24 +907,30 @@ assert.deepEqual(
   ['A1', 'A30', 'A60', 'A90', 'A120']
 );
 assert.ok(dashboardData.filter((specification) => !['A30', 'A120'].includes(specification.anchor))
-  .every((specification) => specification.formula.includes("'Transazioni'!A:AD")));
+  .every((specification) => specification.formula.includes("'Transazioni'!A:AE")));
 assert.match(dashboardData.find((specification) => specification.anchor === 'A120').formula,
   /'Transazioni'!M2:M/);
 assert.match(context.getDashboardLatestMonthSpendFormula_('Transazioni'), /SUM\(FILTER/);
-assert.match(context.getDashboardLatestMonthSpendFormula_('Transazioni'), /expense\|income/);
-assert.match(context.getDashboardSpendingSumFormula_('Transazioni'), /SUMIFS\([^)]*"expense"[\s\S]*SUMIFS\([^)]*"income"/);
-assert.match(context.getDashboardSpendingCountFormula_('Transazioni'), /COUNTIFS\([^)]*"expense"[\s\S]*COUNTIFS\([^)]*"income"/);
+assert.match(context.getDashboardLatestMonthSpendFormula_('Transazioni'), /="expense"/);
+assert.match(context.getDashboardLatestMonthSpendFormula_('Transazioni'), /J2:J="income"/);
+assert.match(context.getDashboardLatestMonthSpendFormula_('Transazioni'), /AE2:AE="refund"/);
+assert.match(context.getDashboardSpendingSumFormula_('Transazioni'), /SUMIFS\([^)]*"expense"/);
+assert.match(context.getDashboardSpendingSumFormula_('Transazioni'), /"income"[^)]*AE:AE[^)]*"refund"/);
+assert.match(context.getDashboardSpendingCountFormula_('Transazioni'), /COUNTIFS\([^)]*"expense"/);
+assert.doesNotMatch(context.getDashboardSpendingCountFormula_('Transazioni'), /income/);
 assert.match(context.getDashboardCurrentYearSpendFormula_('Transazioni'), /YEAR\(TODAY\(\)\)/);
-assert.match(context.getDashboardCurrentYearSpendFormula_('Transazioni'), /SUMIFS\([^)]*"expense"[\s\S]*SUMIFS\([^)]*"income"/);
-assert.match(context.getDashboardCurrentYearCountFormula_('Transazioni'), /YEAR\(TODAY\(\)\)/);
-assert.match(context.getDashboardCurrentYearCountFormula_('Transazioni'), /COUNTIFS\([^)]*"expense"[\s\S]*COUNTIFS\([^)]*"income"/);
+assert.match(context.getDashboardCurrentYearSpendFormula_('Transazioni'), /SUMIFS\([^)]*"expense"/);
+assert.match(context.getDashboardCurrentYearSpendFormula_('Transazioni'), /"income"[^)]*AE:AE[^)]*"refund"/);
+assert.match(context.getDashboardCurrentYearCountFormula_('Transazioni'), /COUNTIFS\([^)]*"expense"/);
+assert.doesNotMatch(context.getDashboardCurrentYearCountFormula_('Transazioni'), /income/);
 assert.match(installerSource, /else \{\s*valueCell\.setNumberFormat\('#,##0'\);\s*\}/,
   'count KPI cards must reset a currency format inherited from a previous layout');
-assert.ok(dashboardData.every((specification) => {
-  if (specification.anchor === 'A30') return specification.formula.includes('"income"');
-  if (specification.anchor === 'A120') return specification.formula.includes("Col5 = 'income'");
-  return specification.formula.includes("J = 'income'");
-}));
+assert.match(dashboardData.find((specification) => specification.anchor === 'A1').formula,
+  /J = 'income' and AE = 'refund'/);
+assert.match(dashboardData.find((specification) => specification.anchor === 'A30').formula,
+  /"income"[^)]*AE:AE[^)]*"refund"/);
+assert.match(dashboardData.find((specification) => specification.anchor === 'A120').formula,
+  /Col5 = 'income' and Col6 = 'refund'/);
 
 properties.clear();
 assert.throws(

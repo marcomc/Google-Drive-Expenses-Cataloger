@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [Semantic Versioning](https://semver.org/).
 
+## [0.4.1] - Unreleased - handle refunds better
+
+### Fixed
+
+- Distinguish purchase refunds from funding and unrelated income in dashboard
+  reporting. Refunds reduce the relevant KPIs, categories, payer totals,
+  supplier rankings, and monthly/annual charts; pre-existing cash and other
+  receipts remain ledger-only.
+
 ## [0.4.0] - 2026-08-14 - Gemini 3.7 Flash
 
 ### Changed

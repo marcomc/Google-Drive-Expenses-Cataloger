@@ -187,6 +187,7 @@ function normalizeTricountJsonEntry_(entry, sourceRow, file, folder) {
     currency: currency,
     description: description,
     transactionType: mapTricountTransactionType_(sourceNativeType, description, sourceCustomCategory),
+    incomeReportingType: getIncomeReportingType_(sourceNativeType, description, sourceCustomCategory),
     allocations: allocations,
     exchangeRate: normalizeTricountExchangeRate_(entry.exchange_rate),
     sourceCreatedAt: String(entry.created || ''),
@@ -297,6 +298,27 @@ function mapTricountTransactionType_(sourceNativeType, description, customCatego
     return 'income';
   }
   return 'expense';
+}
+
+/**
+ * Seeds the reporting type for known purchase-refund sources. The persisted
+ * ledger value is authoritative after import, so a user can correct or extend
+ * this conservative initial classification without it being overwritten.
+ */
+function getIncomeReportingType_(sourceNativeType, description, customCategory) {
+  if (String(sourceNativeType || '').toUpperCase() !== 'INCOME') {
+    return '';
+  }
+  if (isTricountCashSettlementCategory_(customCategory)) {
+    return 'non_spending';
+  }
+  const custom = String(customCategory || '').trim();
+  const text = String(description || '');
+  if (/^rimborso acquisto$/i.test(custom) ||
+    (/\brimborso\b/i.test(text) && /\b(amazon|lidl|pro\s*life)\b/i.test(text))) {
+    return 'refund';
+  }
+  return 'non_spending';
 }
 
 function isTricountUnqualifiedBalanceMarker_(description, customCategory) {
