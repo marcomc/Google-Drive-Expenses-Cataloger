@@ -63,7 +63,8 @@ function categorizeIncomeRefunds() {
       currency: localization.headers.currency,
       description: localization.headers.description,
       sourceCategory: localization.headers.sourceCategory,
-      sourceCustomCategory: localization.headers.sourceCustomCategory
+      sourceCustomCategory: localization.headers.sourceCustomCategory,
+      incomeReportingType: localization.headers.incomeReportingType
     };
     const columns = {};
     Object.keys(requiredHeaders).forEach(function (key) {
@@ -81,6 +82,7 @@ function categorizeIncomeRefunds() {
         return { row: row, ledgerRow: index + 2 };
       }).filter(function (entry) {
         return entry.row[columns.transactionType] === 'income' &&
+          entry.row[columns.incomeReportingType] === 'refund' &&
           !isConfiguredIncomeRefundCategory_(entry.row[columns.category], config);
       });
     const batchSize = CONFIG.TRICOUNT_JSON_NORMALIZATION_BATCH_SIZE;
@@ -1106,7 +1108,8 @@ function loadDriveAgentsPolicy_(root) {
 function normalizeExpenseJsonWithAi_(records, file, folder, policy, config, recursiveAttachmentSearch,
   stageController) {
   const factualNonSpendingRecords = records.filter(function (record) {
-    return record.transactionType !== 'expense' && record.transactionType !== 'income';
+    return record.transactionType !== 'expense' &&
+      !(record.transactionType === 'income' && record.incomeReportingType === 'refund');
   }).map(function (record) {
     return Object.assign({}, record, {
       category: '', subcategory: '', merchant: '', confidence: 1,
@@ -1114,11 +1117,11 @@ function normalizeExpenseJsonWithAi_(records, file, folder, policy, config, recu
       conflict: false
     });
   });
-  // Income rows are refunds against a household category.  They share the
-  // expense-classification path so the dashboard can subtract them from that
-  // category instead of emitting an uncategorized negative amount.
+  // Only confirmed purchase refunds share the expense-classification path so
+  // the dashboard can subtract them from the associated household category.
   const factualSpendingRecords = records.filter(function (record) {
-    return record.transactionType === 'expense' || record.transactionType === 'income';
+    return record.transactionType === 'expense' ||
+      (record.transactionType === 'income' && record.incomeReportingType === 'refund');
   });
   const normalized = [];
   const batchSize = CONFIG.TRICOUNT_JSON_NORMALIZATION_BATCH_SIZE;

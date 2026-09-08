@@ -568,6 +568,10 @@ function synchronizeIncomeReportingTypes_(sheet, headers, localization) {
     if (String(row[columns.transactionType] || '') !== 'income') {
       return [''];
     }
+    const current = String(row[columns.incomeReportingType] || '');
+    if (current === 'refund' || current === 'non_spending') {
+      return [current];
+    }
     return [getIncomeReportingType_(row[columns.sourceNativeType] || 'INCOME',
       row[columns.description], row[columns.sourceCustomCategory])];
   });
@@ -1178,7 +1182,8 @@ function getDashboardChartSourceRange_(sheet, startRow, endRow, columnCount) {
 }
 
 function getDashboardSpendingTypeFilter_(typeRange, incomeReportingTypeRange) {
-  return '((' + typeRange + '="expense")+(' + incomeReportingTypeRange + '="refund"))';
+  return '((' + typeRange + '="expense")+((' + typeRange + '="income")*(' +
+    incomeReportingTypeRange + '="refund")))';
 }
 
 function getDashboardLatestMonthSpendFormula_(transactionsName) {

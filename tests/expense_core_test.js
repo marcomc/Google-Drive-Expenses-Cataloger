@@ -182,6 +182,9 @@ assert.deepEqual(JSON.parse(JSON.stringify(historicalBalanceTransfers.map((recor
   'historical non-monthly BALANCE settlements must be recoverable as transfers');
 assert.equal(context.mapTricountTransactionType_('INCOME', 'Rimborso acquisto', ''), 'income');
 assert.equal(context.getIncomeReportingType_('INCOME', 'Amazon rimborso acquisto', ''), 'refund');
+assert.equal(context.getIncomeReportingType_('INCOME', 'Rimborso deposito', ''), 'non_spending');
+assert.equal(context.getIncomeReportingType_('INCOME', 'Reso non descritto', ''), 'non_spending');
+assert.equal(context.getIncomeReportingType_('INCOME', 'Reso non descritto', 'Rimborso acquisto'), 'refund');
 assert.equal(context.getIncomeReportingType_('INCOME', 'Risparmi delle vacanze', 'Contanti 💶'),
   'non_spending');
 assert.equal(context.getIncomeReportingType_('INCOME', 'Lorenzo - pagamento gruppo', ''),
@@ -214,7 +217,7 @@ const incomeEntry = JSON.parse(JSON.stringify(
   tricountJson.Response[0].Registry.all_registry_entry[0].RegistryEntry
 ));
 incomeEntry.type_transaction = 'INCOME';
-incomeEntry.description = 'Rimborso condiviso';
+incomeEntry.description = 'Amazon rimborso condiviso';
 incomeEntry.amount.value = '410.00';
 incomeEntry.membership_owned.RegistryMembershipNonUser.alias.display_name = 'Laura';
 incomeEntry.allocations[0].amount.value = '205.00';

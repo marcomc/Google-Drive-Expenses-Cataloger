@@ -348,7 +348,11 @@ assert.deepEqual(resumedBatchRecords.map(record => record.merchant), ['amazon', 
 
 const incomeRefundRecord = {
   sourceTransactionId: 'income-refund', transactionType: 'income', amount: -10,
-  description: 'Rimborso spesa grocery'
+  incomeReportingType: 'refund', description: 'Rimborso spesa grocery'
+};
+const nonSpendingIncomeRecord = {
+  sourceTransactionId: 'income-funding', transactionType: 'income', amount: -10,
+  incomeReportingType: 'non_spending', description: 'Rimborso deposito'
 };
 const transferRecord = {
   sourceTransactionId: 'cash-settlement', transactionType: 'transfer', amount: 10
@@ -364,13 +368,15 @@ context.callGeminiJson_ = prompt => {
   }] };
 };
 const categorizedIncome = nativeNormalizeExpenseJsonWithAi(
-  [incomeRefundRecord, transferRecord], file('income-json', 'transactions-hostello-income.json'),
+  [incomeRefundRecord, nonSpendingIncomeRecord, transferRecord], file('income-json', 'transactions-hostello-income.json'),
   folder('income-folder', 'Income'), '', { categories: { Groceries: ['Supermarket'] } }, true, null
 );
 assert.equal(incomeClassificationCalls, 1);
 assert.equal(categorizedIncome.find(record => record.sourceTransactionId === 'income-refund').category,
   'Groceries');
 assert.equal(categorizedIncome.find(record => record.sourceTransactionId === 'income-refund').amount, -10);
+assert.equal(categorizedIncome.find(record => record.sourceTransactionId === 'income-funding').category, '');
+assert.equal(categorizedIncome.find(record => record.sourceTransactionId === 'income-funding').merchant, '');
 assert.equal(categorizedIncome.find(record => record.sourceTransactionId === 'cash-settlement').category, '');
 assert.equal(context.isConfiguredIncomeRefundCategory_('Groceries', {
   categories: { Groceries: ['Supermarket'] }

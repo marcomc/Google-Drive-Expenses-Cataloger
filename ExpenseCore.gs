@@ -301,9 +301,9 @@ function mapTricountTransactionType_(sourceNativeType, description, customCatego
 }
 
 /**
- * Marks the small subset of INCOME entries that reverse a recorded purchase.
- * Cash reserves and unrelated receipts remain in the ledger and balance views,
- * but never affect household-spending reporting.
+ * Seeds the reporting type for known purchase-refund sources. The persisted
+ * ledger value is authoritative after import, so a user can correct or extend
+ * this conservative initial classification without it being overwritten.
  */
 function getIncomeReportingType_(sourceNativeType, description, customCategory) {
   if (String(sourceNativeType || '').toUpperCase() !== 'INCOME') {
@@ -312,7 +312,13 @@ function getIncomeReportingType_(sourceNativeType, description, customCategory) 
   if (isTricountCashSettlementCategory_(customCategory)) {
     return 'non_spending';
   }
-  return /\brimborso\b/i.test(String(description || '')) ? 'refund' : 'non_spending';
+  const custom = String(customCategory || '').trim();
+  const text = String(description || '');
+  if (/^rimborso acquisto$/i.test(custom) ||
+    (/\brimborso\b/i.test(text) && /\b(amazon|lidl|pro\s*life)\b/i.test(text))) {
+    return 'refund';
+  }
+  return 'non_spending';
 }
 
 function isTricountUnqualifiedBalanceMarker_(description, customCategory) {

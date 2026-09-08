@@ -92,10 +92,13 @@ balance trajectory but are excluded from household-spending KPIs, summaries,
 and dashboard charts.
 
 Tricount `INCOME` records retain a negative canonical amount and allocation
-sign. A deterministic reporting type separates purchase refunds from funding
-and unrelated receipts: descriptions containing `rimborso` are `refund` and
-reduce household-spending categories and totals; pre-existing cash and all
-other income are `non_spending`. Every income row remains visible and affects
+sign. A conservative reporting type separates purchase refunds from funding
+and unrelated receipts. A Tricount custom category exactly named `Rimborso
+acquisto`, or a known current merchant (Amazon, Lidl, or Pro Life) together
+with `rimborso` in the description, seeds `refund`; all other income starts as
+`non_spending`. The ledger's reporting-type value is authoritative after
+import, so an operator can correct or classify another genuine refund without
+a later backfill overwriting it. Every income row remains visible and affects
 participant balances.
 
 ## Initial balances and monthly checks

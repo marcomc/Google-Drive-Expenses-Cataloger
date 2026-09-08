@@ -79,9 +79,10 @@ assert.ok(dashboardFormulas.every((specification) =>
 const incomeReportingHeaders = ['Transaction type', 'Source transaction type', 'Description',
   'Source custom category', 'Income reporting type'];
 const incomeReportingRows = [
-  ['expense', 'NORMAL', 'Spesa', '', ''],
+  ['expense', 'NORMAL', 'Spesa', '', 'refund'],
   ['income', 'INCOME', 'Amazon rimborso', '', ''],
-  ['income', 'INCOME', 'Risparmi delle vacanze', 'Contanti 💶', 'refund']
+  ['income', 'INCOME', 'Risparmi delle vacanze', 'Contanti 💶', ''],
+  ['income', 'INCOME', 'Rimborso deposito', '', 'refund']
 ];
 let incomeReportingWrite;
 const incomeReportingSheet = {
@@ -109,8 +110,9 @@ assert.equal(context.synchronizeIncomeReportingTypes_(incomeReportingSheet, inco
     description: 'Description', sourceCustomCategory: 'Source custom category',
     incomeReportingType: 'Income reporting type'
   }
-}), 2);
-assert.deepEqual(JSON.parse(JSON.stringify(incomeReportingWrite)), [[''], ['refund'], ['non_spending']]);
+}), 3);
+assert.deepEqual(JSON.parse(JSON.stringify(incomeReportingWrite)),
+  [[''], ['refund'], ['non_spending'], ['refund']]);
 const installerSource = fs.readFileSync('Installer.gs', 'utf8');
 const originalRefreshDependencies = {
   withAutomationTriggerLock_: context.withAutomationTriggerLock_,
@@ -910,6 +912,7 @@ assert.match(dashboardData.find((specification) => specification.anchor === 'A12
   /'Transazioni'!M2:M/);
 assert.match(context.getDashboardLatestMonthSpendFormula_('Transazioni'), /SUM\(FILTER/);
 assert.match(context.getDashboardLatestMonthSpendFormula_('Transazioni'), /="expense"/);
+assert.match(context.getDashboardLatestMonthSpendFormula_('Transazioni'), /J2:J="income"/);
 assert.match(context.getDashboardLatestMonthSpendFormula_('Transazioni'), /AE2:AE="refund"/);
 assert.match(context.getDashboardSpendingSumFormula_('Transazioni'), /SUMIFS\([^)]*"expense"/);
 assert.match(context.getDashboardSpendingSumFormula_('Transazioni'), /"income"[^)]*AE:AE[^)]*"refund"/);

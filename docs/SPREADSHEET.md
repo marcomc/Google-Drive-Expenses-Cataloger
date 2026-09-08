@@ -167,6 +167,12 @@ spending reports. Transfers and opening-balance controls remain excluded. The
 dashboard itself contains only user-facing controls and charts; no technical
 tables are hidden in remote columns.
 
+`Trattamento report entrata` / `Income reporting type` is a controlled ledger
+override with `refund` and `non_spending` values. The importer seeds it
+conservatively and preserves a valid existing value during later repairs, so a
+confirmed purchase refund can be included without treating every incoming
+payment as a reduction in spending.
+
 The top area has six equally sized KPI cards: all-time spending, expense count,
 current-calendar-year spending, current-calendar-year transaction count, latest
 imported month, and latest-month spending. Current-year spending uses a distinct
