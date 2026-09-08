@@ -129,7 +129,7 @@ assert.deepEqual(JSON.parse(JSON.stringify(jsonRecords[0])), {
   sourceTransactionId: 'brasserie-uuid', sourceNativeType: 'NORMAL', sourceStatus: 'ACTIVE',
   sourceCategory: 'FOOD_AND_DRINK', sourceCustomCategory: '', date: '2026-03-29',
   payer: 'Marco', beneficiaries: 'Laura, Marco', amount: 36, currency: 'EUR',
-  description: 'Brasserie - birra e patatine', transactionType: 'expense',
+  description: 'Brasserie - birra e patatine', transactionType: 'expense', incomeReportingType: '',
   allocations: [
     { participant: 'Laura', amount: 29, currency: 'EUR', type: 'AMOUNT', shareRatio: null },
     { participant: 'Marco', amount: 7, currency: 'EUR', type: 'RATIO', shareRatio: 1 }
@@ -181,6 +181,12 @@ assert.deepEqual(JSON.parse(JSON.stringify(historicalBalanceTransfers.map((recor
 ]))), [['tricount:vacanze', 'transfer']],
   'historical non-monthly BALANCE settlements must be recoverable as transfers');
 assert.equal(context.mapTricountTransactionType_('INCOME', 'Rimborso acquisto', ''), 'income');
+assert.equal(context.getIncomeReportingType_('INCOME', 'Amazon rimborso acquisto', ''), 'refund');
+assert.equal(context.getIncomeReportingType_('INCOME', 'Risparmi delle vacanze', 'Contanti 💶'),
+  'non_spending');
+assert.equal(context.getIncomeReportingType_('INCOME', 'Lorenzo - pagamento gruppo', ''),
+  'non_spending');
+assert.equal(context.getIncomeReportingType_('NORMAL', 'Rimborso acquisto', ''), '');
 const sameValueOpeningRecords = context.uniqueOpeningBalanceRecords_([
   { date: '2026-04-01', currency: 'EUR', payer: 'Laura', amount: 50,
     sourceTransactionId: 'opening-a', allocations: [{ participant: 'Marco', amount: 50 }] },
@@ -217,6 +223,7 @@ const incomeRecord = context.normalizeTricountJsonEntry_(incomeEntry, 3,
   { id: 'json-file', name: 'transactions-hostello-202603.json' },
   { id: 'folder-id', name: 'HoStello---202603' });
 assert.equal(incomeRecord.transactionType, 'income');
+assert.equal(incomeRecord.incomeReportingType, 'refund');
 assert.equal(incomeRecord.amount, -410);
 assert.deepEqual(JSON.parse(JSON.stringify(incomeRecord.allocations.map((entry) => entry.amount))),
   [-205, -205]);

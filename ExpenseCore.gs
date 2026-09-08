@@ -187,6 +187,7 @@ function normalizeTricountJsonEntry_(entry, sourceRow, file, folder) {
     currency: currency,
     description: description,
     transactionType: mapTricountTransactionType_(sourceNativeType, description, sourceCustomCategory),
+    incomeReportingType: getIncomeReportingType_(sourceNativeType, description, sourceCustomCategory),
     allocations: allocations,
     exchangeRate: normalizeTricountExchangeRate_(entry.exchange_rate),
     sourceCreatedAt: String(entry.created || ''),
@@ -297,6 +298,21 @@ function mapTricountTransactionType_(sourceNativeType, description, customCatego
     return 'income';
   }
   return 'expense';
+}
+
+/**
+ * Marks the small subset of INCOME entries that reverse a recorded purchase.
+ * Cash reserves and unrelated receipts remain in the ledger and balance views,
+ * but never affect household-spending reporting.
+ */
+function getIncomeReportingType_(sourceNativeType, description, customCategory) {
+  if (String(sourceNativeType || '').toUpperCase() !== 'INCOME') {
+    return '';
+  }
+  if (isTricountCashSettlementCategory_(customCategory)) {
+    return 'non_spending';
+  }
+  return /\brimborso\b/i.test(String(description || '')) ? 'refund' : 'non_spending';
 }
 
 function isTricountUnqualifiedBalanceMarker_(description, customCategory) {

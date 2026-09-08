@@ -91,9 +91,12 @@ Cash settlements between participants (including the Tricount custom category
 balance trajectory but are excluded from household-spending KPIs, summaries,
 and dashboard charts.
 
-Tricount `INCOME` records, including refunds, retain a negative canonical
-amount and allocation sign. They therefore reverse the appropriate participant
-balance effect and reduce the associated household-spending category and total.
+Tricount `INCOME` records retain a negative canonical amount and allocation
+sign. A deterministic reporting type separates purchase refunds from funding
+and unrelated receipts: descriptions containing `rimborso` are `refund` and
+reduce household-spending categories and totals; pre-existing cash and all
+other income are `non_spending`. Every income row remains visible and affects
+participant balances.
 
 ## Initial balances and monthly checks
 
@@ -134,11 +137,11 @@ confrontare` checkboxes for every chart. The monthly-category and top-supplier
 charts sum the selected years; select only one year when a single-year detail is
 needed. A first installation checks all available ledger years so the default
 dashboard shows the complete historical comparison. Top suppliers are always
-ordered by spending, and missing supplier values
-are shown as one localized unspecified-merchant group. Spending charts use EUR
-`expense` and signed `income` rows, so refunds
-reduce their corresponding category. They do not mix currencies or count
-`transfer` and `opening_balance` records.
+ordered by spending, and missing supplier values are shown as one localized
+unspecified-merchant group. Spending charts use EUR `expense` rows plus income
+classified as a purchase `refund`; funding and unrelated receipts remain
+ledger-only. The dashboard does not mix currencies or count `transfer` and
+`opening_balance` records.
 
 The dashboard is a managed Apps Script surface, not a safe home for manual
 content. Its full rebuild behavior and the safe customization boundary are in

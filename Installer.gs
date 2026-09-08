@@ -435,6 +435,7 @@ function initializeInstallerSheets_(spreadsheet, config) {
   migrateInstallerImportAuditHeaders_(spreadsheet, localization);
   const headers = getInstallerTransactionHeaders_(localization);
   const transactions = ensureInstallerSheet_(spreadsheet, localization.sheetNames.transactions, headers);
+  synchronizeIncomeReportingTypes_(transactions, headers, localization);
   const imports = ensureInstallerSheet_(spreadsheet, localization.sheetNames.imports,
     getInstallerImportAuditHeaders_());
   ensureInstallerSheet_(spreadsheet, localization.sheetNames.sourceReconciliations,
@@ -545,7 +546,39 @@ function getInstallerTransactionHeaders_(localization) {
     header.sourceCategory, header.confidence, header.rationale, header.fingerprint,
     header.sourceFolder, header.sourceFile, header.sourceRow, header.importedAt, header.balanceImpact,
     header.sourceTransactionId, header.sourceNativeType, header.sourceStatus, header.sourceCustomCategory,
-    header.allocationDetails, header.exchangeRate, header.sourceCreatedAt, header.sourceUpdatedAt];
+    header.allocationDetails, header.exchangeRate, header.sourceCreatedAt, header.sourceUpdatedAt,
+    header.incomeReportingType];
+}
+
+/** Backfill the reporting treatment for historical INCOME rows without altering their source facts. */
+function synchronizeIncomeReportingTypes_(sheet, headers, localization) {
+  const columns = {
+    transactionType: headers.indexOf(localization.headers.transactionType),
+    sourceNativeType: headers.indexOf(localization.headers.sourceNativeType),
+    description: headers.indexOf(localization.headers.description),
+    sourceCustomCategory: headers.indexOf(localization.headers.sourceCustomCategory),
+    incomeReportingType: headers.indexOf(localization.headers.incomeReportingType)
+  };
+  if (Object.keys(columns).some(function (key) { return columns[key] < 0; }) || sheet.getLastRow() < 2) {
+    return 0;
+  }
+  const rowCount = sheet.getLastRow() - 1;
+  const rows = sheet.getRange(2, 1, rowCount, headers.length).getValues();
+  const values = rows.map(function (row) {
+    if (String(row[columns.transactionType] || '') !== 'income') {
+      return [''];
+    }
+    return [getIncomeReportingType_(row[columns.sourceNativeType] || 'INCOME',
+      row[columns.description], row[columns.sourceCustomCategory])];
+  });
+  const current = rows.map(function (row) { return String(row[columns.incomeReportingType] || ''); });
+  if (values.every(function (value, index) { return value[0] === current[index]; })) {
+    return 0;
+  }
+  sheet.getRange(2, columns.incomeReportingType + 1, rowCount, 1).setValues(values);
+  return values.reduce(function (count, value, index) {
+    return count + (value[0] === current[index] ? 0 : 1);
+  }, 0);
 }
 
 function getBalanceMovementHeaders_(localization) {
@@ -1002,7 +1035,7 @@ function applyDashboardYearChartColors_(dashboard, labels) {
 }
 
 function getDashboardDataSpecifications_(transactionsName, dashboardName, localization) {
-  const ledger = "'" + transactionsName + "'!A:AD";
+  const ledger = "'" + transactionsName + "'!A:AE";
   const dashboard = "'" + String(dashboardName || 'Dashboard').replace(/'/g, "''") + "'!";
   const dashboardLabels = localization && localization.dashboard ? localization.dashboard : {};
   const monthNames = Array.isArray(dashboardLabels.monthNames) ? dashboardLabels.monthNames :
@@ -1021,6 +1054,7 @@ function getDashboardDataSpecifications_(transactionsName, dashboardName, locali
   const selectedMerchantYears = selectedYearPredicate('Col3');
   const selectedYearValues = 'FILTER(' + dashboard + comparisonYearRange + ',' + dashboard +
     comparisonYearCheckboxRange + '=TRUE)';
+  const spendingQueryPredicate = "(J = 'expense' or (J = 'income' and AE = 'refund'))";
   const withoutPivotHeaders = function (query) {
     return 'FILTER(' + query + ',SEQUENCE(ROWS(' + query + '))>1)';
   };
@@ -1050,7 +1084,7 @@ function getDashboardDataSpecifications_(transactionsName, dashboardName, locali
       'values))),"")';
   };
   const annualSummary = 'QUERY(' + ledger +
-    ",\"select C,sum(G) where (J = 'expense' or J = 'income') and H = 'EUR' and (\"&" + selectedYears +
+    ",\"select C,sum(G) where " + spendingQueryPredicate + " and H = 'EUR' and (\"&" + selectedYears +
     "&\") group by C pivot K label sum(G) ''\",1)";
   const annualCategoryValues = 'CHOOSECOLS(data,SEQUENCE(1,COLUMNS(data)-1,2,1))';
   const annualChartRows = 'LET(years,INDEX(data,,1),values,' + annualCategoryValues +
@@ -1061,6 +1095,7 @@ function getDashboardDataSpecifications_(transactionsName, dashboardName, locali
   const transactionAmount = "'" + transactionsName + "'!G:G";
   const transactionCurrency = "'" + transactionsName + "'!H:H";
   const transactionType = "'" + transactionsName + "'!J:J";
+  const transactionIncomeReportingType = "'" + transactionsName + "'!AE:AE";
   const transactionMerchantRows = "'" + transactionsName + "'!M2:M";
   const transactionAmountRows = "'" + transactionsName + "'!G2:G";
   const transactionYearRows = "'" + transactionsName + "'!C2:C";
@@ -1074,7 +1109,8 @@ function getDashboardDataSpecifications_(transactionsName, dashboardName, locali
     .replace(/"/g, '""');
   const merchantSource = '{ARRAYFORMULA(IF(LEN(TRIM(' + transactionMerchantRows + '))=0,"' +
     unspecifiedMerchant + '",' + transactionMerchantRows + ')),' + transactionAmountRows + ',' +
-    transactionYearRows + ',' + transactionCurrencyRows + ',' + transactionTypeRows + '}';
+    transactionYearRows + ',' + transactionCurrencyRows + ',' + transactionTypeRows + ',' +
+    "'" + transactionsName + "'!AE2:AE}";
   const monthlyComparison = '=IFERROR(LET(years,' + selectedYearValues +
     ',monthIndexes,SEQUENCE(12),HSTACK(VSTACK("' +
     (localization && localization.headers && localization.headers.month ? localization.headers.month : 'Month') + '\",' + monthName('monthIndexes') + '),' +
@@ -1082,20 +1118,21 @@ function getDashboardDataSpecifications_(transactionsName, dashboardName, locali
     'SUMIFS(' + transactionAmount + ',' + transactionYear + ',INDEX(years,yearIndex),' +
     transactionMonth + ',monthIndex,' + transactionType + ',"expense",' + transactionCurrency + ',"EUR"),' +
     'SUMIFS(' + transactionAmount + ',' + transactionYear + ',INDEX(years,yearIndex),' +
-    transactionMonth + ',monthIndex,' + transactionType + ',"income",' + transactionCurrency + ',"EUR"))))),"")))';
+    transactionMonth + ',monthIndex,' + transactionType + ',"income",' + transactionIncomeReportingType +
+    ',"refund",' + transactionCurrency + ',"EUR"))))),"")))';
   return [
     { anchor: 'A1', formula: '=IFERROR(LET(summary,' + annualSummary +
       ',data,FILTER(summary,SEQUENCE(ROWS(summary))>1),VSTACK(' + localizedHeaders('summary') + ',' +
       annualChartRows + ')),"")' },
     { anchor: 'A30', formula: monthlyComparison },
     { anchor: 'A60', formula: monthLabels('QUERY(' + ledger +
-      ",\"select D,sum(G) where (J = 'expense' or J = 'income') and H = 'EUR' and (\"&" + selectedYears +
+      ",\"select D,sum(G) where " + spendingQueryPredicate + " and H = 'EUR' and (\"&" + selectedYears +
         '&") group by D pivot K order by D label sum(G) \'\'",1)') },
     { anchor: 'A90', formula: '=QUERY(' + ledger +
-      ",\"select E,sum(G) where (J = 'expense' or J = 'income') and H = 'EUR' and (\"&" + selectedYears +
+      ",\"select E,sum(G) where " + spendingQueryPredicate + " and H = 'EUR' and (\"&" + selectedYears +
       "&\") group by E pivot C order by E label sum(G) ''\",1)" },
     { anchor: 'A120', formula: '=IFERROR(LET(summary,QUERY(' + merchantSource +
-      ",\"select Col1,sum(Col2) where (Col5 = 'expense' or Col5 = 'income') and Col4 = 'EUR' and (\"&" +
+      ",\"select Col1,sum(Col2) where (Col5 = 'expense' or (Col5 = 'income' and Col6 = 'refund')) and Col4 = 'EUR' and (\"&" +
         selectedMerchantYears +
         '&") and Col1 <> \'Unknown\' and Col1 <> \'N/A\' group by Col1 order by sum(Col2) desc' +
         ' limit 20 label sum(Col2) \'\'",0),VSTACK({"' +
@@ -1140,12 +1177,17 @@ function getDashboardChartSourceRange_(sheet, startRow, endRow, columnCount) {
   return sheet.getRange(startRow, 1, endRow - startRow + 1, columnCount);
 }
 
+function getDashboardSpendingTypeFilter_(typeRange, incomeReportingTypeRange) {
+  return '((' + typeRange + '="expense")+(' + incomeReportingTypeRange + '="refund"))';
+}
+
 function getDashboardLatestMonthSpendFormula_(transactionsName) {
   const date = "'" + transactionsName + "'!B2:B";
   const type = "'" + transactionsName + "'!J2:J";
+  const incomeReportingType = "'" + transactionsName + "'!AE2:AE";
   const currency = "'" + transactionsName + "'!H2:H";
   const amount = "'" + transactionsName + "'!G2:G";
-  const spendingType = getDashboardSpendingTypeFilter_(type);
+  const spendingType = getDashboardSpendingTypeFilter_(type, incomeReportingType);
   const latestDate = 'MAX(FILTER(' + date + ',' + spendingType + ',' + currency + '="EUR"))';
   return '=IFERROR(SUM(FILTER(' + amount + ',' + spendingType + ',' + currency +
     '="EUR",YEAR(' + date + ')=YEAR(' + latestDate + '),MONTH(' + date + ')=MONTH(' + latestDate + '))),0)';
@@ -1154,39 +1196,36 @@ function getDashboardLatestMonthSpendFormula_(transactionsName) {
 function getDashboardSpendingSumFormula_(transactionsName) {
   const amount = "'" + transactionsName + "'!G:G";
   const type = "'" + transactionsName + "'!J:J";
+  const incomeReportingType = "'" + transactionsName + "'!AE:AE";
   const currency = "'" + transactionsName + "'!H:H";
   return '=SUM(SUMIFS(' + amount + ',' + type + ',"expense",' + currency + ',"EUR"),' +
-    'SUMIFS(' + amount + ',' + type + ',"income",' + currency + ',"EUR"))';
+    'SUMIFS(' + amount + ',' + type + ',"income",' + incomeReportingType + ',"refund",' +
+    currency + ',"EUR"))';
 }
 
 function getDashboardSpendingCountFormula_(transactionsName) {
   const type = "'" + transactionsName + "'!J:J";
   const currency = "'" + transactionsName + "'!H:H";
-  return '=SUM(COUNTIFS(' + type + ',"expense",' + currency + ',"EUR"),' +
-    'COUNTIFS(' + type + ',"income",' + currency + ',"EUR"))';
+  return '=COUNTIFS(' + type + ',"expense",' + currency + ',"EUR")';
 }
 
 function getDashboardCurrentYearSpendFormula_(transactionsName) {
   const amount = "'" + transactionsName + "'!G:G";
   const year = "'" + transactionsName + "'!C:C";
   const type = "'" + transactionsName + "'!J:J";
+  const incomeReportingType = "'" + transactionsName + "'!AE:AE";
   const currency = "'" + transactionsName + "'!H:H";
   return '=SUM(SUMIFS(' + amount + ',' + type + ',"expense",' + currency + ',"EUR",' +
-    year + ',YEAR(TODAY())),SUMIFS(' + amount + ',' + type + ',"income",' + currency +
-    ',"EUR",' + year + ',YEAR(TODAY())))';
+    year + ',YEAR(TODAY())),SUMIFS(' + amount + ',' + type + ',"income",' + incomeReportingType +
+    ',"refund",' + currency + ',"EUR",' + year + ',YEAR(TODAY())))';
 }
 
 function getDashboardCurrentYearCountFormula_(transactionsName) {
   const year = "'" + transactionsName + "'!C:C";
   const type = "'" + transactionsName + "'!J:J";
   const currency = "'" + transactionsName + "'!H:H";
-  return '=SUM(COUNTIFS(' + type + ',"expense",' + currency + ',"EUR",' + year +
-    ',YEAR(TODAY())),COUNTIFS(' + type + ',"income",' + currency + ',"EUR",' + year +
-    ',YEAR(TODAY())))';
-}
-
-function getDashboardSpendingTypeFilter_(typeRange) {
-  return 'REGEXMATCH(' + typeRange + ',"^(expense|income)$")';
+  return '=COUNTIFS(' + type + ',"expense",' + currency + ',"EUR",' +
+    year + ',YEAR(TODAY()))';
 }
 
 function getDashboardLatestMonthLabelFormula_(transactionsName, monthNames) {
@@ -1196,11 +1235,13 @@ function getDashboardLatestMonthLabelFormula_(transactionsName, monthNames) {
   ];
   const date = "'" + transactionsName + "'!B2:B";
   const type = "'" + transactionsName + "'!J2:J";
+  const incomeReportingType = "'" + transactionsName + "'!AE2:AE";
   const currency = "'" + transactionsName + "'!H2:H";
   const localizedMonths = names.map(function (name) {
     return '"' + String(name).replace(/"/g, '""') + '"';
   }).join(',');
-  return '=IFERROR(LET(latestDate,MAX(FILTER(' + date + ',' + getDashboardSpendingTypeFilter_(type) + ',' +
+  return '=IFERROR(LET(latestDate,MAX(FILTER(' + date + ',' +
+    getDashboardSpendingTypeFilter_(type, incomeReportingType) + ',' +
     currency + '="EUR")),CHOOSE(MONTH(latestDate),' + localizedMonths + ')&" "&YEAR(latestDate)),"-")';
 }
 

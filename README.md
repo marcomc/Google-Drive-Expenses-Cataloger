@@ -37,9 +37,11 @@ date-derived year and month, payer, beneficiaries, amount and currency,
 transaction type, source type/status, source and custom categories, exact
 participant allocations, exchange rate, provenance, AI confidence, and an
 immutable duplicate fingerprint. Transfers are excluded from spending totals.
-Tricount `INCOME` records retain their negative canonical sign and are
-categorized as refunds: they reduce the corresponding category, month, and
-year spending totals while also affecting participant balances.
+Tricount `INCOME` records retain their negative canonical sign and affect
+participant balances. A derived income-reporting type keeps pre-existing cash
+and unrelated receipts visible only in the ledger, while purchase refunds
+(for example Amazon, Lidl, or a returned purchase) reduce the relevant
+spending totals and category charts.
 Tricount `Bilancio inizio mese` entries are opening-balance controls rather
 than ledger rows. `Bilancio fine mese` entries are recognized closing markers
 and are ignored by spending and balance calculations. `Source reconciliations`

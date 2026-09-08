@@ -1532,6 +1532,7 @@ function getExpenseSheetLayout_(spreadsheet) {
   const sourceReconciliations = ensureInstallerSheet_(spreadsheet, localization.sheetNames.sourceReconciliations,
     getSourceReconciliationHeaders_(localization));
   const headers = transactions.getRange(1, 1, 1, transactions.getLastColumn()).getValues()[0];
+  synchronizeIncomeReportingTypes_(transactions, headers, localization);
   return {
     transactions: transactions, imports: imports, sourceReconciliations: sourceReconciliations, headers: headers
   };
@@ -1651,7 +1652,7 @@ function writeLedgerRows_(layout, rows, triggerSource) {
       sourceUrl, row.sourceRow, now, buildBalanceImpactLabel_(row), row.sourceTransactionId,
       row.sourceNativeType, row.sourceStatus, row.sourceCustomCategory,
       serializeTricountAllocations_(row.allocations), row.exchangeRate, row.sourceCreatedAt,
-      row.sourceUpdatedAt
+      row.sourceUpdatedAt, row.incomeReportingType
     ];
   });
   const range = layout.transactions.getRange(layout.transactions.getLastRow() + 1, 1,
